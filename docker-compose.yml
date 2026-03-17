@@ -1,0 +1,47 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      BBTODO_API_HOST: ${BBTODO_API_HOST}
+      BBTODO_API_PORT: ${BBTODO_API_PORT}
+      BBTODO_PUBLIC_ORIGIN: ${BBTODO_PUBLIC_ORIGIN}
+      BBTODO_SQLITE_PATH: ${BBTODO_SQLITE_PATH}
+      BBTODO_SESSION_SECRET: ${BBTODO_SESSION_SECRET}
+      BBTODO_SESSION_TTL_HOURS: ${BBTODO_SESSION_TTL_HOURS}
+      BBTODO_OIDC_ISSUER: ${BBTODO_OIDC_ISSUER}
+      BBTODO_OIDC_CLIENT_ID: ${BBTODO_OIDC_CLIENT_ID}
+      BBTODO_OIDC_CLIENT_SECRET: ${BBTODO_OIDC_CLIENT_SECRET}
+      BBTODO_OIDC_SCOPES: ${BBTODO_OIDC_SCOPES}
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/health').then((response)=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    volumes:
+      - bbtodo_sqlite:/data
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/healthz | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  bbtodo_sqlite:
