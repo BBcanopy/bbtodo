@@ -1,3 +1,5 @@
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+
 import Database from "better-sqlite3";
 import { and, desc, eq } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
@@ -83,16 +85,40 @@ export const tasks = sqliteTable(
   })
 );
 
+export const apiTokens = sqliteTable(
+  "api_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    salt: text("salt").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    lastUsedAt: text("last_used_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => ({
+    userUpdatedAtIdx: index("api_tokens_user_updated_at_idx").on(
+      table.userId,
+      table.updatedAt
+    )
+  })
+);
+
 export type DatabaseClient = BetterSQLite3Database<{
   users: typeof users;
   sessions: typeof sessions;
   projects: typeof projects;
   tasks: typeof tasks;
+  apiTokens: typeof apiTokens;
 }>;
 
 export type UserRecord = typeof users.$inferSelect;
 export type ProjectRecord = typeof projects.$inferSelect;
 export type TaskRecord = typeof tasks.$inferSelect;
+export type ApiTokenRecord = typeof apiTokens.$inferSelect;
 
 export interface DatabaseServices {
   database: Database.Database;
@@ -148,6 +174,20 @@ export function createDatabase(sqlitePath: string): DatabaseServices {
 
     CREATE INDEX IF NOT EXISTS tasks_project_status_updated_at_idx
       ON tasks (project_id, status, updated_at);
+
+    CREATE TABLE IF NOT EXISTS api_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      salt TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      last_used_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS api_tokens_user_updated_at_idx
+      ON api_tokens (user_id, updated_at);
   `);
 
   return {
@@ -157,7 +197,8 @@ export function createDatabase(sqlitePath: string): DatabaseServices {
         users,
         sessions,
         projects,
-        tasks
+        tasks,
+        apiTokens
       }
     })
   };
@@ -242,6 +283,103 @@ export function getUserForSession(db: DatabaseClient, sessionId: string) {
 
 export function deleteSession(db: DatabaseClient, sessionId: string) {
   db.delete(sessions).where(eq(sessions.id, sessionId)).run();
+}
+
+function hashApiTokenSecret(salt: string, secret: string) {
+  return createHash("sha256").update(`${salt}.${secret}`).digest("hex");
+}
+
+export function listApiTokensForUser(db: DatabaseClient, userId: string) {
+  return db
+    .select()
+    .from(apiTokens)
+    .where(eq(apiTokens.userId, userId))
+    .orderBy(desc(apiTokens.updatedAt))
+    .all();
+}
+
+export function createApiToken(db: DatabaseClient, userId: string, name: string) {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  const salt = randomBytes(16).toString("base64url");
+  const secret = randomBytes(24).toString("base64url");
+  const tokenHash = hashApiTokenSecret(salt, secret);
+  const token = {
+    id,
+    userId,
+    name,
+    salt,
+    tokenHash,
+    lastUsedAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  db.insert(apiTokens).values(token).run();
+
+  return {
+    token,
+    rawToken: `bbtodo_pat_${id}.${secret}`
+  };
+}
+
+export function deleteOwnedApiToken(
+  db: DatabaseClient,
+  userId: string,
+  tokenId: string
+) {
+  const token = db
+    .select()
+    .from(apiTokens)
+    .where(and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, userId)))
+    .get();
+  if (!token) {
+    return false;
+  }
+
+  db.delete(apiTokens).where(eq(apiTokens.id, tokenId)).run();
+  return true;
+}
+
+export function getUserForApiToken(db: DatabaseClient, rawToken: string) {
+  if (!rawToken.startsWith("bbtodo_pat_")) {
+    return null;
+  }
+
+  const payload = rawToken.slice("bbtodo_pat_".length);
+  const separatorIndex = payload.indexOf(".");
+  if (separatorIndex === -1) {
+    return null;
+  }
+
+  const tokenId = payload.slice(0, separatorIndex);
+  const secret = payload.slice(separatorIndex + 1);
+  if (!tokenId || !secret) {
+    return null;
+  }
+
+  const token = db.select().from(apiTokens).where(eq(apiTokens.id, tokenId)).get();
+  if (!token) {
+    return null;
+  }
+
+  const expected = Buffer.from(hashApiTokenSecret(token.salt, secret), "hex");
+  const actual = Buffer.from(token.tokenHash, "hex");
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  db
+    .update(apiTokens)
+    .set({
+      lastUsedAt: now,
+      updatedAt: now
+    })
+    .where(eq(apiTokens.id, token.id))
+    .run();
+
+  return db.select().from(users).where(eq(users.id, token.userId)).get() ?? null;
 }
 
 export function listProjectsForUser(db: DatabaseClient, userId: string) {

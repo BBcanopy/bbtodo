@@ -31,12 +31,32 @@ export const taskResponseSchema = z.object({
   updatedAt: z.string()
 });
 
+export const apiTokenSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable()
+});
+
+export const createApiTokenResponseSchema = z.object({
+  token: z.string(),
+  tokenInfo: apiTokenSummarySchema
+});
+
 export const createProjectBodySchema = z.object({
+  name: z.string().trim().min(1).max(120)
+});
+
+export const createApiTokenBodySchema = z.object({
   name: z.string().trim().min(1).max(120)
 });
 
 export const projectParamsSchema = z.object({
   projectId: z.string().uuid()
+});
+
+export const apiTokenParamsSchema = z.object({
+  tokenId: z.string().uuid()
 });
 
 export const createTaskBodySchema = z.object({
@@ -64,6 +84,7 @@ export const updateTaskBodySchema = z
 z.globalRegistry.add(meResponseSchema, { id: "Me" });
 z.globalRegistry.add(projectResponseSchema, { id: "Project" });
 z.globalRegistry.add(taskResponseSchema, { id: "Task" });
+z.globalRegistry.add(apiTokenSummarySchema, { id: "ApiTokenSummary" });
 z.globalRegistry.add(errorResponseSchema, { id: "ErrorResponse" });
 
 export function toMeResponse(user: UserRecord) {
@@ -91,5 +112,21 @@ export function toTaskResponse(task: TaskRecord) {
     status: task.status,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt
+  });
+}
+
+export function toApiTokenSummary(
+  token: {
+    id: string;
+    name: string;
+    createdAt: string;
+    lastUsedAt: string | null;
+  }
+) {
+  return apiTokenSummarySchema.parse({
+    id: token.id,
+    name: token.name,
+    createdAt: token.createdAt,
+    lastUsedAt: token.lastUsedAt ?? null
   });
 }

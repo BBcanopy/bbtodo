@@ -2,7 +2,7 @@ import { startTransition, useState } from "react";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 
-import { api, ApiError, isApiError, type Project, type Task, type TaskStatus, type User } from "./api";
+import { api, ApiError, isApiError, type Task, type TaskStatus, type User } from "./api";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -36,7 +36,7 @@ function LoadingState() {
     <main className="centered-state">
       <div className="state-card">
         <p className="eyebrow">bbtodo</p>
-        <h1>Loading your boards…</h1>
+        <h1>Loading your boards...</h1>
       </div>
     </main>
   );
@@ -76,10 +76,20 @@ function AppShell({ user }: { user: User }) {
   return (
     <div className="app-frame">
       <header className="topbar">
-        <Link className="brand-mark" to="/">
-          <span className="brand-mark__pill">bb</span>
-          <span className="brand-mark__text">bbtodo</span>
-        </Link>
+        <div className="topbar__nav">
+          <Link className="brand-mark" to="/">
+            <span className="brand-mark__pill">bb</span>
+            <span className="brand-mark__text">bbtodo</span>
+          </Link>
+          <nav className="subnav">
+            <Link className="subnav__link" to="/">
+              Projects
+            </Link>
+            <Link className="subnav__link" to="/settings/api-tokens">
+              API tokens
+            </Link>
+          </nav>
+        </div>
         <div className="topbar__meta">
           <div>
             <p className="topbar__label">Signed in</p>
@@ -93,6 +103,7 @@ function AppShell({ user }: { user: User }) {
       <Routes>
         <Route element={<ProjectsPage />} path="/" />
         <Route element={<BoardPage />} path="/projects/:projectId" />
+        <Route element={<ApiTokensPage />} path="/settings/api-tokens" />
         <Route element={<Navigate replace to="/" />} path="*" />
       </Routes>
     </div>
@@ -171,11 +182,7 @@ function ProjectsPage() {
               <h2>{project.name}</h2>
               <p>Open board</p>
             </Link>
-            <button
-              className="ghost-button danger-button"
-              onClick={() => deleteProjectMutation.mutate(project.id)}
-              type="button"
-            >
+            <button className="ghost-button danger-button" onClick={() => deleteProjectMutation.mutate(project.id)} type="button">
               Delete
             </button>
           </article>
@@ -354,6 +361,102 @@ function BoardPage() {
             </div>
           </div>
         ))}
+      </section>
+    </main>
+  );
+}
+
+function ApiTokensPage() {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [revealedToken, setRevealedToken] = useState<string | null>(null);
+  const tokensQuery = useQuery({
+    queryKey: ["api-tokens"],
+    queryFn: () => api.listApiTokens()
+  });
+
+  const createTokenMutation = useMutation({
+    mutationFn: (tokenName: string) => api.createApiToken(tokenName),
+    onSuccess: async (response) => {
+      setName("");
+      setRevealedToken(response.token);
+      await queryClient.invalidateQueries({ queryKey: ["api-tokens"] });
+    }
+  });
+
+  const deleteTokenMutation = useMutation({
+    mutationFn: (tokenId: string) => api.deleteApiToken(tokenId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["api-tokens"] });
+    }
+  });
+
+  return (
+    <main className="page-shell">
+      <section className="hero-strip">
+        <div>
+          <p className="eyebrow">Automation</p>
+          <h1>Issue a token for scripts and small automations.</h1>
+          <p className="lead-copy">
+            `bbtodo` personal API tokens let external tools call the same project and task endpoints as the app.
+          </p>
+        </div>
+        <form
+          className="inline-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createTokenMutation.mutate(name.trim());
+          }}
+        >
+          <label className="field">
+            <span className="field__label">Token name</span>
+            <input
+              maxLength={120}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Local CLI"
+              required
+              value={name}
+            />
+          </label>
+          <button className="primary-button" disabled={createTokenMutation.isPending || name.trim().length === 0} type="submit">
+            Create token
+          </button>
+        </form>
+      </section>
+
+      {tokensQuery.error ? <ErrorBanner error={tokensQuery.error} /> : null}
+      {createTokenMutation.error ? <ErrorBanner error={createTokenMutation.error} /> : null}
+      {deleteTokenMutation.error ? <ErrorBanner error={deleteTokenMutation.error} /> : null}
+
+      {revealedToken ? (
+        <section className="token-reveal">
+          <p className="eyebrow">Copy now</p>
+          <h2>This token is only shown once.</h2>
+          <code>{revealedToken}</code>
+        </section>
+      ) : null}
+
+      <section className="project-grid">
+        {tokensQuery.data?.map((token) => (
+          <article className="project-card" key={token.id}>
+            <div className="project-card__link">
+              <p className="project-card__timestamp">
+                Last used {token.lastUsedAt ? new Date(token.lastUsedAt).toLocaleString() : "never"}
+              </p>
+              <h2>{token.name}</h2>
+              <p>Created {new Date(token.createdAt).toLocaleDateString()}</p>
+            </div>
+            <button className="ghost-button danger-button" onClick={() => deleteTokenMutation.mutate(token.id)} type="button">
+              Revoke
+            </button>
+          </article>
+        ))}
+        {tokensQuery.data && tokensQuery.data.length === 0 ? (
+          <article className="empty-card">
+            <h2>No API tokens yet</h2>
+            <p>Create one when you want a script or CLI to talk to `bbtodo`.</p>
+          </article>
+        ) : null}
       </section>
     </main>
   );

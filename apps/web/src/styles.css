@@ -46,6 +46,12 @@ button {
   box-shadow: 0 18px 48px rgba(77, 54, 21, 0.12);
 }
 
+.topbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .brand-mark {
   display: inline-flex;
   align-items: center;
@@ -65,6 +71,19 @@ button {
 
 .brand-mark__text {
   font-size: 1.1rem;
+}
+
+.subnav {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.subnav__link {
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(244, 127, 56, 0.08);
+  color: #7c3c17;
+  font-weight: 600;
 }
 
 .topbar__meta {
@@ -235,6 +254,22 @@ input {
   padding: 1.2rem;
 }
 
+.token-reveal {
+  padding: 1.2rem;
+  border-radius: 1.4rem;
+  background: rgba(255, 252, 245, 0.94);
+  box-shadow: 0 18px 36px rgba(95, 70, 34, 0.12);
+}
+
+.token-reveal code {
+  display: block;
+  overflow-x: auto;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  background: #1f2a2b;
+  color: #f9f6ef;
+}
+
 .project-card {
   display: grid;
   gap: 1rem;
@@ -332,6 +367,12 @@ input {
   .hero-strip,
   .board-header,
   .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topbar__nav,
+  .subnav {
     flex-direction: column;
     align-items: stretch;
   }

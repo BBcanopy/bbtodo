@@ -11,6 +11,10 @@ import {
 import { z } from "zod";
 
 import {
+  apiTokenParamsSchema,
+  apiTokenSummarySchema,
+  createApiTokenBodySchema,
+  createApiTokenResponseSchema,
   createProjectBodySchema,
   createTaskBodySchema,
   errorResponseSchema,
@@ -20,6 +24,7 @@ import {
   projectResponseSchema,
   taskParamsSchema,
   taskResponseSchema,
+  toApiTokenSummary,
   toMeResponse,
   toProjectResponse,
   toTaskResponse,
@@ -27,14 +32,19 @@ import {
 } from "./api-schemas.js";
 import type { AppConfig } from "./config.js";
 import {
+  type DatabaseClient,
+  createApiToken,
   createDatabase,
   createProject,
   createSession,
   createTask,
+  deleteOwnedApiToken,
   deleteOwnedProject,
   deleteOwnedTask,
   deleteSession,
+  getUserForApiToken,
   getUserForSession,
+  listApiTokensForUser,
   listProjectsForUser,
   listTasksForProject,
   updateOwnedTask,
@@ -83,18 +93,38 @@ function getSignedSessionId(
   return unsigned.valid ? unsigned.value : null;
 }
 
-async function requireSessionUser(
+async function requireApiUser(
   app: ReturnType<typeof Fastify>,
+  db: DatabaseClient,
   request: {
+    headers: Record<string, string | string[] | undefined>;
     cookies: Record<string, string | undefined>;
   },
   reply: {
     clearCookie: ReturnType<typeof Fastify>["clearCookie"];
     status: ReturnType<typeof Fastify>["status"];
     send: ReturnType<typeof Fastify>["send"];
-  },
-  getUser: (sessionId: string) => UserRecord | null
+  }
 ) {
+  const authorizationHeader = request.headers.authorization;
+  const bearerToken =
+    typeof authorizationHeader === "string" &&
+    authorizationHeader.startsWith("Bearer ")
+      ? authorizationHeader.slice("Bearer ".length).trim()
+      : null;
+
+  if (bearerToken) {
+    const user = getUserForApiToken(db, bearerToken);
+    if (!user) {
+      reply.status(401).send({
+        message: "Authentication required."
+      });
+      return null;
+    }
+
+    return user;
+  }
+
   const sessionId = getSignedSessionId(app, request.cookies[SESSION_COOKIE]);
   if (!sessionId) {
     reply.status(401).send({
@@ -103,7 +133,7 @@ async function requireSessionUser(
     return null;
   }
 
-  const user = getUser(sessionId);
+  const user = getUserForSession(db, sessionId);
   if (!user) {
     reply.clearCookie(SESSION_COOKIE, {
       path: "/"
@@ -285,17 +315,86 @@ export function buildApp(options: {
       tags: ["auth"]
     },
     handler: async (request, reply) => {
-      const user = await requireSessionUser(
-        app,
-        request,
-        reply,
-        (sessionId) => getUserForSession(database.db, sessionId)
-      );
+      const user = await requireApiUser(app, database.db, request, reply);
       if (!user) {
         return;
       }
 
       return toMeResponse(user);
+    }
+  });
+
+  typedApp.route({
+    method: "GET",
+    url: "/api/v1/api-tokens",
+    schema: {
+      response: {
+        200: z.array(apiTokenSummarySchema),
+        401: errorResponseSchema
+      },
+      tags: ["api-tokens"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      return listApiTokensForUser(database.db, user.id).map(toApiTokenSummary);
+    }
+  });
+
+  typedApp.route({
+    method: "POST",
+    url: "/api/v1/api-tokens",
+    schema: {
+      body: createApiTokenBodySchema,
+      response: {
+        201: createApiTokenResponseSchema,
+        401: errorResponseSchema
+      },
+      tags: ["api-tokens"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      const token = createApiToken(database.db, user.id, request.body.name.trim());
+      return reply.status(201).send({
+        token: token.rawToken,
+        tokenInfo: toApiTokenSummary(token.token)
+      });
+    }
+  });
+
+  typedApp.route({
+    method: "DELETE",
+    url: "/api/v1/api-tokens/:tokenId",
+    schema: {
+      params: apiTokenParamsSchema,
+      response: {
+        204: z.null(),
+        401: errorResponseSchema,
+        404: errorResponseSchema
+      },
+      tags: ["api-tokens"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      const deleted = deleteOwnedApiToken(database.db, user.id, request.params.tokenId);
+      if (!deleted) {
+        return reply.status(404).send({
+          message: "API token not found."
+        });
+      }
+
+      return reply.status(204).send(null);
     }
   });
 
@@ -310,12 +409,7 @@ export function buildApp(options: {
       tags: ["projects"]
     },
     handler: async (request, reply) => {
-      const user = await requireSessionUser(
-        app,
-        request,
-        reply,
-        (sessionId) => getUserForSession(database.db, sessionId)
-      );
+      const user = await requireApiUser(app, database.db, request, reply);
       if (!user) {
         return;
       }
@@ -336,12 +430,7 @@ export function buildApp(options: {
       tags: ["projects"]
     },
     handler: async (request, reply) => {
-      const user = await requireSessionUser(
-        app,
-        request,
-        reply,
-        (sessionId) => getUserForSession(database.db, sessionId)
-      );
+      const user = await requireApiUser(app, database.db, request, reply);
       if (!user) {
         return;
       }
@@ -364,12 +453,7 @@ export function buildApp(options: {
       tags: ["projects"]
     },
     handler: async (request, reply) => {
-      const user = await requireSessionUser(
-        app,
-        request,
-        reply,
-        (sessionId) => getUserForSession(database.db, sessionId)
-      );
+      const user = await requireApiUser(app, database.db, request, reply);
       if (!user) {
         return;
       }
@@ -399,12 +483,7 @@ export function buildApp(options: {
       tags: ["tasks"]
     },
     handler: async (request, reply) => {
-      const user = await requireSessionUser(
-        app,
-        request,
-        reply,
-        (sessionId) => getUserForSession(database.db, sessionId)
-      );
+      const user = await requireApiUser(app, database.db, request, reply);
       if (!user) {
         return;
       }
@@ -438,12 +517,7 @@ export function buildApp(options: {
       tags: ["tasks"]
     },
     handler: async (request, reply) => {
-      const user = await requireSessionUser(
-        app,
-        request,
-        reply,
-        (sessionId) => getUserForSession(database.db, sessionId)
-      );
+      const user = await requireApiUser(app, database.db, request, reply);
       if (!user) {
         return;
       }
@@ -477,12 +551,7 @@ export function buildApp(options: {
       tags: ["tasks"]
     },
     handler: async (request, reply) => {
-      const user = await requireSessionUser(
-        app,
-        request,
-        reply,
-        (sessionId) => getUserForSession(database.db, sessionId)
-      );
+      const user = await requireApiUser(app, database.db, request, reply);
       if (!user) {
         return;
       }
@@ -517,12 +586,7 @@ export function buildApp(options: {
       tags: ["tasks"]
     },
     handler: async (request, reply) => {
-      const user = await requireSessionUser(
-        app,
-        request,
-        reply,
-        (sessionId) => getUserForSession(database.db, sessionId)
-      );
+      const user = await requireApiUser(app, database.db, request, reply);
       if (!user) {
         return;
       }

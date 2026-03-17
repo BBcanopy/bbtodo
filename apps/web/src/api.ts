@@ -22,6 +22,18 @@ export interface Task {
   updatedAt: string;
 }
 
+export interface ApiTokenSummary {
+  createdAt: string;
+  id: string;
+  lastUsedAt: string | null;
+  name: string;
+}
+
+export interface CreateApiTokenResponse {
+  token: string;
+  tokenInfo: ApiTokenSummary;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -72,6 +84,12 @@ export const api = {
       method: "POST"
     });
   },
+  createApiToken(name: string) {
+    return request<CreateApiTokenResponse>("/api/v1/api-tokens", {
+      body: JSON.stringify({ name }),
+      method: "POST"
+    });
+  },
   createTask(projectId: string, title: string) {
     return request<Task>(`/api/v1/projects/${projectId}/tasks`, {
       body: JSON.stringify({ title }),
@@ -80,6 +98,11 @@ export const api = {
   },
   deleteProject(projectId: string) {
     return request<null>(`/api/v1/projects/${projectId}`, {
+      method: "DELETE"
+    });
+  },
+  deleteApiToken(tokenId: string) {
+    return request<null>(`/api/v1/api-tokens/${tokenId}`, {
       method: "DELETE"
     });
   },
@@ -93,6 +116,9 @@ export const api = {
   },
   listProjects() {
     return request<Project[]>("/api/v1/projects");
+  },
+  listApiTokens() {
+    return request<ApiTokenSummary[]>("/api/v1/api-tokens");
   },
   listTasks(projectId: string) {
     return request<Task[]>(`/api/v1/projects/${projectId}/tasks`);
