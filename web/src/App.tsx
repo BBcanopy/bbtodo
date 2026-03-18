@@ -304,9 +304,6 @@ function AppShell({ user }: { user: User }) {
               <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} end to="/">
                 Projects
               </NavLink>
-              <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} to="/settings/api-tokens">
-                API tokens
-              </NavLink>
             </nav>
           </div>
 
@@ -326,6 +323,14 @@ function AppShell({ user }: { user: User }) {
               </button>
               {isMenuOpen ? (
                 <div className="avatar-dropdown" role="menu">
+                  <Link
+                    className="menu-item"
+                    onClick={() => setIsMenuOpen(false)}
+                    role="menuitem"
+                    to="/settings/api-tokens"
+                  >
+                    API tokens
+                  </Link>
                   <button
                     className="menu-item danger-button"
                     onClick={() => {

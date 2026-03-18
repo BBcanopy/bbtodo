@@ -608,6 +608,7 @@ input:focus {
 }
 
 .menu-item {
+  display: block;
   width: 100%;
   min-height: 2.6rem;
   padding: 0.7rem 0.8rem;
@@ -622,8 +623,12 @@ input:focus {
 }
 
 .menu-item:hover {
-  background: rgba(159, 61, 51, 0.08);
+  background: var(--accent-soft);
   transform: translateY(-1px);
+}
+
+.menu-item.danger-button:hover {
+  background: rgba(159, 61, 51, 0.08);
 }
 
 .menu-item:active {

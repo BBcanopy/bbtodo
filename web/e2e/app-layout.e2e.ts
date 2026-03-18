@@ -154,12 +154,18 @@ test("projects page removes the oversized intro section", async ({ page }) => {
   await expect(page.locator(".page-intro")).toHaveCount(0);
   await expect(page.getByLabel("Project name")).toBeVisible();
   await expect(page.locator(".topbar__identity")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
   await expect(page.getByLabel("Open account menu")).toHaveText("N");
   await expect(page.getByRole("menuitem", { name: "Sign out" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "API tokens" })).toHaveCount(0);
 
   await page.getByLabel("Open account menu").click();
 
+  await expect(page.getByRole("menuitem", { name: "API tokens" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Sign out" })).toBeVisible();
+
+  await page.getByRole("menuitem", { name: "API tokens" }).click();
+  await expect(page.getByRole("heading", { exact: true, name: "API tokens" })).toBeVisible();
 });
 
 test("board workspace uses the full available width", async ({ page }) => {
