@@ -164,6 +164,7 @@ h3 {
 .landing-panel--simple {
   min-height: calc(100dvh - 2rem);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   max-width: none;
 }
@@ -444,6 +445,7 @@ h3 {
   align-content: center;
   min-height: auto;
   width: min(100%, 28rem);
+  margin: auto;
   text-align: center;
 }
 

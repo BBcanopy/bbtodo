@@ -196,6 +196,13 @@ test("login screen uses the updated cool accent palette", async ({ page }) => {
   await expect(page.getByText("Live shape")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Sign in with OIDC" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Read API docs" })).toBeVisible();
+  const loginPanelBox = await page.locator(".hero-panel--simple").boundingBox();
+  const viewport = page.viewportSize();
+  expect(loginPanelBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  const panelCenterX = (loginPanelBox?.x ?? 0) + (loginPanelBox?.width ?? 0) / 2;
+  const viewportCenterX = (viewport?.width ?? 0) / 2;
+  expect(Math.abs(panelCenterX - viewportCenterX)).toBeLessThan(20);
 
   const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
   expect(accent).toBe("#2f7774");
