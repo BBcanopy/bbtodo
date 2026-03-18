@@ -1,0 +1,31 @@
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    environment:
+      CLIENT_URL: ${CLIENT_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      OIDC_ISSUER: ${OIDC_ISSUER}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_SCOPES: ${OIDC_SCOPES}
+    restart: unless-stopped
+    volumes:
+      # The server always stores SQLite at /data/bbtodo.sqlite, so mount /data.
+      - bbtodo_sqlite:/data
+    ports:
+      - "${SERVER_PORT:-3000}:3000"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    depends_on:
+      - server
+    ports:
+      - "${CLIENT_PORT:-8080}:80"
+    restart: unless-stopped
+
+volumes:
+  bbtodo_sqlite:
