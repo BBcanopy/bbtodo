@@ -317,6 +317,7 @@ h3 {
 .subnav {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.95rem;
   padding: 0 0 0 1rem;
   position: relative;
@@ -440,6 +441,27 @@ h3 {
 
 .subnav__action:active {
   transform: translateY(1px) scale(0.98);
+}
+
+.subnav__search {
+  display: grid;
+  gap: 0.35rem;
+  min-width: min(16rem, 34vw);
+}
+
+.subnav__search-label {
+  color: rgba(16, 32, 34, 0.5);
+  font-size: 0.67rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.subnav__search input {
+  min-height: 2.5rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  font-size: 0.92rem;
 }
 
 .hero-panel,
@@ -887,7 +909,7 @@ input:focus {
 
 .project-card__lane-counts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem;
   margin-top: 0.4rem;
 }
@@ -912,6 +934,10 @@ input:focus {
   font-size: 1rem;
   line-height: 1;
   letter-spacing: -0.03em;
+}
+
+.project-card__lane-pill--muted {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .label-chip {
@@ -961,7 +987,7 @@ input:focus {
 
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr));
   gap: 1rem;
   align-items: stretch;
   min-height: calc(100dvh - 15rem);
@@ -1442,6 +1468,10 @@ input:focus {
 
   .subnav::before {
     display: none;
+  }
+
+  .subnav__search {
+    min-width: 100%;
   }
 
   .compose-form .field {

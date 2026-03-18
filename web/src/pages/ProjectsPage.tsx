@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, type Project } from "../api";
-import { columns } from "../app/constants";
 import { formatIsoDate, itemStyle } from "../app/utils";
 import { EmptyState, ErrorBanner, ProjectGridSkeleton } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
@@ -21,6 +20,8 @@ function ProjectCard({
 }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const confirmRef = useRef<HTMLDivElement | null>(null);
+  const visibleLanes = project.laneSummaries.slice(0, 3);
+  const hiddenLaneCount = project.laneSummaries.length - visibleLanes.length;
 
   useDismissableLayer(isConfirmOpen, confirmRef, () => setIsConfirmOpen(false));
 
@@ -86,16 +87,22 @@ function ProjectCard({
       <div className="project-card__body">
         <h2>{project.name}</h2>
         <div aria-label={`Lane counts for ${project.name}`} className="project-card__lane-counts">
-          {columns.map((column) => (
+          {visibleLanes.map((lane) => (
             <div
-              aria-label={`${column.label} ${project.taskCounts[column.key]}`}
+              aria-label={`${lane.name} ${lane.taskCount}`}
               className="project-card__lane-pill"
-              key={column.key}
+              key={lane.id}
             >
-              <span>{column.label}</span>
-              <strong>{project.taskCounts[column.key]}</strong>
+              <span>{lane.name}</span>
+              <strong>{lane.taskCount}</strong>
             </div>
           ))}
+          {hiddenLaneCount > 0 ? (
+            <div aria-label={`${hiddenLaneCount} more lanes`} className="project-card__lane-pill project-card__lane-pill--muted">
+              <span>More</span>
+              <strong>+{hiddenLaneCount}</strong>
+            </div>
+          ) : null}
         </div>
         <time className="project-card__timestamp" dateTime={project.updatedAt}>
           {formatIsoDate(project.updatedAt)}

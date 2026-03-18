@@ -1,15 +1,96 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+type TaskStatus = "todo" | "in_progress" | "done";
+
+interface BoardLane {
+  createdAt: string;
+  id: string;
+  name: string;
+  position: number;
+  projectId: string;
+  systemKey: TaskStatus | null;
+  taskCount: number;
+  updatedAt: string;
+}
+
+interface Project {
+  createdAt: string;
+  id: string;
+  laneSummaries: BoardLane[];
+  name: string;
+  taskCounts: Record<TaskStatus, number>;
+  updatedAt: string;
+}
+
+interface Task {
+  body: string;
+  createdAt: string;
+  id: string;
+  laneId: string | null;
+  position: number;
+  projectId: string;
+  status: TaskStatus;
+  title: string;
+  updatedAt: string;
+}
+
 const user = {
   email: "operator@example.com",
   id: "user-1",
   name: "Nadia Vale"
 };
 
-const projects = [
+function laneId(projectId: string, suffix: TaskStatus) {
+  return `${projectId}-lane-${suffix}`;
+}
+
+function createDefaultLaneSummaries(
+  projectId: string,
+  counts: Record<TaskStatus, number>
+): BoardLane[] {
+  return [
+    {
+      createdAt: "2026-03-17T09:00:00.000Z",
+      id: laneId(projectId, "todo"),
+      name: "Todo",
+      position: 0,
+      projectId,
+      systemKey: "todo",
+      taskCount: counts.todo,
+      updatedAt: "2026-03-18T07:30:00.000Z"
+    },
+    {
+      createdAt: "2026-03-17T09:00:00.000Z",
+      id: laneId(projectId, "in_progress"),
+      name: "In Progress",
+      position: 1,
+      projectId,
+      systemKey: "in_progress",
+      taskCount: counts.in_progress,
+      updatedAt: "2026-03-18T07:30:00.000Z"
+    },
+    {
+      createdAt: "2026-03-17T09:00:00.000Z",
+      id: laneId(projectId, "done"),
+      name: "Done",
+      position: 2,
+      projectId,
+      systemKey: "done",
+      taskCount: counts.done,
+      updatedAt: "2026-03-18T07:30:00.000Z"
+    }
+  ];
+}
+
+const projects: Project[] = [
   {
     createdAt: "2026-03-17T09:00:00.000Z",
     id: "project-1",
+    laneSummaries: createDefaultLaneSummaries("project-1", {
+      todo: 1,
+      in_progress: 1,
+      done: 1
+    }),
     name: "Billing cleanup",
     taskCounts: {
       todo: 1,
@@ -20,11 +101,16 @@ const projects = [
   }
 ];
 
-const projectsForGrid = [
+const projectsForGrid: Project[] = [
   ...projects,
   {
     createdAt: "2026-03-17T10:00:00.000Z",
     id: "project-2",
+    laneSummaries: createDefaultLaneSummaries("project-2", {
+      todo: 0,
+      in_progress: 0,
+      done: 0
+    }),
     name: "Roadmap review",
     taskCounts: {
       todo: 0,
@@ -36,6 +122,11 @@ const projectsForGrid = [
   {
     createdAt: "2026-03-17T11:00:00.000Z",
     id: "project-3",
+    laneSummaries: createDefaultLaneSummaries("project-3", {
+      todo: 2,
+      in_progress: 1,
+      done: 0
+    }),
     name: "Release prep",
     taskCounts: {
       todo: 2,
@@ -47,6 +138,11 @@ const projectsForGrid = [
   {
     createdAt: "2026-03-17T12:00:00.000Z",
     id: "project-4",
+    laneSummaries: createDefaultLaneSummaries("project-4", {
+      todo: 1,
+      in_progress: 0,
+      done: 3
+    }),
     name: "Customer follow-up",
     taskCounts: {
       todo: 1,
@@ -57,26 +153,35 @@ const projectsForGrid = [
   }
 ];
 
-const tasks = [
+const tasks: Task[] = [
   {
+    body: "Callback logs mention retry scope.",
     createdAt: "2026-03-18T07:00:00.000Z",
     id: "task-1",
+    laneId: laneId("project-1", "todo"),
+    position: 0,
     projectId: "project-1",
     status: "todo",
     title: "Review retry settings",
     updatedAt: "2026-03-18T07:10:00.000Z"
   },
   {
+    body: "Capture OIDC callback details for the new deployment.",
     createdAt: "2026-03-18T07:20:00.000Z",
     id: "task-2",
+    laneId: laneId("project-1", "in_progress"),
+    position: 0,
     projectId: "project-1",
     status: "in_progress",
     title: "Tighten callback logging",
     updatedAt: "2026-03-18T07:45:00.000Z"
   },
   {
+    body: "Docker compose no longer pings health forever.",
     createdAt: "2026-03-18T06:50:00.000Z",
     id: "task-3",
+    laneId: laneId("project-1", "done"),
+    position: 0,
     projectId: "project-1",
     status: "done",
     title: "Remove healthcheck loop",
@@ -86,9 +191,9 @@ const tasks = [
 
 async function fulfillJson(route: Route, status: number, body: unknown) {
   await route.fulfill({
-    status,
+    body: JSON.stringify(body),
     contentType: "application/json",
-    body: JSON.stringify(body)
+    status
   });
 }
 
@@ -101,15 +206,103 @@ async function mockUnauthenticated(page: Page) {
 async function mockAuthenticated(
   page: Page,
   options?: {
-    projects?: typeof projects;
     nextProjectId?: number;
+    projects?: Project[];
+    tasks?: Task[];
   }
 ) {
   let nextProjectId = options?.nextProjectId ?? 2;
+  let nextLaneId = 1;
   let nextTaskId = 4;
   let isAuthenticated = true;
-  const projectState = (options?.projects ?? projects).map((project) => ({ ...project }));
-  const taskState = tasks.map((task) => ({ ...task }));
+  const projectState = (options?.projects ?? projects).map((project) => structuredClone(project));
+  const taskState = (options?.tasks ?? tasks).map((task) => structuredClone(task));
+
+  function getProject(projectId: string) {
+    return projectState.find((project) => project.id === projectId) ?? null;
+  }
+
+  function syncProject(projectId: string) {
+    const project = getProject(projectId);
+    if (!project) {
+      return;
+    }
+
+    project.laneSummaries = [...project.laneSummaries]
+      .sort((left, right) => left.position - right.position)
+      .map((lane) => ({
+        ...lane,
+        taskCount: taskState.filter((task) => task.projectId === projectId && task.laneId === lane.id).length
+      }));
+    project.taskCounts = {
+      todo: 0,
+      in_progress: 0,
+      done: 0
+    };
+
+    for (const lane of project.laneSummaries) {
+      if (lane.systemKey) {
+        project.taskCounts[lane.systemKey] = lane.taskCount;
+      }
+    }
+  }
+
+  function sortTasksForProject(projectId: string, laneIdValue?: string) {
+    return taskState
+      .filter(
+        (task) =>
+          task.projectId === projectId &&
+          (laneIdValue === undefined || task.laneId === laneIdValue)
+      )
+      .sort((left, right) => {
+        if (left.position !== right.position) {
+          return left.position - right.position;
+        }
+
+        return left.updatedAt < right.updatedAt ? 1 : -1;
+      });
+  }
+
+  function syncAllProjects() {
+    projectState.forEach((project) => syncProject(project.id));
+  }
+
+  function reindexLane(projectId: string, laneIdValue: string) {
+    sortTasksForProject(projectId, laneIdValue).forEach((task, index) => {
+      task.position = index;
+    });
+  }
+
+  function moveTask(task: Task, targetLaneId: string, targetPosition: number) {
+    const sourceLaneId = task.laneId;
+
+    if (sourceLaneId && sourceLaneId !== targetLaneId) {
+      taskState
+        .filter(
+          (candidate) =>
+            candidate.projectId === task.projectId &&
+            candidate.laneId === sourceLaneId &&
+            candidate.id !== task.id
+        )
+        .sort((left, right) => left.position - right.position)
+        .forEach((candidate, index) => {
+          candidate.position = index;
+        });
+    }
+
+    const targetTasks = sortTasksForProject(task.projectId, targetLaneId).filter(
+      (candidate) => candidate.id !== task.id
+    );
+    const clampedPosition = Math.max(0, Math.min(targetPosition, targetTasks.length));
+
+    targetTasks.splice(clampedPosition, 0, task);
+    targetTasks.forEach((candidate, index) => {
+      candidate.laneId = targetLaneId;
+      candidate.position = index;
+    });
+  }
+
+  syncAllProjects();
 
   await page.route("**/auth/logout", async (route) => {
     isAuthenticated = false;
@@ -120,7 +313,16 @@ async function mockAuthenticated(
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
-    const body = request.postDataJSON() as { name?: string; status?: string; title?: string } | null;
+    const body = request.postDataJSON() as
+      | {
+          body?: string;
+          laneId?: string;
+          name?: string;
+          position?: number;
+          status?: TaskStatus;
+          title?: string;
+        }
+      | null;
 
     switch (key) {
       case "GET /api/v1/me":
@@ -132,12 +334,19 @@ async function mockAuthenticated(
         await fulfillJson(route, 200, user);
         return;
       case "GET /api/v1/projects":
+        syncAllProjects();
         await fulfillJson(route, 200, projectState);
         return;
       case "POST /api/v1/projects": {
-        const createdProject = {
+        const createdProjectId = `project-${nextProjectId++}`;
+        const createdProject: Project = {
           createdAt: "2026-03-18T08:00:00.000Z",
-          id: `project-${nextProjectId++}`,
+          id: createdProjectId,
+          laneSummaries: createDefaultLaneSummaries(createdProjectId, {
+            todo: 0,
+            in_progress: 0,
+            done: 0
+          }),
           name: body?.title ?? body?.name ?? "Untitled board",
           taskCounts: {
             todo: 0,
@@ -147,84 +356,178 @@ async function mockAuthenticated(
           updatedAt: "2026-03-18T08:00:00.000Z"
         };
         projectState.unshift(createdProject);
-        await fulfillJson(route, 200, createdProject);
-        return;
-      }
-      case "POST /api/v1/projects/project-1/tasks": {
-        const createdTask = {
-          createdAt: "2026-03-18T08:00:00.000Z",
-          id: `task-${nextTaskId++}`,
-          projectId: "project-1",
-          status: "todo",
-          title: body?.title ?? "Untitled task",
-          updatedAt: "2026-03-18T08:00:00.000Z"
-        };
-        taskState.unshift(createdTask);
-        await fulfillJson(route, 200, createdTask);
+        await fulfillJson(route, 201, createdProject);
         return;
       }
       case "GET /api/v1/api-tokens":
         await fulfillJson(route, 200, []);
         return;
       default:
-        if (request.method() === "GET" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/tasks")) {
-          const projectId = url.pathname.split("/")[4];
-          await fulfillJson(route, 200, taskState.filter((task) => task.projectId === projectId));
-          return;
-        }
-
-        if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/") && !url.pathname.includes("/tasks/")) {
-          const projectId = url.pathname.split("/").pop();
-          const projectIndex = projectState.findIndex((candidate) => candidate.id === projectId);
-
-          if (projectIndex === -1) {
-            await fulfillJson(route, 404, { message: `Project not found: ${projectId}` });
-            return;
-          }
-
-          projectState.splice(projectIndex, 1);
-          await fulfillJson(route, 200, null);
-          return;
-        }
-
-        if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/project-1/tasks/")) {
-          const taskId = url.pathname.split("/").pop();
-          const taskIndex = taskState.findIndex((candidate) => candidate.id === taskId);
-
-          if (taskIndex === -1) {
-            await fulfillJson(route, 404, { message: `Task not found: ${taskId}` });
-            return;
-          }
-
-          taskState.splice(taskIndex, 1);
-          await fulfillJson(route, 200, null);
-          return;
-        }
-
-        if (request.method() === "PATCH" && url.pathname.startsWith("/api/v1/projects/project-1/tasks/")) {
-          const taskId = url.pathname.split("/").pop();
-          const task = taskState.find((candidate) => candidate.id === taskId);
-
-          if (!task) {
-            await fulfillJson(route, 404, { message: `Task not found: ${taskId}` });
-            return;
-          }
-
-          if (body?.title) {
-            task.title = body.title;
-          }
-
-          if (body?.status === "todo" || body?.status === "in_progress" || body?.status === "done") {
-            task.status = body.status;
-          }
-
-          task.updatedAt = "2026-03-18T08:05:00.000Z";
-          await fulfillJson(route, 200, task);
-          return;
-        }
-
-        await fulfillJson(route, 404, { message: `Unhandled route: ${key}` });
+        break;
     }
+
+    if (request.method() === "GET" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/lanes")) {
+      const projectId = url.pathname.split("/")[4];
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      }
+
+      syncProject(projectId);
+      await fulfillJson(route, 200, project.laneSummaries);
+      return;
+    }
+
+    if (request.method() === "POST" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/lanes")) {
+      const projectId = url.pathname.split("/")[4];
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      }
+
+      const createdLane: BoardLane = {
+        createdAt: "2026-03-18T08:15:00.000Z",
+        id: `${projectId}-lane-custom-${nextLaneId++}`,
+        name: body?.name ?? "New Lane",
+        position: project.laneSummaries.length,
+        projectId,
+        systemKey: null,
+        taskCount: 0,
+        updatedAt: "2026-03-18T08:15:00.000Z"
+      };
+      project.laneSummaries.push(createdLane);
+      syncProject(projectId);
+      await fulfillJson(route, 201, createdLane);
+      return;
+    }
+
+    if (request.method() === "GET" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/tasks")) {
+      const projectId = url.pathname.split("/")[4];
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      }
+
+      const status = url.searchParams.get("status") as TaskStatus | null;
+      let visibleTasks = sortTasksForProject(projectId);
+
+      if (status) {
+        const lane = project.laneSummaries.find((candidate) => candidate.systemKey === status);
+        visibleTasks = lane ? visibleTasks.filter((task) => task.laneId === lane.id) : [];
+      }
+
+      await fulfillJson(route, 200, visibleTasks);
+      return;
+    }
+
+    if (request.method() === "POST" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/tasks")) {
+      const projectId = url.pathname.split("/")[4];
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project or lane not found." });
+        return;
+      }
+
+      const targetLane =
+        project.laneSummaries.find((lane) => lane.id === body?.laneId) ??
+        project.laneSummaries[0];
+      if (!targetLane) {
+        await fulfillJson(route, 404, { message: "Project or lane not found." });
+        return;
+      }
+
+      const createdTask: Task = {
+        body: body?.body ?? "",
+        createdAt: "2026-03-18T08:00:00.000Z",
+        id: `task-${nextTaskId++}`,
+        laneId: targetLane.id,
+        position: sortTasksForProject(projectId, targetLane.id).length,
+        projectId,
+        status: targetLane.systemKey ?? "todo",
+        title: body?.title ?? "Untitled task",
+        updatedAt: "2026-03-18T08:00:00.000Z"
+      };
+      taskState.push(createdTask);
+      syncProject(projectId);
+      await fulfillJson(route, 201, createdTask);
+      return;
+    }
+
+    if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/") && !url.pathname.includes("/tasks/")) {
+      const projectId = url.pathname.split("/").pop() ?? "";
+      const projectIndex = projectState.findIndex((candidate) => candidate.id === projectId);
+
+      if (projectIndex === -1) {
+        await fulfillJson(route, 404, { message: `Project not found: ${projectId}` });
+        return;
+      }
+
+      projectState.splice(projectIndex, 1);
+      for (let index = taskState.length - 1; index >= 0; index -= 1) {
+        if (taskState[index].projectId === projectId) {
+          taskState.splice(index, 1);
+        }
+      }
+      await fulfillJson(route, 204, null);
+      return;
+    }
+
+    if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.includes("/tasks/")) {
+      const [projectId, taskId] = [url.pathname.split("/")[4], url.pathname.split("/").pop() ?? ""];
+      const taskIndex = taskState.findIndex(
+        (candidate) => candidate.projectId === projectId && candidate.id === taskId
+      );
+
+      if (taskIndex === -1) {
+        await fulfillJson(route, 404, { message: `Task not found: ${taskId}` });
+        return;
+      }
+
+      const [removedTask] = taskState.splice(taskIndex, 1);
+      if (removedTask.laneId) {
+        reindexLane(projectId, removedTask.laneId);
+      }
+      syncProject(projectId);
+      await fulfillJson(route, 204, null);
+      return;
+    }
+
+    if (request.method() === "PATCH" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.includes("/tasks/")) {
+      const [projectId, taskId] = [url.pathname.split("/")[4], url.pathname.split("/").pop() ?? ""];
+      const task = taskState.find((candidate) => candidate.projectId === projectId && candidate.id === taskId);
+      const project = getProject(projectId);
+
+      if (!task || !project) {
+        await fulfillJson(route, 404, { message: `Task or lane not found.` });
+        return;
+      }
+
+      const nextLane =
+        (body?.laneId ? project.laneSummaries.find((lane) => lane.id === body.laneId) : undefined) ??
+        (body?.status ? project.laneSummaries.find((lane) => lane.systemKey === body.status) : undefined) ??
+        project.laneSummaries.find((lane) => lane.id === task.laneId);
+      if (!nextLane) {
+        await fulfillJson(route, 404, { message: `Task or lane not found.` });
+        return;
+      }
+
+      if (body?.laneId !== undefined || body?.position !== undefined || body?.status !== undefined) {
+        moveTask(task, nextLane.id, body?.position ?? sortTasksForProject(projectId, nextLane.id).length);
+      }
+
+      task.body = body?.body ?? task.body;
+      task.title = body?.title ?? task.title;
+      task.status = body?.status ?? nextLane.systemKey ?? task.status;
+      task.updatedAt = "2026-03-18T08:05:00.000Z";
+      syncProject(projectId);
+      await fulfillJson(route, 200, task);
+      return;
+    }
+
+    await fulfillJson(route, 404, { message: `Unhandled route: ${key}` });
   });
 }
 
@@ -255,8 +558,8 @@ test("login screen uses the updated cool accent palette", async ({ page }) => {
 
 test("projects page uses a modal create flow and removes extra board chrome", async ({ page }) => {
   await mockAuthenticated(page, {
-    projects: projectsForGrid,
-    nextProjectId: 5
+    nextProjectId: 5,
+    projects: projectsForGrid
   });
 
   await page.goto("/");
@@ -415,7 +718,7 @@ test("project cards open on click and delete through a confirmation popover", as
   await expect(page.getByRole("heading", { name: "No boards yet." })).toBeVisible();
 });
 
-test("board workspace uses the full available width", async ({ page }) => {
+test("board workspace adds lanes and filters cards front-end only", async ({ page }) => {
   await mockAuthenticated(page);
 
   await page.goto("/projects/project-1");
@@ -427,6 +730,8 @@ test("board workspace uses the full available width", async ({ page }) => {
   await expect(page.locator(".workspace-summary")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Back to projects" })).toHaveCount(0);
   await expect(page.locator(".subnav__current")).toHaveText("Billing cleanup");
+  await expect(page.getByRole("button", { name: "Create Lane" })).toBeVisible();
+  await expect(page.getByLabel("Search cards")).toBeVisible();
 
   const maxWidth = await page.locator(".page-shell--board").evaluate((element) => getComputedStyle(element).maxWidth);
   expect(maxWidth).toBe("none");
@@ -448,6 +753,12 @@ test("board workspace uses the full available width", async ({ page }) => {
     "2026-03-18T07:10:00.000Z"
   );
 
+  await page.getByLabel("Search cards").fill("callback");
+  await expect(page.getByText("Review retry settings")).toBeVisible();
+  await expect(page.getByText("Tighten callback logging")).toBeVisible();
+  await expect(page.getByText("Remove healthcheck loop")).toHaveCount(0);
+  await page.getByLabel("Search cards").fill("");
+
   const todoColumn = page.getByTestId("board-column-todo");
   const todoColumnBox = await todoColumn.boundingBox();
   const todoCardBox = await page.getByTestId("task-card-task-1").boundingBox();
@@ -455,20 +766,24 @@ test("board workspace uses the full available width", async ({ page }) => {
   expect(todoCardBox).not.toBeNull();
   expect(((todoCardBox?.y ?? 0) - (todoColumnBox?.y ?? 0)) / (todoColumnBox?.height ?? 1)).toBeLessThan(0.3);
 
-  const inProgressColumn = page.getByTestId("board-column-in_progress");
-  await inProgressColumn.dblclick();
+  await page.getByRole("button", { name: "Create Lane" }).click();
+  const laneDialog = page.getByRole("dialog", { name: "Create Lane" });
+  await expect(laneDialog).toBeVisible();
+  await laneDialog.getByLabel("Lane name").fill("Ready for QA");
+  await laneDialog.getByRole("button", { exact: true, name: "Create Lane" }).click();
 
-  const laneInput = inProgressColumn.getByLabel("New task title for In Progress");
+  await expect(page.getByRole("heading", { name: "Ready for QA" })).toBeVisible();
+
+  const qaColumn = page.getByRole("heading", { name: "Ready for QA" }).locator("..").locator("..");
+  await qaColumn.dblclick();
+
+  const laneInput = page.getByLabel("New task title for Ready for QA");
   await expect(laneInput).toBeVisible();
   await laneInput.fill("Ship progress note");
   await laneInput.press("Enter");
 
-  await expect(inProgressColumn.getByText("Ship progress note")).toBeVisible();
+  await expect(page.getByText("Ship progress note")).toBeVisible();
 
-  const todoCard = page.getByTestId("task-card-task-1");
-  const doneColumn = page.getByTestId("board-column-done");
-  await todoCard.dragTo(doneColumn);
-  await expect(doneColumn.getByText("Review retry settings")).toBeVisible();
   await expect(page.locator(".column-empty")).toHaveCount(0);
 
   const createdCard = page.getByTestId("task-card-task-4");
