@@ -5,7 +5,7 @@ import type { OidcProvider } from "./oidc.js";
 
 export const testConfig: AppConfig = {
   apiPort: 3000,
-  publicOrigin: "http://localhost:5173",
+  clientUrl: "http://localhost:5173",
   sessionSecret: "12345678901234567890123456789012",
   oidcIssuer: "https://issuer.example.com",
   oidcClientId: "bbtodo-test",

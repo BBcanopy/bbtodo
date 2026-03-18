@@ -62,8 +62,8 @@ const callbackQuerySchema = z.object({
   state: z.string().min(1)
 });
 
-function isSecureCookie(publicOrigin: string) {
-  return new URL(publicOrigin).protocol === "https:";
+function isSecureCookie(clientUrl: string) {
+  return new URL(clientUrl).protocol === "https:";
 }
 
 function parseSignedCookie(
@@ -159,7 +159,7 @@ export function buildApp(options: {
   });
   const database = createDatabase(options.sqlitePath ?? SQLITE_DATABASE_PATH);
   const oidcProvider = options.oidcProvider ?? createOidcProvider(options.config);
-  const secureCookie = isSecureCookie(options.config.publicOrigin);
+  const secureCookie = isSecureCookie(options.config.clientUrl);
 
   app.register(cookie, {
     secret: options.config.sessionSecret
@@ -176,7 +176,7 @@ export function buildApp(options: {
       openapi: "3.1.0",
       servers: [
         {
-          url: options.config.publicOrigin
+          url: options.config.clientUrl
         }
       ]
     },
@@ -256,7 +256,7 @@ export function buildApp(options: {
       }
 
       const callbackUrl = new URL(
-        `${options.config.publicOrigin}/auth/callback?code=${encodeURIComponent(request.query.code)}&state=${encodeURIComponent(request.query.state)}`
+        `${options.config.clientUrl}/auth/callback?code=${encodeURIComponent(request.query.code)}&state=${encodeURIComponent(request.query.state)}`
       );
       const identity = await oidcProvider.completeLogin(callbackUrl, flowState);
       const user = await upsertUser(database.db, identity);

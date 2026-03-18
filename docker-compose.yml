@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     environment:
       API_PORT: ${API_PORT}
-      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN}
+      CLIENT_URL: ${CLIENT_URL}
       SESSION_SECRET: ${SESSION_SECRET}
       OIDC_ISSUER: ${OIDC_ISSUER}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}

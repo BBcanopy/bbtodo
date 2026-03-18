@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const configSchema = z.object({
   apiPort: z.coerce.number().int().positive().default(3000),
-  publicOrigin: z.url(),
+  clientUrl: z.url(),
   sessionSecret: z.string().min(32),
   oidcIssuer: z.url(),
   oidcClientId: z.string().min(1),
@@ -15,7 +15,7 @@ export type AppConfig = z.infer<typeof configSchema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return configSchema.parse({
     apiPort: env.API_PORT,
-    publicOrigin: env.PUBLIC_ORIGIN,
+    clientUrl: env.CLIENT_URL,
     sessionSecret: env.SESSION_SECRET,
     oidcIssuer: env.OIDC_ISSUER,
     oidcClientId: env.OIDC_CLIENT_ID,

@@ -34,7 +34,7 @@ function resolveClientAuthentication(config: AppConfig) {
     return {
       clientMetadata: {
         client_secret: config.oidcClientSecret,
-        redirect_uris: [`${config.publicOrigin}/auth/callback`],
+        redirect_uris: [`${config.clientUrl}/auth/callback`],
         response_types: ["code"]
       },
       clientAuth: oidc.ClientSecretPost(config.oidcClientSecret)
@@ -43,7 +43,7 @@ function resolveClientAuthentication(config: AppConfig) {
 
   return {
     clientMetadata: {
-      redirect_uris: [`${config.publicOrigin}/auth/callback`],
+      redirect_uris: [`${config.clientUrl}/auth/callback`],
       response_types: ["code"],
       token_endpoint_auth_method: "none"
     },
@@ -69,7 +69,7 @@ export function createOidcProvider(config: AppConfig): OidcProvider {
 
       const redirectUrl = oidc.buildAuthorizationUrl(authConfig, {
         response_type: "code",
-        redirect_uri: `${config.publicOrigin}/auth/callback`,
+        redirect_uri: `${config.clientUrl}/auth/callback`,
         scope: config.oidcScopes,
         code_challenge: codeChallenge,
         code_challenge_method: "S256",
@@ -131,4 +131,3 @@ export function createOidcProvider(config: AppConfig): OidcProvider {
     }
   };
 }
-
