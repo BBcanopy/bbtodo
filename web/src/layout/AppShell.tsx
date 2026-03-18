@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link, NavLink, Outlet, useLocation, useMatch } from "react-router-dom";
 
 import { api, type User } from "../api";
 import { getAvatarLetter } from "../app/utils";
@@ -8,8 +8,14 @@ import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
 export function AppShell({ user }: { user: User }) {
   const location = useLocation();
+  const boardMatch = useMatch("/projects/:projectId");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const projectsQuery = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => api.listProjects(),
+    enabled: Boolean(boardMatch)
+  });
   const logoutMutation = useMutation({
     mutationFn: () => api.logout(),
     onSuccess: () => {
@@ -17,6 +23,9 @@ export function AppShell({ user }: { user: User }) {
     }
   });
   const avatarLetter = getAvatarLetter(user);
+  const activeBoard = boardMatch
+    ? projectsQuery.data?.find((project) => project.id === boardMatch.params.projectId)?.name ?? "Board"
+    : null;
 
   useDismissableLayer(isMenuOpen, menuRef, () => setIsMenuOpen(false));
 
@@ -33,6 +42,11 @@ export function AppShell({ user }: { user: User }) {
               <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} end to="/">
                 Projects
               </NavLink>
+              {activeBoard ? (
+                <span className="subnav__current" title={activeBoard}>
+                  {activeBoard}
+                </span>
+              ) : null}
               {location.pathname === "/" ? (
                 <Link className="subnav__action" to="/?createProject=1">
                   <span aria-hidden="true" className="subnav__action-mark">

@@ -232,6 +232,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.getByLabel("Todo 1")).toBeVisible();
   await expect(page.getByLabel("In Progress 1")).toBeVisible();
   await expect(page.getByLabel("Done 1")).toBeVisible();
+  await expect(page.locator(".subnav__current")).toHaveCount(0);
   await expect(page.locator(".topbar__identity")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
   await expect(page.getByLabel("Open account menu")).toHaveText("N");
@@ -274,6 +275,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page).toHaveURL(/\/projects\/project-2$/);
   await expect(page).toHaveTitle("Roadmap review | BBTodo");
   await expect(page.getByTestId("board-grid")).toBeVisible();
+  await expect(page.locator(".subnav__current")).toHaveText("Roadmap review");
 
   await page.getByLabel("Open account menu").click();
 
@@ -359,6 +361,7 @@ test("board workspace uses the full available width", async ({ page }) => {
   await expect(page.locator(".workspace-form")).toHaveCount(0);
   await expect(page.locator(".workspace-summary")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Back to projects" })).toHaveCount(0);
+  await expect(page.locator(".subnav__current")).toHaveText("Billing cleanup");
 
   const maxWidth = await page.locator(".page-shell--board").evaluate((element) => getComputedStyle(element).maxWidth);
   expect(maxWidth).toBe("none");

@@ -335,12 +335,17 @@ h3 {
   background: rgba(16, 32, 34, 0.12);
 }
 
-.subnav__link {
+.subnav__link,
+.subnav__current {
   position: relative;
   padding: 0.55rem 0.02rem 0.7rem;
   border-radius: 0;
-  color: var(--ink-soft);
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.subnav__link {
+  color: var(--ink-soft);
   transition:
     background-color 220ms var(--ease),
     color 220ms var(--ease),
@@ -363,6 +368,24 @@ h3 {
   transition:
     transform 220ms var(--ease),
     opacity 220ms var(--ease);
+}
+
+.subnav__current {
+  max-width: min(24rem, 32vw);
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+}
+
+.subnav__current::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.1rem;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(16, 32, 34, 0.18);
 }
 
 .subnav__link:hover,
