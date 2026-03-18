@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import type { ProjectRecord, TaskRecord, UserRecord } from "./db.js";
+import type {
+  ProjectRecord,
+  ProjectTaskCounts,
+  TaskRecord,
+  UserRecord
+} from "./db.js";
 import { taskStatusValues } from "./db.js";
 
 export const taskStatusSchema = z.enum(taskStatusValues);
@@ -15,11 +20,18 @@ export const meResponseSchema = z.object({
   name: z.string().nullable()
 });
 
+export const taskCountsResponseSchema = z.object({
+  todo: z.number().int().nonnegative(),
+  in_progress: z.number().int().nonnegative(),
+  done: z.number().int().nonnegative()
+});
+
 export const projectResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
   createdAt: z.string(),
-  updatedAt: z.string()
+  updatedAt: z.string(),
+  taskCounts: taskCountsResponseSchema
 });
 
 export const taskResponseSchema = z.object({
@@ -87,6 +99,14 @@ z.globalRegistry.add(taskResponseSchema, { id: "Task" });
 z.globalRegistry.add(apiTokenSummarySchema, { id: "ApiTokenSummary" });
 z.globalRegistry.add(errorResponseSchema, { id: "ErrorResponse" });
 
+function createEmptyTaskCounts(): ProjectTaskCounts {
+  return {
+    todo: 0,
+    in_progress: 0,
+    done: 0
+  };
+}
+
 export function toMeResponse(user: UserRecord) {
   return meResponseSchema.parse({
     email: user.email ?? null,
@@ -95,12 +115,16 @@ export function toMeResponse(user: UserRecord) {
   });
 }
 
-export function toProjectResponse(project: ProjectRecord) {
+export function toProjectResponse(
+  project: ProjectRecord,
+  taskCounts: ProjectTaskCounts = createEmptyTaskCounts()
+) {
   return projectResponseSchema.parse({
     id: project.id,
     name: project.name,
     createdAt: project.createdAt,
-    updatedAt: project.updatedAt
+    updatedAt: project.updatedAt,
+    taskCounts
   });
 }
 

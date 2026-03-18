@@ -417,7 +417,9 @@ export function buildApp(options: {
         return;
       }
 
-      return listProjectsForUser(database.db, user.id).map(toProjectResponse);
+      return listProjectsForUser(database.db, user.id).map((project) =>
+        toProjectResponse(project, project.taskCounts)
+      );
     }
   });
 

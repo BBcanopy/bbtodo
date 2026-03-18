@@ -11,6 +11,11 @@ const projects = [
     createdAt: "2026-03-17T09:00:00.000Z",
     id: "project-1",
     name: "Billing cleanup",
+    taskCounts: {
+      todo: 1,
+      in_progress: 1,
+      done: 1
+    },
     updatedAt: "2026-03-18T07:30:00.000Z"
   }
 ];
@@ -80,6 +85,11 @@ async function mockAuthenticated(page: Page) {
           createdAt: "2026-03-18T08:00:00.000Z",
           id: `project-${nextProjectId++}`,
           name: body?.title ?? body?.name ?? "Untitled board",
+          taskCounts: {
+            todo: 0,
+            in_progress: 0,
+            done: 0
+          },
           updatedAt: "2026-03-18T08:00:00.000Z"
         };
         projectState.unshift(createdProject);
@@ -192,6 +202,9 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.locator(".project-track")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Open board" })).toHaveCount(0);
   await expect(page.getByRole("button", { exact: true, name: "Delete" })).toHaveCount(0);
+  await expect(page.getByLabel("Todo 1")).toBeVisible();
+  await expect(page.getByLabel("In Progress 1")).toBeVisible();
+  await expect(page.getByLabel("Done 1")).toBeVisible();
   await expect(page.locator(".topbar__identity")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
   await expect(page.getByLabel("Open account menu")).toHaveText("N");

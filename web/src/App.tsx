@@ -467,6 +467,18 @@ function ProjectCard({
       <div className="project-card__body">
         <h2>{project.name}</h2>
         <p className="project-card__timestamp">Updated {formatDate(project.updatedAt)}</p>
+        <div aria-label={`Lane counts for ${project.name}`} className="project-card__lane-counts">
+          {columns.map((column) => (
+            <div
+              aria-label={`${column.label} ${project.taskCounts[column.key]}`}
+              className="project-card__lane-pill"
+              key={column.key}
+            >
+              <span>{column.label}</span>
+              <strong>{project.taskCounts[column.key]}</strong>
+            </div>
+          ))}
+        </div>
       </div>
     </article>
   );

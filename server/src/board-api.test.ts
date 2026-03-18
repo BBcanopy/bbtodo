@@ -47,6 +47,11 @@ describe("projects and tasks API", () => {
 
     expect(createProjectResponse.statusCode).toBe(201);
     const project = createProjectResponse.json();
+    expect(project.taskCounts).toEqual({
+      todo: 0,
+      in_progress: 0,
+      done: 0
+    });
 
     const listProjectsResponse = await app.inject({
       method: "GET",
@@ -94,6 +99,26 @@ describe("projects and tasks API", () => {
     expect(updateTaskResponse.json()).toMatchObject({
       id: task.id,
       status: "in_progress"
+    });
+
+    const updatedProjectsResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(updatedProjectsResponse.statusCode).toBe(200);
+    expect(updatedProjectsResponse.json()).toHaveLength(1);
+    expect(updatedProjectsResponse.json()[0]).toMatchObject({
+      id: project.id,
+      name: project.name,
+      taskCounts: {
+        todo: 0,
+        in_progress: 1,
+        done: 0
+      }
     });
 
     const filteredTasksResponse = await app.inject({

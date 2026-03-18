@@ -1,4 +1,5 @@
 export type TaskStatus = "todo" | "in_progress" | "done";
+export type TaskCounts = Record<TaskStatus, number>;
 
 export interface User {
   email: string | null;
@@ -10,6 +11,7 @@ export interface Project {
   createdAt: string;
   id: string;
   name: string;
+  taskCounts: TaskCounts;
   updatedAt: string;
 }
 

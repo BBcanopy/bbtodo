@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import Database from "better-sqlite3";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -114,6 +114,11 @@ export type UserRecord = typeof users.$inferSelect;
 export type ProjectRecord = typeof projects.$inferSelect;
 export type TaskRecord = typeof tasks.$inferSelect;
 export type ApiTokenRecord = typeof apiTokens.$inferSelect;
+export type ProjectTaskCounts = Record<TaskStatus, number>;
+
+export interface ProjectWithTaskCounts extends ProjectRecord {
+  taskCounts: ProjectTaskCounts;
+}
 
 export interface DatabaseServices {
   database: Database.Database;
@@ -382,12 +387,53 @@ export function getUserForApiToken(db: DatabaseClient, rawToken: string) {
 }
 
 export function listProjectsForUser(db: DatabaseClient, userId: string) {
-  return db
+  const projectRows = db
     .select()
     .from(projects)
     .where(eq(projects.userId, userId))
     .orderBy(desc(projects.updatedAt))
     .all();
+
+  if (projectRows.length === 0) {
+    return [];
+  }
+
+  const projectIds = projectRows.map((project) => project.id);
+  const countsByProject = new Map<string, ProjectTaskCounts>(
+    projectIds.map((projectId) => [
+      projectId,
+      {
+        todo: 0,
+        in_progress: 0,
+        done: 0
+      }
+    ])
+  );
+
+  const taskRows = db
+    .select({
+      projectId: tasks.projectId,
+      status: tasks.status
+    })
+    .from(tasks)
+    .where(inArray(tasks.projectId, projectIds))
+    .all();
+
+  for (const task of taskRows) {
+    const counts = countsByProject.get(task.projectId);
+    if (counts) {
+      counts[task.status] += 1;
+    }
+  }
+
+  return projectRows.map((project) => ({
+    ...project,
+    taskCounts: countsByProject.get(project.id) ?? {
+      todo: 0,
+      in_progress: 0,
+      done: 0
+    }
+  }));
 }
 
 export function createProject(db: DatabaseClient, userId: string, name: string) {
