@@ -57,25 +57,35 @@ async function mockUnauthenticated(page: Page) {
 }
 
 async function mockAuthenticated(page: Page) {
+  let nextProjectId = 2;
   let nextTaskId = 4;
+  const projectState = projects.map((project) => ({ ...project }));
   const taskState = tasks.map((task) => ({ ...task }));
 
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
-    const body = request.postDataJSON() as { status?: string; title?: string } | null;
+    const body = request.postDataJSON() as { name?: string; status?: string; title?: string } | null;
 
     switch (key) {
       case "GET /api/v1/me":
         await fulfillJson(route, 200, user);
         return;
       case "GET /api/v1/projects":
-        await fulfillJson(route, 200, projects);
+        await fulfillJson(route, 200, projectState);
         return;
-      case "GET /api/v1/projects/project-1/tasks":
-        await fulfillJson(route, 200, taskState);
+      case "POST /api/v1/projects": {
+        const createdProject = {
+          createdAt: "2026-03-18T08:00:00.000Z",
+          id: `project-${nextProjectId++}`,
+          name: body?.title ?? body?.name ?? "Untitled board",
+          updatedAt: "2026-03-18T08:00:00.000Z"
+        };
+        projectState.unshift(createdProject);
+        await fulfillJson(route, 200, createdProject);
         return;
+      }
       case "POST /api/v1/projects/project-1/tasks": {
         const createdTask = {
           createdAt: "2026-03-18T08:00:00.000Z",
@@ -93,6 +103,26 @@ async function mockAuthenticated(page: Page) {
         await fulfillJson(route, 200, []);
         return;
       default:
+        if (request.method() === "GET" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/tasks")) {
+          const projectId = url.pathname.split("/")[4];
+          await fulfillJson(route, 200, taskState.filter((task) => task.projectId === projectId));
+          return;
+        }
+
+        if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/") && !url.pathname.includes("/tasks/")) {
+          const projectId = url.pathname.split("/").pop();
+          const projectIndex = projectState.findIndex((candidate) => candidate.id === projectId);
+
+          if (projectIndex === -1) {
+            await fulfillJson(route, 404, { message: `Project not found: ${projectId}` });
+            return;
+          }
+
+          projectState.splice(projectIndex, 1);
+          await fulfillJson(route, 200, null);
+          return;
+        }
+
         if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/project-1/tasks/")) {
           const taskId = url.pathname.split("/").pop();
           const taskIndex = taskState.findIndex((candidate) => candidate.id === taskId);
@@ -145,19 +175,36 @@ test("login screen uses the updated cool accent palette", async ({ page }) => {
   expect(accent).toBe("#2f7774");
 });
 
-test("projects page removes the oversized intro section", async ({ page }) => {
+test("projects page uses a modal create flow and removes extra board chrome", async ({ page }) => {
   await mockAuthenticated(page);
 
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Boards" })).toBeVisible();
   await expect(page.locator(".page-intro")).toHaveCount(0);
-  await expect(page.getByLabel("Project name")).toBeVisible();
+  await expect(page.locator(".page-header .eyebrow")).toHaveCount(0);
+  await expect(page.locator(".page-header .page-summary")).toHaveCount(0);
+  await expect(page.locator(".page-shell > .surface-strip")).toHaveCount(0);
+  await expect(page.locator(".page-header__meta .label-chip--soft")).toHaveCount(0);
+  await expect(page.locator(".project-card__summary")).toHaveCount(0);
+  await expect(page.locator(".project-track")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open board" })).toHaveCount(0);
+  await expect(page.getByRole("button", { exact: true, name: "Delete" })).toHaveCount(0);
   await expect(page.locator(".topbar__identity")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
   await expect(page.getByLabel("Open account menu")).toHaveText("N");
   await expect(page.getByRole("menuitem", { name: "Sign out" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "API tokens" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Create board" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Create board" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Project name").fill("Roadmap review");
+  await dialog.getByRole("button", { exact: true, name: "Create board" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/project-2$/);
+  await expect(page.getByTestId("board-grid")).toBeVisible();
 
   await page.getByLabel("Open account menu").click();
 
@@ -166,6 +213,32 @@ test("projects page removes the oversized intro section", async ({ page }) => {
 
   await page.getByRole("menuitem", { name: "API tokens" }).click();
   await expect(page.getByRole("heading", { exact: true, name: "API tokens" })).toBeVisible();
+});
+
+test("project cards open on click and delete through a confirmation popover", async ({ page }) => {
+  await mockAuthenticated(page);
+
+  await page.goto("/");
+
+  const projectCard = page.getByTestId("project-card-project-1");
+  await expect(projectCard).toBeVisible();
+
+  await projectCard.click();
+  await expect(page).toHaveURL(/\/projects\/project-1$/);
+  await expect(page.getByTestId("board-grid")).toBeVisible();
+
+  await page.goto("/");
+
+  const deleteButton = page.getByLabel("Delete board Billing cleanup");
+  await deleteButton.click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(projectCard).toBeVisible();
+
+  await deleteButton.click();
+  await page.getByRole("button", { exact: true, name: "Delete" }).click();
+  await expect(projectCard).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "No boards yet." })).toBeVisible();
 });
 
 test("board workspace uses the full available width", async ({ page }) => {

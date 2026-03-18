@@ -2,7 +2,7 @@ import { startTransition, useEffect, useRef, useState, type CSSProperties } from
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 
-import { api, ApiError, isApiError, type Task, type TaskStatus, type User } from "./api";
+import { api, ApiError, isApiError, type Project, type Task, type TaskStatus, type User } from "./api";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -361,9 +361,122 @@ function AppShell({ user }: { user: User }) {
   );
 }
 
+function ProjectCard({
+  index,
+  onDelete,
+  onOpen,
+  project
+}: {
+  index: number;
+  onDelete: (projectId: string) => void;
+  onOpen: (projectId: string) => void;
+  project: Project;
+}) {
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const confirmRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isConfirmOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!confirmRef.current?.contains(event.target as Node)) {
+        setIsConfirmOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsConfirmOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isConfirmOpen]);
+
+  return (
+    <article
+      className={`project-card${index === 0 ? " project-card--featured" : ""}${isConfirmOpen ? " is-confirm-open" : ""}`}
+      data-testid={`project-card-${project.id}`}
+      onClick={() => onOpen(project.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen(project.id);
+        }
+      }}
+      role="link"
+      style={itemStyle(index)}
+      tabIndex={0}
+    >
+      <div className="project-card__meta">
+        <span className="label-chip">Board {String(index + 1).padStart(2, "0")}</span>
+        <div className="project-card__delete-menu" ref={confirmRef}>
+          <button
+            aria-expanded={isConfirmOpen}
+            aria-label={`Delete board ${project.name}`}
+            className="icon-button danger-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsConfirmOpen((current) => !current);
+            }}
+            type="button"
+          >
+            <span aria-hidden="true">x</span>
+          </button>
+          {isConfirmOpen ? (
+            <div
+              className="task-delete-popover"
+              onClick={(event) => event.stopPropagation()}
+              role="alertdialog"
+            >
+              <p>Delete this board?</p>
+              <div className="task-delete-popover__actions">
+                <button
+                  className="text-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsConfirmOpen(false);
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="ghost-button danger-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsConfirmOpen(false);
+                    onDelete(project.id);
+                  }}
+                  type="button"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <div className="project-card__body">
+        <h2>{project.name}</h2>
+        <p className="project-card__timestamp">Updated {formatDate(project.updatedAt)}</p>
+      </div>
+    </article>
+  );
+}
+
 function ProjectsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const projectsQuery = useQuery({
     queryKey: ["projects"],
@@ -373,6 +486,7 @@ function ProjectsPage() {
   const createProjectMutation = useMutation({
     mutationFn: (projectName: string) => api.createProject(projectName),
     onSuccess: async (project) => {
+      setIsCreateDialogOpen(false);
       setName("");
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       startTransition(() => {
@@ -390,47 +504,101 @@ function ProjectsPage() {
 
   const projectCount = projectsQuery.data?.length ?? 0;
 
+  function closeCreateDialog() {
+    setIsCreateDialogOpen(false);
+    setName("");
+    createProjectMutation.reset();
+  }
+
+  useEffect(() => {
+    if (!isCreateDialogOpen) {
+      return;
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeCreateDialog();
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isCreateDialogOpen]);
+
   return (
     <main className="page-shell">
       <section className="page-header">
         <div className="page-header__copy">
-          <p className="eyebrow">Projects</p>
           <h1 className="page-title">Boards</h1>
-          <p className="page-summary">One board per project, with the same three lanes every time.</p>
         </div>
         <div className="page-header__meta">
           <span className="label-chip">{projectCount} boards</span>
-          <span className="label-chip label-chip--soft">Todo / In Progress / Done</span>
+          <button className="primary-button" onClick={() => setIsCreateDialogOpen(true)} type="button">
+            Create board
+          </button>
         </div>
       </section>
 
-      <section className="surface-strip">
-        <form
-          className="compose-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            createProjectMutation.mutate(name.trim());
-          }}
-        >
-          <label className="field">
-            <span className="field__label">Project name</span>
-            <input
-              maxLength={120}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Billing cleanup"
-              required
-              value={name}
-            />
-            <span className="field__hint">Each project gets one board with fixed Todo, In Progress, and Done lanes.</span>
-          </label>
-          <button className="primary-button" disabled={createProjectMutation.isPending || name.trim().length === 0} type="submit">
-            {createProjectMutation.isPending ? "Creating board..." : "Create board"}
-          </button>
-        </form>
-      </section>
+      {isCreateDialogOpen ? (
+        <div className="dialog-scrim" onClick={() => closeCreateDialog()}>
+          <section
+            aria-labelledby="create-board-title"
+            aria-modal="true"
+            className="dialog-panel"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="dialog-header">
+              <h2 id="create-board-title">Create board</h2>
+              <button
+                aria-label="Close create board dialog"
+                className="icon-button"
+                onClick={() => closeCreateDialog()}
+                type="button"
+              >
+                <span aria-hidden="true">x</span>
+              </button>
+            </div>
+            <form
+              className="dialog-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                createProjectMutation.mutate(name.trim());
+              }}
+            >
+              <label className="field">
+                <span className="field__label">Project name</span>
+                <input
+                  autoFocus
+                  maxLength={120}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Billing cleanup"
+                  required
+                  value={name}
+                />
+              </label>
+              {createProjectMutation.error ? <ErrorBanner error={createProjectMutation.error} /> : null}
+              <div className="dialog-actions">
+                <button className="text-button" onClick={() => closeCreateDialog()} type="button">
+                  Cancel
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={createProjectMutation.isPending || name.trim().length === 0}
+                  type="submit"
+                >
+                  {createProjectMutation.isPending ? "Creating board..." : "Create board"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
 
       {projectsQuery.error ? <ErrorBanner error={projectsQuery.error} /> : null}
-      {createProjectMutation.error ? <ErrorBanner error={createProjectMutation.error} /> : null}
       {deleteProjectMutation.error ? <ErrorBanner error={deleteProjectMutation.error} /> : null}
 
       {projectsQuery.isPending ? <ProjectGridSkeleton /> : null}
@@ -446,33 +614,13 @@ function ProjectsPage() {
       {!projectsQuery.isPending && projectsQuery.data && projectsQuery.data.length > 0 ? (
         <section className="project-grid">
           {projectsQuery.data.map((project, index) => (
-            <article
-              className={`project-card${index === 0 ? " project-card--featured" : ""}`}
+            <ProjectCard
               key={project.id}
-              style={itemStyle(index)}
-            >
-              <div className="project-card__meta">
-                <span className="label-chip">Board {String(index + 1).padStart(2, "0")}</span>
-                <p className="project-card__timestamp">Updated {formatDate(project.updatedAt)}</p>
-              </div>
-              <div className="project-card__body">
-                <h2>{project.name}</h2>
-                <p className="project-card__summary">A steady three-lane board that stays easy to scan as the project changes.</p>
-              </div>
-              <div aria-label="Board columns" className="project-track">
-                <span>Todo</span>
-                <span>In Progress</span>
-                <span>Done</span>
-              </div>
-              <div className="project-card__footer">
-                <Link className="ghost-button" to={`/projects/${project.id}`}>
-                  Open board
-                </Link>
-                <button className="text-button danger-button" onClick={() => deleteProjectMutation.mutate(project.id)} type="button">
-                  Delete
-                </button>
-              </div>
-            </article>
+              index={index}
+              onDelete={(projectId) => deleteProjectMutation.mutate(projectId)}
+              onOpen={(projectId) => navigate(`/projects/${projectId}`)}
+              project={project}
+            />
           ))}
         </section>
       ) : null}
