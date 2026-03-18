@@ -144,9 +144,13 @@ h3 {
   margin: 0 auto;
 }
 
+.page-shell--projects,
 .page-shell--board {
   width: 100%;
   max-width: none;
+}
+
+.page-shell--board {
   min-height: calc(100dvh - 7rem);
 }
 

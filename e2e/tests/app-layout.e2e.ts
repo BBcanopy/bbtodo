@@ -211,7 +211,19 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.getByRole("menuitem", { name: "Sign out" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "API tokens" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Create board" }).click();
+  const projectsMaxWidth = await page.locator(".page-shell--projects").evaluate((element) => getComputedStyle(element).maxWidth);
+  expect(projectsMaxWidth).toBe("none");
+
+  const projectsPageBox = await page.locator(".page-shell--projects").boundingBox();
+  const createBoardButton = page.getByRole("button", { name: "Create board" });
+  const createBoardButtonBox = await createBoardButton.boundingBox();
+  const viewportWidth = page.viewportSize()?.width ?? 0;
+  expect(projectsPageBox).not.toBeNull();
+  expect((projectsPageBox?.width ?? 0)).toBeGreaterThan(viewportWidth - 80);
+  expect(createBoardButtonBox).not.toBeNull();
+  expect((createBoardButtonBox?.x ?? 0) + (createBoardButtonBox?.width ?? 0)).toBeGreaterThan(viewportWidth - 80);
+
+  await createBoardButton.click();
 
   const dialog = page.getByRole("dialog", { name: "Create board" });
   await expect(dialog).toBeVisible();

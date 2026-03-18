@@ -538,7 +538,7 @@ function ProjectsPage() {
   }, [isCreateDialogOpen]);
 
   return (
-    <main className="page-shell">
+    <main className="page-shell page-shell--projects">
       <section className="page-header">
         <div className="page-header__copy">
           <h1 className="page-title">Boards</h1>
