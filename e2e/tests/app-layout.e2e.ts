@@ -213,9 +213,13 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.getByRole("menuitem", { name: "API tokens" })).toHaveCount(0);
   const topbar = page.locator(".topbar");
   const topbarHeight = await topbar.evaluate((element) => parseFloat(getComputedStyle(element).height));
-  const subnavBackground = await page.locator(".subnav").evaluate((element) => getComputedStyle(element).backgroundColor);
+  const topbarBackground = await topbar.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const activeSubnavRadius = await page
+    .locator(".subnav__link.is-active")
+    .evaluate((element) => getComputedStyle(element).borderRadius);
   expect(topbarHeight).toBeLessThan(90);
-  expect(subnavBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(topbarBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(activeSubnavRadius).toBe("0px");
 
   const projectsMaxWidth = await page.locator(".page-shell--projects").evaluate((element) => getComputedStyle(element).maxWidth);
   expect(projectsMaxWidth).toBe("none");
