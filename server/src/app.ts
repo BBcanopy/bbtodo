@@ -59,7 +59,8 @@ const SESSION_COOKIE = "bbtodo_session";
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const callbackQuerySchema = z.object({
   code: z.string().min(1),
-  state: z.string().min(1)
+  state: z.string().min(1),
+  iss: z.url().optional()
 });
 
 function isSecureCookie(clientUrl: string) {
@@ -256,7 +257,8 @@ export function buildApp(options: {
       }
 
       const callbackUrl = new URL(
-        `${options.config.clientUrl}/auth/callback?code=${encodeURIComponent(request.query.code)}&state=${encodeURIComponent(request.query.state)}`
+        request.raw.url ?? request.url,
+        options.config.clientUrl
       );
       const identity = await oidcProvider.completeLogin(callbackUrl, flowState);
       const user = await upsertUser(database.db, identity);

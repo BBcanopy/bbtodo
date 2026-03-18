@@ -35,7 +35,7 @@ export function createMutableMockOidcProvider(initialIdentity: TestIdentity) {
     async completeLogin(callbackUrl, flowState) {
       if (
         callbackUrl.toString() !==
-        "http://localhost:5173/auth/callback?code=auth-code&state=test-state"
+        "http://localhost:5173/auth/callback?code=auth-code&state=test-state&iss=https%3A%2F%2Fissuer.example.com"
       ) {
         throw new Error(`Unexpected callback URL: ${callbackUrl.toString()}`);
       }
@@ -80,7 +80,7 @@ export async function loginWithOidc(app: FastifyInstance) {
 
   const callbackResponse = await app.inject({
     method: "GET",
-    url: "/auth/callback?code=auth-code&state=test-state",
+    url: `/auth/callback?code=auth-code&state=test-state&iss=${encodeURIComponent(testConfig.oidcIssuer)}`,
     cookies: {
       bbtodo_oidc: transactionCookie.value
     }
