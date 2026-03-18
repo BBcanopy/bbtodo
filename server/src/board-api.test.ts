@@ -27,7 +27,8 @@ describe("projects and tasks API", () => {
     });
     const app = buildApp({
       config: testConfig,
-      oidcProvider: oidc.provider
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
     });
     createdApps.push(app);
 
@@ -150,7 +151,8 @@ describe("projects and tasks API", () => {
     });
     const app = buildApp({
       config: testConfig,
-      oidcProvider: oidc.provider
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
     });
     createdApps.push(app);
 

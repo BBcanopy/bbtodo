@@ -27,7 +27,8 @@ describe("API tokens", () => {
     });
     const app = buildApp({
       config: testConfig,
-      oidcProvider: oidc.provider
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
     });
     createdApps.push(app);
 

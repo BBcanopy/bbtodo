@@ -9,7 +9,6 @@ export const testConfig: AppConfig = {
   publicOrigin: "http://localhost:5173",
   sessionSecret: "12345678901234567890123456789012",
   sessionTtlHours: 168,
-  sqlitePath: ":memory:",
   oidcIssuer: "https://issuer.example.com",
   oidcClientId: "bbtodo-test",
   oidcClientSecret: "top-secret",

@@ -18,6 +18,8 @@
 
 The frontend uses `API_ORIGIN` in development so `/api`, `/auth`, `/docs`, and `/health` requests can proxy to the API.
 
+The server stores SQLite at the fixed path `/data/bbtodo.sqlite`. For containerized deployments, mount `/data` to persist the database file.
+
 ## API highlights
 
 - Browser auth:
@@ -50,7 +52,7 @@ Run the full stack with:
 docker compose up --build
 ```
 
-The compose stack exposes the web app on `http://localhost:8080` and stores SQLite data in the `bbtodo_sqlite` named volume.
+The compose stack exposes the web app on `http://localhost:8080` and stores SQLite data at `/data/bbtodo.sqlite` inside the `bbtodo_sqlite` named volume. If you deploy without Compose, mount `/data` yourself.
 
 ## Tests
 

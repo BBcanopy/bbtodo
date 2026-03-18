@@ -32,6 +32,7 @@ import {
 } from "./api-schemas.js";
 import type { AppConfig } from "./config.js";
 import {
+  SQLITE_DATABASE_PATH,
   type DatabaseClient,
   createApiToken,
   createDatabase,
@@ -150,11 +151,12 @@ async function requireApiUser(
 export function buildApp(options: {
   config: AppConfig;
   oidcProvider?: OidcProvider;
+  sqlitePath?: string;
 }) {
   const app = Fastify({
     logger: true
   });
-  const database = createDatabase(options.config.sqlitePath);
+  const database = createDatabase(options.sqlitePath ?? SQLITE_DATABASE_PATH);
   const oidcProvider = options.oidcProvider ?? createOidcProvider(options.config);
   const secureCookie = isSecureCookie(options.config.publicOrigin);
 

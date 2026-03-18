@@ -1,9 +1,13 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 import Database from "better-sqlite3";
 import { and, desc, eq } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+export const SQLITE_DATABASE_PATH = "/data/bbtodo.sqlite";
 
 const timestamps = {
   createdAt: text("created_at").notNull(),
@@ -117,6 +121,10 @@ export interface DatabaseServices {
 }
 
 export function createDatabase(sqlitePath: string): DatabaseServices {
+  if (sqlitePath !== ":memory:") {
+    mkdirSync(dirname(sqlitePath), { recursive: true });
+  }
+
   const database = new Database(sqlitePath);
   database.pragma("foreign_keys = ON");
   database.exec(`
