@@ -13,10 +13,10 @@ const queryClient = new QueryClient({
   }
 });
 
-const columns: Array<{ key: TaskStatus; label: string; note: string }> = [
-  { key: "todo", label: "Todo", note: "Queued and ready to pick up" },
-  { key: "in_progress", label: "In Progress", note: "Active work with clear focus" },
-  { key: "done", label: "Done", note: "Finished and ready to clear out" }
+const columns: Array<{ key: TaskStatus; label: string }> = [
+  { key: "todo", label: "Todo" },
+  { key: "in_progress", label: "In Progress" },
+  { key: "done", label: "Done" }
 ];
 
 const loginPreview: Record<TaskStatus, string[]> = {
@@ -584,7 +584,6 @@ function BoardPage() {
             <div className="board-column" key={column.key} style={itemStyle(columnIndex)}>
               <div className="board-column__header">
                 <div>
-                  <p className="board-column__note">{column.note}</p>
                   <h2>{column.label}</h2>
                 </div>
                 <span>{column.tasks.length}</span>

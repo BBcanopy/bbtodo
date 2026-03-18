@@ -248,8 +248,7 @@ h3 {
 }
 
 .topbar__label,
-.eyebrow,
-.board-column__note {
+.eyebrow {
   font-size: 0.72rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -259,8 +258,7 @@ h3 {
   color: var(--accent-strong);
 }
 
-.topbar__label,
-.board-column__note {
+.topbar__label {
   color: var(--ink-soft);
 }
 

@@ -120,4 +120,5 @@ test("board workspace uses the full available width", async ({ page }) => {
   expect(boardBox?.width ?? 0).toBeGreaterThan(viewportWidth - 80);
 
   await expect(page.locator(".board-column")).toHaveCount(3);
+  await expect(page.locator(".board-column__note")).toHaveCount(0);
 });
