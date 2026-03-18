@@ -205,11 +205,18 @@ h3 {
 }
 
 .topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 1rem;
-  padding: 1rem 1.1rem;
+  padding: 0.8rem 0.95rem;
+  border-color: rgba(16, 32, 34, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.68)),
+    rgba(255, 255, 255, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 16px 30px -26px rgba(18, 34, 36, 0.32);
 }
 
 .topbar__nav,
@@ -238,6 +245,10 @@ h3 {
   gap: 0.9rem;
 }
 
+.topbar__nav {
+  min-width: 0;
+}
+
 .topbar__meta {
   justify-content: flex-end;
   position: relative;
@@ -262,7 +273,7 @@ h3 {
   display: inline-grid;
   grid-template-columns: auto auto;
   align-items: center;
-  gap: 0.8rem;
+  gap: 0.65rem;
   font-weight: 700;
   letter-spacing: -0.03em;
 }
@@ -270,42 +281,45 @@ h3 {
 .brand-mark__pill {
   display: inline-grid;
   place-items: center;
-  width: 2.55rem;
-  height: 2.55rem;
-  border-radius: 0.95rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 0.8rem;
   background: linear-gradient(145deg, #3a8c88 0%, #235e5b 100%);
   color: #f5fffe;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
 }
 
 .brand-mark__text {
-  font-size: 1.12rem;
+  font-size: 1.02rem;
+  line-height: 1;
 }
 
 .subnav {
   display: flex;
-  gap: 0.3rem;
-  padding: 0.22rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.52);
+  gap: 0.2rem;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .subnav__link {
-  padding: 0.68rem 0.95rem;
-  border-radius: 999px;
+  padding: 0.55rem 0.78rem;
+  border-radius: 0.85rem;
   color: var(--ink-soft);
   font-weight: 600;
   transition:
     background-color 220ms var(--ease),
     color 220ms var(--ease),
-    transform 220ms var(--ease);
+    transform 220ms var(--ease),
+    box-shadow 220ms var(--ease);
 }
 
 .subnav__link:hover,
 .subnav__link.is-active {
-  background: var(--accent-soft);
+  background: rgba(255, 255, 255, 0.76);
   color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
 .hero-panel,
@@ -550,8 +564,8 @@ input:focus {
 .avatar-button {
   display: inline-grid;
   place-items: center;
-  width: 3rem;
-  height: 3rem;
+  width: 2.65rem;
+  height: 2.65rem;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -580,7 +594,7 @@ input:focus {
 }
 
 .avatar-button__letter {
-  font-size: 1rem;
+  font-size: 0.94rem;
   font-weight: 700;
   letter-spacing: -0.03em;
 }
