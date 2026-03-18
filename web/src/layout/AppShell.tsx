@@ -7,15 +7,13 @@ import { getAvatarLetter } from "../app/utils";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
 export function AppShell({ user }: { user: User }) {
-  const queryClient = useQueryClient();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const logoutMutation = useMutation({
     mutationFn: () => api.logout(),
     onSuccess: () => {
-      queryClient.clear();
-      void queryClient.invalidateQueries({ queryKey: ["me"] });
+      window.location.replace("/");
     }
   });
   const avatarLetter = getAvatarLetter(user);

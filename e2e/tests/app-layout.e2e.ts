@@ -64,8 +64,14 @@ async function mockUnauthenticated(page: Page) {
 async function mockAuthenticated(page: Page) {
   let nextProjectId = 2;
   let nextTaskId = 4;
+  let isAuthenticated = true;
   const projectState = projects.map((project) => ({ ...project }));
   const taskState = tasks.map((task) => ({ ...task }));
+
+  await page.route("**/auth/logout", async (route) => {
+    isAuthenticated = false;
+    await fulfillJson(route, 200, null);
+  });
 
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -75,6 +81,11 @@ async function mockAuthenticated(page: Page) {
 
     switch (key) {
       case "GET /api/v1/me":
+        if (!isAuthenticated) {
+          await fulfillJson(route, 401, { message: "Unauthorized" });
+          return;
+        }
+
         await fulfillJson(route, 200, user);
         return;
       case "GET /api/v1/projects":
@@ -269,6 +280,19 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   expect(tokenInputBox).not.toBeNull();
   expect(Math.abs((tokenLabelBox?.y ?? 0) - (tokenInputBox?.y ?? 0))).toBeLessThan(24);
   expect((tokenInputBox?.x ?? 0)).toBeGreaterThan((tokenLabelBox?.x ?? 0) + 20);
+});
+
+test("sign out redirects back to the login screen", async ({ page }) => {
+  await mockAuthenticated(page);
+
+  await page.goto("/");
+
+  await page.getByLabel("Open account menu").click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+
+  await expect(page).toHaveURL("/");
+  await expect(page).toHaveTitle("BBTodo");
+  await expect(page.getByRole("heading", { name: "Simple boards for work that should stay clear." })).toBeVisible();
 });
 
 test("project cards open on click and delete through a confirmation popover", async ({ page }) => {
