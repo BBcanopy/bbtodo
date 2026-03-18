@@ -16,7 +16,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY wait-for-server.sh /wait-for-server.sh
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-RUN chmod +x /wait-for-server.sh
+RUN sed -i 's/\r$//' /wait-for-server.sh && chmod +x /wait-for-server.sh
 
 EXPOSE 80
 

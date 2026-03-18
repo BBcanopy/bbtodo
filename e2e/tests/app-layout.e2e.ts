@@ -20,6 +20,43 @@ const projects = [
   }
 ];
 
+const projectsForGrid = [
+  ...projects,
+  {
+    createdAt: "2026-03-17T10:00:00.000Z",
+    id: "project-2",
+    name: "Roadmap review",
+    taskCounts: {
+      todo: 0,
+      in_progress: 0,
+      done: 0
+    },
+    updatedAt: "2026-03-18T08:10:00.000Z"
+  },
+  {
+    createdAt: "2026-03-17T11:00:00.000Z",
+    id: "project-3",
+    name: "Release prep",
+    taskCounts: {
+      todo: 2,
+      in_progress: 1,
+      done: 0
+    },
+    updatedAt: "2026-03-18T08:20:00.000Z"
+  },
+  {
+    createdAt: "2026-03-17T12:00:00.000Z",
+    id: "project-4",
+    name: "Customer follow-up",
+    taskCounts: {
+      todo: 1,
+      in_progress: 0,
+      done: 3
+    },
+    updatedAt: "2026-03-18T08:30:00.000Z"
+  }
+];
+
 const tasks = [
   {
     createdAt: "2026-03-18T07:00:00.000Z",
@@ -61,11 +98,23 @@ async function mockUnauthenticated(page: Page) {
   });
 }
 
-async function mockAuthenticated(page: Page) {
-  let nextProjectId = 2;
+async function mockAuthenticated(
+  page: Page,
+  options?: {
+    projects?: typeof projects;
+    nextProjectId?: number;
+  }
+) {
+  let nextProjectId = options?.nextProjectId ?? 2;
   let nextTaskId = 4;
-  const projectState = projects.map((project) => ({ ...project }));
+  let isAuthenticated = true;
+  const projectState = (options?.projects ?? projects).map((project) => ({ ...project }));
   const taskState = tasks.map((task) => ({ ...task }));
+
+  await page.route("**/auth/logout", async (route) => {
+    isAuthenticated = false;
+    await fulfillJson(route, 200, null);
+  });
 
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -75,6 +124,11 @@ async function mockAuthenticated(page: Page) {
 
     switch (key) {
       case "GET /api/v1/me":
+        if (!isAuthenticated) {
+          await fulfillJson(route, 401, { message: "Unauthorized" });
+          return;
+        }
+
         await fulfillJson(route, 200, user);
         return;
       case "GET /api/v1/projects":
@@ -179,18 +233,37 @@ test("login screen uses the updated cool accent palette", async ({ page }) => {
 
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Simple boards for work that should stay clear." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "BBTodo" })).toBeVisible();
+  await expect(page.locator(".hero-panel__brand .eyebrow")).toHaveCount(0);
+  await expect(page.locator(".preview-panel")).toHaveCount(0);
+  await expect(page.locator(".metric-ribbon")).toHaveCount(0);
+  await expect(page.getByText("Live shape")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign in with OIDC" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Read API docs" })).toBeVisible();
+  const loginPanelBox = await page.locator(".hero-panel--simple").boundingBox();
+  const viewport = page.viewportSize();
+  expect(loginPanelBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  const panelCenterX = (loginPanelBox?.x ?? 0) + (loginPanelBox?.width ?? 0) / 2;
+  const viewportCenterX = (viewport?.width ?? 0) / 2;
+  expect(Math.abs(panelCenterX - viewportCenterX)).toBeLessThan(20);
+  expect((loginPanelBox?.width ?? 0) / (viewport?.width ?? 1)).toBeGreaterThan(0.45);
 
   const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
   expect(accent).toBe("#2f7774");
 });
 
 test("projects page uses a modal create flow and removes extra board chrome", async ({ page }) => {
-  await mockAuthenticated(page);
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    nextProjectId: 5
+  });
 
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Boards" })).toBeVisible();
+  await expect(page).toHaveTitle("Projects | BBTodo");
+  await expect(page.getByRole("heading", { name: "Boards" })).toHaveCount(0);
+  await expect(page.locator(".page-shell--projects .page-header")).toHaveCount(0);
   await expect(page.locator(".page-intro")).toHaveCount(0);
   await expect(page.locator(".page-header .eyebrow")).toHaveCount(0);
   await expect(page.locator(".page-header .page-summary")).toHaveCount(0);
@@ -202,36 +275,72 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.locator(".project-track")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Open board" })).toHaveCount(0);
   await expect(page.getByRole("button", { exact: true, name: "Delete" })).toHaveCount(0);
-  await expect(page.getByLabel("Todo 1")).toBeVisible();
-  await expect(page.getByLabel("In Progress 1")).toBeVisible();
-  await expect(page.getByLabel("Done 1")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-1").getByLabel("Todo 1")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-1").getByLabel("In Progress 1")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-1").getByLabel("Done 1")).toBeVisible();
+  await expect(page.locator(".subnav__current")).toHaveCount(0);
   await expect(page.locator(".topbar__identity")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
   await expect(page.getByLabel("Open account menu")).toHaveText("N");
   await expect(page.getByRole("menuitem", { name: "Sign out" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "API tokens" })).toHaveCount(0);
+  const topbar = page.locator(".topbar");
+  const topbarHeight = await topbar.evaluate((element) => parseFloat(getComputedStyle(element).height));
+  const topbarBackground = await topbar.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const activeSubnavRadius = await page
+    .locator(".subnav__link.is-active")
+    .evaluate((element) => getComputedStyle(element).borderRadius);
+  expect(topbarHeight).toBeLessThan(90);
+  expect(topbarBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(activeSubnavRadius).toBe("0px");
 
   const projectsMaxWidth = await page.locator(".page-shell--projects").evaluate((element) => getComputedStyle(element).maxWidth);
   expect(projectsMaxWidth).toBe("none");
 
   const projectsPageBox = await page.locator(".page-shell--projects").boundingBox();
-  const createBoardButton = page.getByRole("button", { name: "Create board" });
-  const createBoardButtonBox = await createBoardButton.boundingBox();
+  const createProjectLink = page.getByRole("link", { name: "Create Project" });
+  const createProjectLinkBox = await createProjectLink.boundingBox();
+  const createProjectBackground = await createProjectLink.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const createProjectHeight = await createProjectLink.evaluate((element) => parseFloat(getComputedStyle(element).height));
+  const projectGridBox = await page.locator(".project-grid").boundingBox();
+  const firstCard = page.getByTestId("project-card-project-1");
+  const secondCard = page.getByTestId("project-card-project-2");
+  const thirdCard = page.getByTestId("project-card-project-3");
+  const firstCardBox = await firstCard.boundingBox();
+  const secondCardBox = await secondCard.boundingBox();
+  const thirdCardBox = await thirdCard.boundingBox();
   const viewportWidth = page.viewportSize()?.width ?? 0;
   expect(projectsPageBox).not.toBeNull();
   expect((projectsPageBox?.width ?? 0)).toBeGreaterThan(viewportWidth - 80);
-  expect(createBoardButtonBox).not.toBeNull();
-  expect((createBoardButtonBox?.x ?? 0) + (createBoardButtonBox?.width ?? 0)).toBeGreaterThan(viewportWidth - 80);
+  expect(projectGridBox).not.toBeNull();
+  expect(firstCardBox).not.toBeNull();
+  expect(secondCardBox).not.toBeNull();
+  expect(thirdCardBox).not.toBeNull();
+  expect((firstCardBox?.x ?? 0) - (projectGridBox?.x ?? 0)).toBeLessThan(24);
+  expect((firstCardBox?.y ?? 0) - (projectGridBox?.y ?? 0)).toBeLessThan(24);
+  expect(Math.abs((firstCardBox?.width ?? 0) - (secondCardBox?.width ?? 0))).toBeLessThan(2);
+  expect(Math.abs((firstCardBox?.width ?? 0) - (thirdCardBox?.width ?? 0))).toBeLessThan(2);
+  expect(Math.abs((firstCardBox?.height ?? 0) - (secondCardBox?.height ?? 0))).toBeLessThan(2);
+  expect(Math.abs((firstCardBox?.height ?? 0) - (thirdCardBox?.height ?? 0))).toBeLessThan(2);
+  expect(Math.abs((firstCardBox?.y ?? 0) - (secondCardBox?.y ?? 0))).toBeLessThan(16);
+  expect((secondCardBox?.x ?? 0) - ((firstCardBox?.x ?? 0) + (firstCardBox?.width ?? 0))).toBeLessThan(32);
+  expect(createProjectLinkBox).not.toBeNull();
+  expect((createProjectLinkBox?.x ?? 0)).toBeGreaterThan(120);
+  expect(createProjectBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(createProjectHeight).toBeLessThan(36);
+  await expect(page.locator(".subnav__action-mark")).toHaveText("+");
 
-  await createBoardButton.click();
+  await createProjectLink.click();
 
-  const dialog = page.getByRole("dialog", { name: "Create board" });
+  const dialog = page.getByRole("dialog", { name: "Create Project" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Project name").fill("Roadmap review");
-  await dialog.getByRole("button", { exact: true, name: "Create board" }).click();
+  await dialog.getByRole("button", { exact: true, name: "Create Project" }).click();
 
-  await expect(page).toHaveURL(/\/projects\/project-2$/);
+  await expect(page).toHaveURL(/\/projects\/project-5$/);
+  await expect(page).toHaveTitle("Roadmap review | BBTodo");
   await expect(page.getByTestId("board-grid")).toBeVisible();
+  await expect(page.locator(".subnav__current")).toHaveText("Roadmap review");
 
   await page.getByLabel("Open account menu").click();
 
@@ -239,7 +348,32 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.getByRole("menuitem", { name: "Sign out" })).toBeVisible();
 
   await page.getByRole("menuitem", { name: "API tokens" }).click();
+  await expect(page).toHaveTitle("API Tokens | BBTodo");
   await expect(page.getByRole("heading", { exact: true, name: "API tokens" })).toBeVisible();
+  await expect(page.locator(".page-header .eyebrow")).toHaveCount(0);
+  await expect(page.locator(".page-header .page-summary")).toHaveCount(0);
+  await expect(page.locator(".page-header .label-chip--soft")).toHaveCount(0);
+  await expect(page.locator(".field__hint")).toHaveCount(0);
+  await expect(page.locator(".empty-state .lead-copy")).toHaveCount(0);
+  const tokenLabelBox = await page.locator(".compose-form .field__label").boundingBox();
+  const tokenInputBox = await page.locator(".compose-form input").boundingBox();
+  expect(tokenLabelBox).not.toBeNull();
+  expect(tokenInputBox).not.toBeNull();
+  expect(Math.abs((tokenLabelBox?.y ?? 0) - (tokenInputBox?.y ?? 0))).toBeLessThan(24);
+  expect((tokenInputBox?.x ?? 0)).toBeGreaterThan((tokenLabelBox?.x ?? 0) + 20);
+});
+
+test("sign out redirects back to the login screen", async ({ page }) => {
+  await mockAuthenticated(page);
+
+  await page.goto("/");
+
+  await page.getByLabel("Open account menu").click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+
+  await expect(page).toHaveURL("/");
+  await expect(page).toHaveTitle("BBTodo");
+  await expect(page.getByRole("heading", { name: "BBTodo" })).toBeVisible();
 });
 
 test("project cards open on click and delete through a confirmation popover", async ({ page }) => {
@@ -252,10 +386,16 @@ test("project cards open on click and delete through a confirmation popover", as
   const projectTitle = projectCard.getByRole("heading", { name: "Billing cleanup" });
   const projectCardBox = await projectCard.boundingBox();
   const projectTitleBox = await projectTitle.boundingBox();
+  const projectTimestamp = projectCard.locator(".project-card__timestamp");
+  const projectTimestampBox = await projectTimestamp.boundingBox();
   expect(projectCardBox).not.toBeNull();
   expect(projectTitleBox).not.toBeNull();
+  expect(projectTimestampBox).not.toBeNull();
   expect(projectCardBox?.width ?? 0).toBeLessThan(700);
   expect(((projectTitleBox?.y ?? 0) - (projectCardBox?.y ?? 0)) / (projectCardBox?.height ?? 1)).toBeLessThan(0.28);
+  await expect(projectTimestamp).toHaveText("2026-03-18");
+  await expect(projectTimestamp).toHaveAttribute("datetime", "2026-03-18T07:30:00.000Z");
+  expect(((projectTimestampBox?.y ?? 0) - (projectCardBox?.y ?? 0)) / (projectCardBox?.height ?? 1)).toBeGreaterThan(0.72);
 
   await projectCard.click();
   await expect(page).toHaveURL(/\/projects\/project-1$/);
@@ -280,11 +420,13 @@ test("board workspace uses the full available width", async ({ page }) => {
 
   await page.goto("/projects/project-1");
 
+  await expect(page).toHaveTitle("Billing cleanup | BBTodo");
   await expect(page.locator(".page-intro")).toHaveCount(0);
   await expect(page.locator(".workspace-header")).toHaveCount(0);
   await expect(page.locator(".workspace-form")).toHaveCount(0);
   await expect(page.locator(".workspace-summary")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Back to projects" })).toHaveCount(0);
+  await expect(page.locator(".subnav__current")).toHaveText("Billing cleanup");
 
   const maxWidth = await page.locator(".page-shell--board").evaluate((element) => getComputedStyle(element).maxWidth);
   expect(maxWidth).toBe("none");
@@ -299,6 +441,12 @@ test("board workspace uses the full available width", async ({ page }) => {
   await expect(page.locator(".board-column__note")).toHaveCount(0);
   await expect(page.locator(".board-column__header > span")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Move to / })).toHaveCount(0);
+  await expect(page.getByTestId("task-card-task-1").locator(".label-chip")).toHaveCount(0);
+  await expect(page.getByTestId("task-card-task-1").locator(".task-card__timestamp")).toHaveText("2026-03-18");
+  await expect(page.getByTestId("task-card-task-1").locator(".task-card__timestamp")).toHaveAttribute(
+    "datetime",
+    "2026-03-18T07:10:00.000Z"
+  );
 
   const todoColumn = page.getByTestId("board-column-todo");
   const todoColumnBox = await todoColumn.boundingBox();
