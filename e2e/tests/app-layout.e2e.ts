@@ -190,6 +190,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
 
   await page.goto("/");
 
+  await expect(page).toHaveTitle("Projects | BBTodo");
   await expect(page.getByRole("heading", { name: "Boards" })).toBeVisible();
   await expect(page.locator(".page-intro")).toHaveCount(0);
   await expect(page.locator(".page-header .eyebrow")).toHaveCount(0);
@@ -231,6 +232,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await dialog.getByRole("button", { exact: true, name: "Create board" }).click();
 
   await expect(page).toHaveURL(/\/projects\/project-2$/);
+  await expect(page).toHaveTitle("Roadmap review | BBTodo");
   await expect(page.getByTestId("board-grid")).toBeVisible();
 
   await page.getByLabel("Open account menu").click();
@@ -280,6 +282,7 @@ test("board workspace uses the full available width", async ({ page }) => {
 
   await page.goto("/projects/project-1");
 
+  await expect(page).toHaveTitle("Billing cleanup | BBTodo");
   await expect(page.locator(".page-intro")).toHaveCount(0);
   await expect(page.locator(".workspace-header")).toHaveCount(0);
   await expect(page.locator(".workspace-form")).toHaveCount(0);

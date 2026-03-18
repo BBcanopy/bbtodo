@@ -13,6 +13,8 @@ const queryClient = new QueryClient({
   }
 });
 
+const appTitle = "BBTodo";
+
 const columns: Array<{ key: TaskStatus; label: string }> = [
   { key: "todo", label: "Todo" },
   { key: "in_progress", label: "In Progress" },
@@ -65,6 +67,12 @@ function getAvatarLetter(user: User) {
 
 function getTaskInputLabel(columnLabel: string) {
   return `New task title for ${columnLabel}`;
+}
+
+function useDocumentTitle(title?: string) {
+  useEffect(() => {
+    document.title = title ? `${title} | ${appTitle}` : appTitle;
+  }, [title]);
 }
 
 function MetricRibbon({ items }: { items: Array<{ label: string; value: string }> }) {
@@ -194,6 +202,8 @@ function LoadingState() {
 }
 
 function LoginScreen() {
+  useDocumentTitle();
+
   return (
     <main className="landing-shell">
       <section className="landing-panel">
@@ -485,6 +495,8 @@ function ProjectCard({
 }
 
 function ProjectsPage() {
+  useDocumentTitle("Projects");
+
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -790,6 +802,7 @@ function BoardPage() {
   });
 
   const project = projectsQuery.data?.find((candidate) => candidate.id === projectId);
+  useDocumentTitle(project?.name ?? "Board");
   const tasks = tasksQuery.data ?? [];
   const draggedTask = draggedTaskId ? tasks.find((task) => task.id === draggedTaskId) ?? null : null;
   const groupedTasks = columns.map((column) => ({
@@ -953,6 +966,8 @@ function BoardPage() {
 }
 
 function ApiTokensPage() {
+  useDocumentTitle("API Tokens");
+
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
