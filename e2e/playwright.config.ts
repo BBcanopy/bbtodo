@@ -6,10 +6,10 @@ const devCommand =
     ? "npm.cmd run dev -- --host 127.0.0.1 --port 4173"
     : "npm run dev -- --host 127.0.0.1 --port 4173";
 
-const cwd = fileURLToPath(new URL(".", import.meta.url));
+const webCwd = fileURLToPath(new URL("../web/", import.meta.url));
 
 export default defineConfig({
-  testDir: "./e2e",
+  testDir: "./tests",
   testMatch: "**/*.e2e.ts",
   timeout: 30_000,
   fullyParallel: false,
@@ -20,7 +20,7 @@ export default defineConfig({
   },
   webServer: {
     command: devCommand,
-    cwd,
+    cwd: webCwd,
     port: 4173,
     reuseExistingServer: !process.env.CI
   },

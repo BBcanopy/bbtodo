@@ -12,9 +12,10 @@
 1. Copy `.env.example` to `.env` and fill in your OIDC settings.
 2. Install server dependencies with `cd server && npm install`.
 3. Install web dependencies with `cd web && npm install`.
-4. Run the server with `cd server && npm run dev`.
-5. Run the web app with `cd web && npm run dev`.
-6. Open `http://localhost:5173` for Vite development or `http://localhost:8080` when using Docker Compose.
+4. Install end-to-end test dependencies with `cd e2e && npm install` if you want to run Playwright.
+5. Run the server with `cd server && npm run dev`.
+6. Run the web app with `cd web && npm run dev`.
+7. Open `http://localhost:5173` for Vite development or `http://localhost:8080` when using Docker Compose.
 
 The frontend uses `API_ORIGIN` in development so `/api`, `/auth`, `/docs`, and `/health` requests can proxy to the API.
 
@@ -68,4 +69,5 @@ Run builds and tests from each package:
 ```bash
 cd server && npm run build && npm run test
 cd web && npm run build && npm run test
+cd e2e && npm test
 ```
