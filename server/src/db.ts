@@ -23,12 +23,9 @@ export const users = sqliteTable(
     displayName: text("display_name"),
     ...timestamps
   },
-  (table) => ({
-    issuerSubjectIdx: uniqueIndex("users_issuer_subject_idx").on(
-      table.issuer,
-      table.subject
-    )
-  })
+  (table) => [
+    uniqueIndex("users_issuer_subject_idx").on(table.issuer, table.subject)
+  ]
 );
 
 export const sessions = sqliteTable(
@@ -41,10 +38,10 @@ export const sessions = sqliteTable(
     expiresAt: text("expires_at").notNull(),
     createdAt: text("created_at").notNull()
   },
-  (table) => ({
-    userIdIdx: index("sessions_user_id_idx").on(table.userId),
-    expiresAtIdx: index("sessions_expires_at_idx").on(table.expiresAt)
-  })
+  (table) => [
+    index("sessions_user_id_idx").on(table.userId),
+    index("sessions_expires_at_idx").on(table.expiresAt)
+  ]
 );
 
 export const projects = sqliteTable(
@@ -57,12 +54,9 @@ export const projects = sqliteTable(
     name: text("name").notNull(),
     ...timestamps
   },
-  (table) => ({
-    userUpdatedAtIdx: index("projects_user_updated_at_idx").on(
-      table.userId,
-      table.updatedAt
-    )
-  })
+  (table) => [
+    index("projects_user_updated_at_idx").on(table.userId, table.updatedAt)
+  ]
 );
 
 export const tasks = sqliteTable(
@@ -76,13 +70,13 @@ export const tasks = sqliteTable(
     status: text("status", { enum: taskStatusValues }).notNull(),
     ...timestamps
   },
-  (table) => ({
-    projectStatusUpdatedAtIdx: index("tasks_project_status_updated_at_idx").on(
+  (table) => [
+    index("tasks_project_status_updated_at_idx").on(
       table.projectId,
       table.status,
       table.updatedAt
     )
-  })
+  ]
 );
 
 export const apiTokens = sqliteTable(
@@ -99,12 +93,9 @@ export const apiTokens = sqliteTable(
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },
-  (table) => ({
-    userUpdatedAtIdx: index("api_tokens_user_updated_at_idx").on(
-      table.userId,
-      table.updatedAt
-    )
-  })
+  (table) => [
+    index("api_tokens_user_updated_at_idx").on(table.userId, table.updatedAt)
+  ]
 );
 
 export type DatabaseClient = BetterSQLite3Database<{
