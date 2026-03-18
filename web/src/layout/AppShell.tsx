@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { api, type User } from "../api";
 import { getAvatarLetter } from "../app/utils";
@@ -8,6 +8,7 @@ import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
 export function AppShell({ user }: { user: User }) {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const logoutMutation = useMutation({
@@ -34,6 +35,11 @@ export function AppShell({ user }: { user: User }) {
               <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} end to="/">
                 Projects
               </NavLink>
+              {location.pathname === "/" ? (
+                <Link className="subnav__action" to="/?createProject=1">
+                  Create Project
+                </Link>
+              ) : null}
             </nav>
           </div>
 

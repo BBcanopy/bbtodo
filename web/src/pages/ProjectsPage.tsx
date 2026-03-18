@@ -1,6 +1,6 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, type Project } from "../api";
 import { columns } from "../app/constants";
@@ -109,9 +109,10 @@ export function ProjectsPage() {
   useDocumentTitle("Projects");
 
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [name, setName] = useState("");
+  const isCreateDialogOpen = searchParams.get("createProject") === "1";
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects()
@@ -120,7 +121,6 @@ export function ProjectsPage() {
   const createProjectMutation = useMutation({
     mutationFn: (projectName: string) => api.createProject(projectName),
     onSuccess: async (project) => {
-      setIsCreateDialogOpen(false);
       setName("");
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       startTransition(() => {
@@ -137,7 +137,9 @@ export function ProjectsPage() {
   });
 
   function closeCreateDialog() {
-    setIsCreateDialogOpen(false);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("createProject");
+    setSearchParams(nextParams, { replace: true });
     setName("");
     createProjectMutation.reset();
   }
@@ -162,27 +164,19 @@ export function ProjectsPage() {
 
   return (
     <main className="page-shell page-shell--projects">
-      <section className="page-header page-header--actions-only">
-        <div className="page-header__meta">
-          <button className="primary-button" onClick={() => setIsCreateDialogOpen(true)} type="button">
-            Create board
-          </button>
-        </div>
-      </section>
-
       {isCreateDialogOpen ? (
         <div className="dialog-scrim" onClick={() => closeCreateDialog()}>
           <section
-            aria-labelledby="create-board-title"
+            aria-labelledby="create-project-title"
             aria-modal="true"
             className="dialog-panel"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
             <div className="dialog-header">
-              <h2 id="create-board-title">Create board</h2>
+              <h2 id="create-project-title">Create Project</h2>
               <button
-                aria-label="Close create board dialog"
+                aria-label="Close create project dialog"
                 className="icon-button"
                 onClick={() => closeCreateDialog()}
                 type="button"
@@ -218,7 +212,7 @@ export function ProjectsPage() {
                   disabled={createProjectMutation.isPending || name.trim().length === 0}
                   type="submit"
                 >
-                  {createProjectMutation.isPending ? "Creating board..." : "Create board"}
+                  {createProjectMutation.isPending ? "Creating project..." : "Create Project"}
                 </button>
               </div>
             </form>

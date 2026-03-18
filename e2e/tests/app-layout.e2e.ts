@@ -192,7 +192,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
 
   await expect(page).toHaveTitle("Projects | BBTodo");
   await expect(page.getByRole("heading", { name: "Boards" })).toHaveCount(0);
-  await expect(page.locator(".page-shell--projects .page-header__copy")).toHaveCount(0);
+  await expect(page.locator(".page-shell--projects .page-header")).toHaveCount(0);
   await expect(page.locator(".page-intro")).toHaveCount(0);
   await expect(page.locator(".page-header .eyebrow")).toHaveCount(0);
   await expect(page.locator(".page-header .page-summary")).toHaveCount(0);
@@ -226,20 +226,20 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   expect(projectsMaxWidth).toBe("none");
 
   const projectsPageBox = await page.locator(".page-shell--projects").boundingBox();
-  const createBoardButton = page.getByRole("button", { name: "Create board" });
-  const createBoardButtonBox = await createBoardButton.boundingBox();
+  const createProjectLink = page.getByRole("link", { name: "Create Project" });
+  const createProjectLinkBox = await createProjectLink.boundingBox();
   const viewportWidth = page.viewportSize()?.width ?? 0;
   expect(projectsPageBox).not.toBeNull();
   expect((projectsPageBox?.width ?? 0)).toBeGreaterThan(viewportWidth - 80);
-  expect(createBoardButtonBox).not.toBeNull();
-  expect((createBoardButtonBox?.x ?? 0) + (createBoardButtonBox?.width ?? 0)).toBeGreaterThan(viewportWidth - 80);
+  expect(createProjectLinkBox).not.toBeNull();
+  expect((createProjectLinkBox?.x ?? 0)).toBeGreaterThan(120);
 
-  await createBoardButton.click();
+  await createProjectLink.click();
 
-  const dialog = page.getByRole("dialog", { name: "Create board" });
+  const dialog = page.getByRole("dialog", { name: "Create Project" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Project name").fill("Roadmap review");
-  await dialog.getByRole("button", { exact: true, name: "Create board" }).click();
+  await dialog.getByRole("button", { exact: true, name: "Create Project" }).click();
 
   await expect(page).toHaveURL(/\/projects\/project-2$/);
   await expect(page).toHaveTitle("Roadmap review | BBTodo");
