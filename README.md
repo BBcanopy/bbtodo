@@ -14,7 +14,7 @@
 3. Run the API and web app together with `npm run dev`.
 4. Open `http://localhost:5173` for Vite development or `http://localhost:8080` when using Docker Compose.
 
-The frontend uses `BBTODO_API_ORIGIN` in development so `/api`, `/auth`, `/docs`, and `/health` requests can proxy to the API.
+The frontend uses `API_ORIGIN` in development so `/api`, `/auth`, `/docs`, and `/health` requests can proxy to the API.
 
 ## API highlights
 

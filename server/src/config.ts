@@ -17,16 +17,15 @@ export type AppConfig = z.infer<typeof configSchema>;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return configSchema.parse({
-    apiHost: env.BBTODO_API_HOST,
-    apiPort: env.BBTODO_API_PORT,
-    publicOrigin: env.BBTODO_PUBLIC_ORIGIN,
-    sessionSecret: env.BBTODO_SESSION_SECRET,
-    sessionTtlHours: env.BBTODO_SESSION_TTL_HOURS,
-    sqlitePath: env.BBTODO_SQLITE_PATH,
-    oidcIssuer: env.BBTODO_OIDC_ISSUER,
-    oidcClientId: env.BBTODO_OIDC_CLIENT_ID,
-    oidcClientSecret: env.BBTODO_OIDC_CLIENT_SECRET,
-    oidcScopes: env.BBTODO_OIDC_SCOPES
+    apiHost: env.API_HOST,
+    apiPort: env.API_PORT,
+    publicOrigin: env.PUBLIC_ORIGIN,
+    sessionSecret: env.SESSION_SECRET,
+    sessionTtlHours: env.SESSION_TTL_HOURS,
+    sqlitePath: env.SQLITE_PATH,
+    oidcIssuer: env.OIDC_ISSUER,
+    oidcClientId: env.OIDC_CLIENT_ID,
+    oidcClientSecret: env.OIDC_CLIENT_SECRET,
+    oidcScopes: env.OIDC_SCOPES
   });
 }
-
