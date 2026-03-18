@@ -169,6 +169,7 @@ test("board workspace uses the full available width", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Billing cleanup" })).toBeVisible();
   await expect(page.locator(".page-intro")).toHaveCount(0);
+  await expect(page.locator(".workspace-header")).toHaveCount(0);
   await expect(page.locator(".workspace-form")).toHaveCount(0);
 
   const maxWidth = await page.locator(".page-shell--board").evaluate((element) => getComputedStyle(element).maxWidth);

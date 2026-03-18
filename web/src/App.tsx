@@ -665,25 +665,23 @@ function BoardPage() {
 
   return (
     <main className="page-shell page-shell--board">
-      <section className="workspace-header">
-        <div className="surface-strip workspace-summary">
-          <div className="workspace-summary__top">
-            <button className="back-link" onClick={() => navigate("/")} type="button">
-              Back to projects
-            </button>
-            <div className="page-header__meta">
-              <span className="label-chip">{tasks.length} tasks</span>
-              <span className="label-chip label-chip--soft">{doneCount} done</span>
-              <span className="label-chip">{project ? `Updated ${formatDate(project.updatedAt)}` : "Syncing"}</span>
-            </div>
-          </div>
-          <div className="workspace-summary__copy">
-            <p className="eyebrow">Board</p>
-            <h1 className="page-title workspace-title">{project?.name ?? "Loading board"}</h1>
-            <p className="page-summary">Double-click any lane to add a task, then move work forward one lane at a time.</p>
+      <div className="surface-strip workspace-summary">
+        <div className="workspace-summary__top">
+          <button className="back-link" onClick={() => navigate("/")} type="button">
+            Back to projects
+          </button>
+          <div className="page-header__meta">
+            <span className="label-chip">{tasks.length} tasks</span>
+            <span className="label-chip label-chip--soft">{doneCount} done</span>
+            <span className="label-chip">{project ? `Updated ${formatDate(project.updatedAt)}` : "Syncing"}</span>
           </div>
         </div>
-      </section>
+        <div className="workspace-summary__copy">
+          <p className="eyebrow">Board</p>
+          <h1 className="page-title workspace-title">{project?.name ?? "Loading board"}</h1>
+          <p className="page-summary">Double-click any lane to add a task, then move work forward one lane at a time.</p>
+        </div>
+      </div>
 
       {projectsQuery.error ? <ErrorBanner error={projectsQuery.error} /> : null}
       {tasksQuery.error ? <ErrorBanner error={tasksQuery.error} /> : null}
