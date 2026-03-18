@@ -477,42 +477,96 @@ function ProjectsPage() {
 
 function TaskCard({
   onDelete,
-  onMove,
+  isDragging,
+  onDragEnd,
+  onDragStart,
   task,
   taskIndex
 }: {
   onDelete: (taskId: string) => void;
-  onMove: (task: Task, status: TaskStatus) => void;
+  isDragging: boolean;
+  onDragEnd: () => void;
+  onDragStart: (task: Task) => void;
   task: Task;
   taskIndex: number;
 }) {
-  const currentIndex = columns.findIndex((column) => column.key === task.status);
-  const previousColumn = currentIndex > 0 ? columns[currentIndex - 1] : null;
-  const nextColumn = currentIndex < columns.length - 1 ? columns[currentIndex + 1] : null;
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const confirmRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isConfirmOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!confirmRef.current?.contains(event.target as Node)) {
+        setIsConfirmOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsConfirmOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isConfirmOpen]);
 
   return (
-    <article className="task-card" style={itemStyle(taskIndex)}>
+    <article
+      className={`task-card${isDragging ? " is-dragging" : ""}${isConfirmOpen ? " is-confirm-open" : ""}`}
+      data-testid={`task-card-${task.id}`}
+      draggable="true"
+      onDragEnd={onDragEnd}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", task.id);
+        onDragStart(task);
+      }}
+      style={itemStyle(taskIndex)}
+    >
       <div className="task-card__meta">
         <span className="label-chip label-chip--soft">Updated {formatDate(task.updatedAt)}</span>
-      </div>
-      <p className="task-card__title">{task.title}</p>
-      <div className="task-card__actions">
-        <div className="task-card__moves">
-          {previousColumn ? (
-            <button className="micro-button" onClick={() => onMove(task, previousColumn.key)} type="button">
-              Move to {previousColumn.label}
-            </button>
-          ) : null}
-          {nextColumn ? (
-            <button className="micro-button" onClick={() => onMove(task, nextColumn.key)} type="button">
-              Move to {nextColumn.label}
-            </button>
+        <div className="task-card__delete-menu" ref={confirmRef}>
+          <button
+            aria-expanded={isConfirmOpen}
+            aria-label={`Delete task ${task.title}`}
+            className="icon-button danger-button"
+            onClick={() => setIsConfirmOpen((current) => !current)}
+            type="button"
+          >
+            <span aria-hidden="true">x</span>
+          </button>
+          {isConfirmOpen ? (
+            <div className="task-delete-popover" role="alertdialog">
+              <p>Delete this task?</p>
+              <div className="task-delete-popover__actions">
+                <button className="text-button" onClick={() => setIsConfirmOpen(false)} type="button">
+                  Cancel
+                </button>
+                <button
+                  className="ghost-button danger-button"
+                  onClick={() => {
+                    setIsConfirmOpen(false);
+                    onDelete(task.id);
+                  }}
+                  type="button"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
           ) : null}
         </div>
-        <button className="text-button danger-button" onClick={() => onDelete(task.id)} type="button">
-          Delete
-        </button>
       </div>
+      <p className="task-card__title">{task.title}</p>
     </article>
   );
 }
@@ -523,6 +577,8 @@ function BoardPage() {
   const queryClient = useQueryClient();
   const [composerStatus, setComposerStatus] = useState<TaskStatus | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dropTargetStatus, setDropTargetStatus] = useState<TaskStatus | null>(null);
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects()
@@ -576,6 +632,7 @@ function BoardPage() {
   const project = projectsQuery.data?.find((candidate) => candidate.id === projectId);
   const tasks = tasksQuery.data ?? [];
   const doneCount = tasks.filter((task) => task.status === "done").length;
+  const draggedTask = draggedTaskId ? tasks.find((task) => task.id === draggedTaskId) ?? null : null;
   const groupedTasks = columns.map((column) => ({
     ...column,
     tasks: tasks.filter((task) => task.status === column.key)
@@ -589,6 +646,17 @@ function BoardPage() {
   function closeComposer() {
     setComposerStatus(null);
     setDraftTitle("");
+  }
+
+  function handleDrop(status: TaskStatus) {
+    setDropTargetStatus(null);
+    if (!draggedTask || draggedTask.status === status) {
+      setDraggedTaskId(null);
+      return;
+    }
+
+    updateTaskMutation.mutate({ status, task: draggedTask });
+    setDraggedTaskId(null);
   }
 
   if (!projectId) {
@@ -637,9 +705,28 @@ function BoardPage() {
         <section className="board-grid" data-testid="board-grid">
           {groupedTasks.map((column, columnIndex) => (
             <div
-              className="board-column"
+              className={`board-column${dropTargetStatus === column.key ? " is-drop-target" : ""}`}
               data-testid={`board-column-${column.key}`}
               key={column.key}
+              onDragOver={(event) => {
+                if (!draggedTaskId) {
+                  return;
+                }
+
+                event.preventDefault();
+                if (dropTargetStatus !== column.key) {
+                  setDropTargetStatus(column.key);
+                }
+              }}
+              onDragLeave={(event) => {
+                if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) {
+                  setDropTargetStatus((current) => (current === column.key ? null : current));
+                }
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                handleDrop(column.key);
+              }}
               onDoubleClick={(event) => {
                 const target = event.target as HTMLElement;
                 if (target.closest("button, input, form, a")) {
@@ -705,7 +792,15 @@ function BoardPage() {
                   <TaskCard
                     key={task.id}
                     onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
-                    onMove={(currentTask, status) => updateTaskMutation.mutate({ status, task: currentTask })}
+                    isDragging={draggedTaskId === task.id}
+                    onDragEnd={() => {
+                      setDraggedTaskId(null);
+                      setDropTargetStatus(null);
+                    }}
+                    onDragStart={(currentTask) => {
+                      setDraggedTaskId(currentTask.id);
+                      setDropTargetStatus(null);
+                    }}
                     task={task}
                     taskIndex={taskIndex}
                   />

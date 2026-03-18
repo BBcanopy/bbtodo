@@ -93,6 +93,20 @@ async function mockAuthenticated(page: Page) {
         await fulfillJson(route, 200, []);
         return;
       default:
+        if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/project-1/tasks/")) {
+          const taskId = url.pathname.split("/").pop();
+          const taskIndex = taskState.findIndex((candidate) => candidate.id === taskId);
+
+          if (taskIndex === -1) {
+            await fulfillJson(route, 404, { message: `Task not found: ${taskId}` });
+            return;
+          }
+
+          taskState.splice(taskIndex, 1);
+          await fulfillJson(route, 200, null);
+          return;
+        }
+
         if (request.method() === "PATCH" && url.pathname.startsWith("/api/v1/projects/project-1/tasks/")) {
           const taskId = url.pathname.split("/").pop();
           const task = taskState.find((candidate) => candidate.id === taskId);
@@ -168,6 +182,7 @@ test("board workspace uses the full available width", async ({ page }) => {
 
   await expect(page.locator(".board-column")).toHaveCount(3);
   await expect(page.locator(".board-column__note")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Move to / })).toHaveCount(0);
 
   const inProgressColumn = page.getByTestId("board-column-in_progress");
   await inProgressColumn.dblclick();
@@ -178,4 +193,15 @@ test("board workspace uses the full available width", async ({ page }) => {
   await laneInput.press("Enter");
 
   await expect(inProgressColumn.getByText("Ship progress note")).toBeVisible();
+
+  const todoCard = page.getByTestId("task-card-task-1");
+  const doneColumn = page.getByTestId("board-column-done");
+  await todoCard.dragTo(doneColumn);
+  await expect(doneColumn.getByText("Review retry settings")).toBeVisible();
+
+  const createdCard = page.getByTestId("task-card-task-4");
+  await createdCard.getByLabel("Delete task Ship progress note").click();
+  await expect(createdCard.getByRole("button", { exact: true, name: "Delete" })).toBeVisible();
+  await createdCard.getByRole("button", { exact: true, name: "Delete" }).click();
+  await expect(page.getByText("Ship progress note")).toHaveCount(0);
 });
