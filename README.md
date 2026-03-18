@@ -25,6 +25,7 @@ Browser login sessions use a fixed 24-hour lifetime, so `SESSION_TTL_HOURS` is n
 Set `CLIENT_URL` to the browser-facing base URL of the app so OIDC callbacks and cookie behavior use the right origin.
 Set `SERVER_PORT` to choose which host port publishes the server container; it defaults to `3000`.
 Set `CLIENT_PORT` to choose which host port publishes the web container; it defaults to `8080`. Keep `CLIENT_URL` aligned with it.
+In Docker Compose, the web container waits for the server once during startup instead of running ongoing health probes.
 
 ## API highlights
 
