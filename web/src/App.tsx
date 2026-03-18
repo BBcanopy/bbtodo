@@ -502,8 +502,6 @@ function ProjectsPage() {
     }
   });
 
-  const projectCount = projectsQuery.data?.length ?? 0;
-
   function closeCreateDialog() {
     setIsCreateDialogOpen(false);
     setName("");
@@ -535,7 +533,6 @@ function ProjectsPage() {
           <h1 className="page-title">Boards</h1>
         </div>
         <div className="page-header__meta">
-          <span className="label-chip">{projectCount} boards</span>
           <button className="primary-button" onClick={() => setIsCreateDialogOpen(true)} type="button">
             Create board
           </button>

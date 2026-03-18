@@ -185,6 +185,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.locator(".page-header .eyebrow")).toHaveCount(0);
   await expect(page.locator(".page-header .page-summary")).toHaveCount(0);
   await expect(page.locator(".page-shell > .surface-strip")).toHaveCount(0);
+  await expect(page.locator(".page-header__meta .label-chip")).toHaveCount(0);
   await expect(page.locator(".page-header__meta .label-chip--soft")).toHaveCount(0);
   await expect(page.locator(".project-card__summary")).toHaveCount(0);
   await expect(page.locator(".project-track")).toHaveCount(0);
