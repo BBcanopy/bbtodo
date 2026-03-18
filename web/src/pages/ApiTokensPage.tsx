@@ -4,11 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { formatDate, formatDateTime, itemStyle } from "../app/utils";
 import { EmptyState, ErrorBanner, TokenListSkeleton } from "../components/ui";
-import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 export function ApiTokensPage() {
-  useDocumentTitle("API Tokens");
-
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
@@ -37,6 +34,7 @@ export function ApiTokensPage() {
 
   return (
     <main className="page-shell">
+      <title>API Tokens | BBTodo</title>
       <section className="page-header">
         <div className="page-header__copy">
           <h1 className="page-title">API tokens</h1>

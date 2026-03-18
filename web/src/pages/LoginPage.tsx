@@ -1,13 +1,11 @@
 import { columns, loginPreview } from "../app/constants";
 import { itemStyle } from "../app/utils";
 import { MetricRibbon } from "../components/ui";
-import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 export function LoginPage() {
-  useDocumentTitle();
-
   return (
     <main className="landing-shell">
+      <title>BBTodo</title>
       <section className="landing-panel">
         <article className="hero-panel hero-panel--landing">
           <p className="eyebrow">bbtodo</p>

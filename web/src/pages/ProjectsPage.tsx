@@ -7,7 +7,6 @@ import { columns } from "../app/constants";
 import { formatDate, itemStyle } from "../app/utils";
 import { EmptyState, ErrorBanner, ProjectGridSkeleton } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
-import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 function ProjectCard({
   index,
@@ -105,8 +104,6 @@ function ProjectCard({
 }
 
 export function ProjectsPage() {
-  useDocumentTitle("Projects");
-
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -163,6 +160,7 @@ export function ProjectsPage() {
 
   return (
     <main className="page-shell page-shell--projects">
+      <title>Projects | BBTodo</title>
       {isCreateDialogOpen ? (
         <div className="dialog-scrim" onClick={() => closeCreateDialog()}>
           <section

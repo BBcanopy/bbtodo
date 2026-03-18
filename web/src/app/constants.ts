@@ -1,7 +1,5 @@
 import type { TaskStatus } from "../api";
 
-export const appTitle = "BBTodo";
-
 export const columns: Array<{ key: TaskStatus; label: string }> = [
   { key: "todo", label: "Todo" },
   { key: "in_progress", label: "In Progress" },

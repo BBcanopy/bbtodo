@@ -28,6 +28,7 @@ function AuthenticatedApp() {
   if (meQuery.error) {
     return (
       <main className="centered-state">
+        <title>BBTodo</title>
         <section className="hero-panel centered-panel">
           <p className="eyebrow">bbtodo</p>
           <h1>We hit a problem loading your workspace.</h1>

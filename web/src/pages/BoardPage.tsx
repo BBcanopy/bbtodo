@@ -7,7 +7,6 @@ import { columns } from "../app/constants";
 import { formatDate, getTaskInputLabel, itemStyle } from "../app/utils";
 import { BoardSkeleton, EmptyState, ErrorBanner } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
-import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 function TaskCard({
   onDelete,
@@ -139,7 +138,6 @@ export function BoardPage() {
   });
 
   const project = projectsQuery.data?.find((candidate) => candidate.id === projectId);
-  useDocumentTitle(project?.name ?? "Board");
   const tasks = tasksQuery.data ?? [];
   const draggedTask = draggedTaskId ? tasks.find((task) => task.id === draggedTaskId) ?? null : null;
   const groupedTasks = columns.map((column) => ({
@@ -174,6 +172,7 @@ export function BoardPage() {
 
   return (
     <main className="page-shell page-shell--board">
+      <title>{project ? `${project.name} | BBTodo` : "Board | BBTodo"}</title>
       {projectsQuery.error ? <ErrorBanner error={projectsQuery.error} /> : null}
       {tasksQuery.error ? <ErrorBanner error={tasksQuery.error} /> : null}
       {createTaskMutation.error ? <ErrorBanner error={createTaskMutation.error} /> : null}
