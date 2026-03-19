@@ -154,7 +154,6 @@ export function AppShell({ user }: { user: User }) {
                           <span className={`theme-option__swatch theme-option__swatch--${themeOption.id}`} />
                           <span className="theme-option__copy">
                             <strong>{themeOption.label}</strong>
-                            <span>{themeOption.summary}</span>
                           </span>
                         </button>
                       ))}

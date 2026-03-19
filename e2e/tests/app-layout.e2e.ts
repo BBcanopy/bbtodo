@@ -756,12 +756,13 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.locator(".project-grid .project-card")).toHaveCount(6);
 
   await page.getByLabel("Open account menu").click();
-  await expect(page.getByRole("button", { pressed: true, name: /Sea Cool glass and teal accents/i })).toBeVisible();
-  await page.getByRole("button", { name: /Ember Warm paper and copper highlights/i }).click();
+  await expect(page.getByRole("button", { pressed: true, name: "Sea" })).toBeVisible();
+  await expect(page.locator(".theme-option__copy span")).toHaveCount(0);
+  await page.getByRole("button", { name: "Ember" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "ember");
   const emberAccent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
   expect(emberAccent).toBe("#b85e3f");
-  await page.getByRole("button", { name: /Midnight Dark slate with electric aqua/i }).click();
+  await page.getByRole("button", { name: "Midnight" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "midnight");
   const midnightAccent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
   expect(midnightAccent).toBe("#58c6c0");

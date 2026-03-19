@@ -987,19 +987,13 @@ textarea:focus {
 }
 
 .theme-option__copy {
-  display: grid;
-  gap: 0.12rem;
+  display: block;
 }
 
 .theme-option__copy strong {
+  display: block;
   font-size: 0.93rem;
   letter-spacing: -0.02em;
-}
-
-.theme-option__copy span {
-  color: var(--ink-soft);
-  font-size: 0.74rem;
-  line-height: 1.35;
 }
 
 .menu-item {

@@ -15,21 +15,17 @@ export const loginPreview: Record<TaskStatus, string[]> = {
 export const themeOptions: Array<{
   id: UserTheme;
   label: string;
-  summary: string;
 }> = [
   {
     id: "sea",
-    label: "Sea",
-    summary: "Cool glass and teal accents"
+    label: "Sea"
   },
   {
     id: "ember",
-    label: "Ember",
-    summary: "Warm paper and copper highlights"
+    label: "Ember"
   },
   {
     id: "midnight",
-    label: "Midnight",
-    summary: "Dark slate with electric aqua"
+    label: "Midnight"
   }
 ];
