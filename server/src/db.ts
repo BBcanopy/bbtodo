@@ -22,6 +22,9 @@ export const taskStatusValues = ["todo", "in_progress", "done"] as const;
 export type TaskStatus = (typeof taskStatusValues)[number];
 export const userThemeValues = ["sea", "ember", "midnight"] as const;
 export type UserTheme = (typeof userThemeValues)[number];
+export const taskTagColorValues = ["moss", "sky", "amber", "coral", "orchid", "slate"] as const;
+export type TaskTagColor = (typeof taskTagColorValues)[number];
+export const defaultTaskTagColor: TaskTagColor = "moss";
 
 export const defaultLaneTemplates = [
   { name: "Todo", systemKey: "todo" },
@@ -119,6 +122,7 @@ export const taskTags = sqliteTable(
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
     tag: text("tag").notNull(),
+    color: text("color", { enum: taskTagColorValues }).notNull().default(defaultTaskTagColor),
     position: integer("position").notNull()
   },
   (table) => [
@@ -162,8 +166,15 @@ export type TaskTagRecord = typeof taskTags.$inferSelect;
 export type ApiTokenRecord = typeof apiTokens.$inferSelect;
 export type ProjectTaskCounts = Record<TaskStatus, number>;
 
+export interface TaskTagData {
+  color: TaskTagColor;
+  label: string;
+}
+
+export type TaskTagInput = string | TaskTagData;
+
 export interface TaskRecordWithTags extends TaskRecord {
-  tags: string[];
+  tags: TaskTagData[];
 }
 
 export interface LaneWithTaskCount extends LaneRecord {
@@ -196,32 +207,41 @@ function createEmptyTaskCounts(): ProjectTaskCounts {
   };
 }
 
-function normalizeTaskTag(tag: string) {
+function normalizeTaskTagLabel(tag: string) {
   const normalized = tag.trim().replace(/\s+/g, " ");
   return normalized.length > 0 ? normalized : null;
 }
 
-function normalizeTaskTags(tags: string[] | undefined) {
+function normalizeTaskTagColor(color: string | undefined): TaskTagColor {
+  return taskTagColorValues.includes(color as TaskTagColor)
+    ? (color as TaskTagColor)
+    : defaultTaskTagColor;
+}
+
+function normalizeTaskTags(tags: TaskTagInput[] | undefined) {
   if (!tags) {
     return [];
   }
 
   const seen = new Set<string>();
-  const normalizedTags: string[] = [];
+  const normalizedTags: TaskTagData[] = [];
 
   tags.forEach((tag) => {
-    const normalized = normalizeTaskTag(tag);
-    if (!normalized) {
+    const normalizedLabel = normalizeTaskTagLabel(typeof tag === "string" ? tag : tag.label);
+    if (!normalizedLabel) {
       return;
     }
 
-    const key = normalized.toLowerCase();
+    const key = normalizedLabel.toLowerCase();
     if (seen.has(key)) {
       return;
     }
 
     seen.add(key);
-    normalizedTags.push(normalized);
+    normalizedTags.push({
+      color: typeof tag === "string" ? defaultTaskTagColor : normalizeTaskTagColor(tag.color),
+      label: normalizedLabel
+    });
   });
 
   return normalizedTags;
@@ -229,11 +249,12 @@ function normalizeTaskTags(tags: string[] | undefined) {
 
 function listTaskTagMap(db: DatabaseClient, taskIds: string[]) {
   if (taskIds.length === 0) {
-    return new Map<string, string[]>();
+    return new Map<string, TaskTagData[]>();
   }
 
   const rows = db
     .select({
+      color: taskTags.color,
       tag: taskTags.tag,
       taskId: taskTags.taskId
     })
@@ -242,12 +263,15 @@ function listTaskTagMap(db: DatabaseClient, taskIds: string[]) {
     .orderBy(asc(taskTags.taskId), asc(taskTags.position))
     .all();
 
-  const tagMap = new Map<string, string[]>(
+  const tagMap = new Map<string, TaskTagData[]>(
     taskIds.map((taskId) => [taskId, []])
   );
 
   rows.forEach((row) => {
-    tagMap.get(row.taskId)?.push(row.tag);
+    tagMap.get(row.taskId)?.push({
+      color: normalizeTaskTagColor(row.color),
+      label: row.tag
+    });
   });
 
   return tagMap;
@@ -274,16 +298,17 @@ function getTaskWithTags(db: DatabaseClient, taskId: string) {
   return attachTagsToTasks(db, [task])[0] ?? null;
 }
 
-function replaceTaskTags(db: DatabaseClient, taskId: string, tags: string[]) {
+function replaceTaskTags(db: DatabaseClient, taskId: string, tags: TaskTagInput[]) {
   db.delete(taskTags).where(eq(taskTags.taskId, taskId)).run();
 
   normalizeTaskTags(tags).forEach((tag, index) => {
     db
       .insert(taskTags)
       .values({
+        color: tag.color,
         id: crypto.randomUUID(),
         taskId,
-        tag,
+        tag: tag.label,
         position: index
       })
       .run();
@@ -497,6 +522,7 @@ function createLegacyCompatTables(database: Database.Database) {
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
       tag TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT 'moss',
       position INTEGER NOT NULL
     );
 
@@ -530,6 +556,11 @@ function ensureLegacyCompatColumns(database: Database.Database) {
   }
   if (!taskColumns.has("position")) {
     database.exec("ALTER TABLE tasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0;");
+  }
+
+  const taskTagColumns = getTableColumns(database, "task_tags");
+  if (!taskTagColumns.has("color")) {
+    database.exec("ALTER TABLE task_tags ADD COLUMN color TEXT NOT NULL DEFAULT 'moss';");
   }
 }
 
@@ -1240,7 +1271,7 @@ export function createTask(
     title: string;
     body?: string;
     laneId?: string;
-    tags?: string[];
+    tags?: TaskTagInput[];
   }
 ) {
   const project = getOwnedProject(db, input.userId, input.projectId);
@@ -1317,7 +1348,7 @@ export function updateOwnedTask(
     projectId: string;
     status?: TaskStatus;
     taskId: string;
-    tags?: string[];
+    tags?: TaskTagInput[];
     title?: string;
     userId: string;
   }

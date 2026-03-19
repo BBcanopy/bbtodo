@@ -8,6 +8,10 @@ import {
 } from "./test-helpers.js";
 
 const createdApps: ReturnType<typeof buildApp>[] = [];
+const tag = (label: string, color: "amber" | "coral" | "moss" | "orchid" | "sky" | "slate" = "moss") => ({
+  color,
+  label
+});
 
 afterEach(async () => {
   while (createdApps.length > 0) {
@@ -94,7 +98,7 @@ describe("projects and tasks API", () => {
       },
       payload: {
         title: "Write the first task",
-        tags: ["launch", "api"]
+        tags: [tag("launch", "sky"), tag("api", "amber")]
       }
     });
 
@@ -105,7 +109,7 @@ describe("projects and tasks API", () => {
       projectId: project.id,
       position: 0,
       status: "todo",
-      tags: ["launch", "api"],
+      tags: [tag("launch", "sky"), tag("api", "amber")],
       title: "Write the first task"
     });
 
@@ -119,7 +123,7 @@ describe("projects and tasks API", () => {
       },
       payload: {
         status: "in_progress",
-        tags: ["backend", "launch"]
+        tags: [tag("backend", "coral"), tag("launch", "sky")]
       }
     });
 
@@ -127,7 +131,7 @@ describe("projects and tasks API", () => {
     expect(updateTaskResponse.json()).toMatchObject({
       id: task.id,
       status: "in_progress",
-      tags: ["backend", "launch"]
+      tags: [tag("backend", "coral"), tag("launch", "sky")]
     });
 
     const updatedProjectsResponse = await app.inject({
@@ -163,7 +167,7 @@ describe("projects and tasks API", () => {
     expect(filteredTasksResponse.json()[0]).toMatchObject({
       id: task.id,
       status: "in_progress",
-      tags: ["backend", "launch"]
+      tags: [tag("backend", "coral"), tag("launch", "sky")]
     });
 
     const deleteTaskResponse = await app.inject({
@@ -325,7 +329,7 @@ describe("projects and tasks API", () => {
         title: "Draft release note",
         body: "## Summary\n\n- ship docs",
         laneId: qaLane.id,
-        tags: ["docs", "qa"]
+        tags: [tag("docs", "sky"), tag("qa", "orchid")]
       }
     });
     const createTaskTwoResponse = await app.inject({
@@ -345,7 +349,7 @@ describe("projects and tasks API", () => {
     expect(createTaskOneResponse.json()).toMatchObject({
       body: "## Summary\n\n- ship docs",
       laneId: qaLane.id,
-      tags: ["docs", "qa"],
+      tags: [tag("docs", "sky"), tag("qa", "orchid")],
       position: 0
     });
     expect(createTaskTwoResponse.json()).toMatchObject({
@@ -364,7 +368,7 @@ describe("projects and tasks API", () => {
       },
       payload: {
         body: "Updated body",
-        tags: ["copy", "qa"],
+        tags: [tag("copy", "amber"), tag("qa", "orchid")],
         position: 0
       }
     });
@@ -375,7 +379,7 @@ describe("projects and tasks API", () => {
       id: secondTask.id,
       laneId: qaLane.id,
       position: 0,
-      tags: ["copy", "qa"]
+      tags: [tag("copy", "amber"), tag("qa", "orchid")]
     });
 
     const reorderLaneResponse = await app.inject({
@@ -430,12 +434,12 @@ describe("projects and tasks API", () => {
       expect.objectContaining({
         id: secondTask.id,
         position: 0,
-        tags: ["copy", "qa"]
+        tags: [tag("copy", "amber"), tag("qa", "orchid")]
       }),
       expect.objectContaining({
         id: firstTask.id,
         position: 1,
-        tags: ["docs", "qa"]
+        tags: [tag("docs", "sky"), tag("qa", "orchid")]
       })
     ]);
   });

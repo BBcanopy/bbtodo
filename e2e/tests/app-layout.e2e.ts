@@ -2,6 +2,12 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 
 type TaskStatus = "todo" | "in_progress" | "done";
 type UserTheme = "sea" | "ember" | "midnight";
+type TaskTagColor = "moss" | "sky" | "amber" | "coral" | "orchid" | "slate";
+
+interface TaskTag {
+  color: TaskTagColor;
+  label: string;
+}
 
 interface BoardLane {
   createdAt: string;
@@ -31,10 +37,15 @@ interface Task {
   position: number;
   projectId: string;
   status: TaskStatus;
-  tags: string[];
+  tags: TaskTag[];
   title: string;
   updatedAt: string;
 }
+
+const tag = (label: string, color: TaskTagColor = "moss"): TaskTag => ({
+  color,
+  label
+});
 
 const user = {
   email: "operator@example.com",
@@ -197,7 +208,7 @@ const tasks: Task[] = [
     position: 0,
     projectId: "project-1",
     status: "todo",
-    tags: ["backend", "retry"],
+    tags: [tag("backend", "sky"), tag("retry", "coral")],
     title: "Review retry settings",
     updatedAt: "2026-03-18T07:10:00.000Z"
   },
@@ -209,7 +220,7 @@ const tasks: Task[] = [
     position: 0,
     projectId: "project-1",
     status: "in_progress",
-    tags: ["observability", "oidc"],
+    tags: [tag("observability", "slate"), tag("oidc", "orchid")],
     title: "Tighten callback logging",
     updatedAt: "2026-03-18T07:45:00.000Z"
   },
@@ -221,7 +232,7 @@ const tasks: Task[] = [
     position: 0,
     projectId: "project-1",
     status: "done",
-    tags: ["ops"],
+    tags: [tag("ops", "amber")],
     title: "Remove healthcheck loop",
     updatedAt: "2026-03-18T07:50:00.000Z"
   },
@@ -233,7 +244,7 @@ const tasks: Task[] = [
     position: 1,
     projectId: "project-1",
     status: "todo",
-    tags: ["copy"],
+    tags: [tag("copy", "moss")],
     title: "Queue copy pass",
     updatedAt: "2026-03-18T07:15:00.000Z"
   }
@@ -946,7 +957,9 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(page.locator(".board-column__header > span")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Move to / })).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-1").locator(".label-chip")).toHaveCount(0);
-  await expect(page.getByTestId("task-card-task-1").locator(".task-tag")).toHaveText(["backend", "retry"]);
+  const initialTaskTags = page.getByTestId("task-card-task-1").locator(".task-tag");
+  await expect(initialTaskTags).toHaveText(["backend", "retry"]);
+  await expect(initialTaskTags.nth(0)).toHaveCSS("background-color", "rgb(227, 241, 255)");
   const taskDeleteButton = page.getByLabel("Delete task Review retry settings");
   await expect(taskDeleteButton.locator("svg")).toHaveCount(1);
   await expect(taskDeleteButton).toHaveCSS("border-top-width", "0px");
@@ -971,6 +984,8 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(editDialog.getByTestId("task-markdown-preview")).toHaveCount(0);
   await expect(sourceTab).toHaveAttribute("aria-selected", "true");
   await expect(previewTab).toHaveAttribute("aria-selected", "false");
+  await editDialog.getByRole("button", { name: "Edit color for tag backend" }).click();
+  await editDialog.getByRole("button", { name: "Set backend color to Amber" }).click();
   const dialogBox = await editDialog.boundingBox();
   const bodyFieldBox = await editDialog.getByLabel("Task body").boundingBox();
   expect(dialogBox).not.toBeNull();
@@ -985,6 +1000,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await editDialog.getByRole("button", { name: "Remove tag retry" }).click();
   await editDialog.getByRole("button", { name: "Remove tag ops" }).click();
   await editDialog.getByLabel("Title").fill("Review retry scope");
+  await editDialog.getByRole("button", { name: "Set new tag color to Orchid" }).click();
   await tagInput.fill("release");
   await tagInput.press("Enter");
   await expect(tagInput).toHaveValue("");
@@ -998,7 +1014,10 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await editDialog.getByRole("button", { name: "Save card" }).click();
   await expect(editDialog).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-1").getByText("Review retry scope")).toBeVisible();
-  await expect(page.getByTestId("task-card-task-1").locator(".task-tag")).toHaveText(["backend", "release"]);
+  const updatedTaskTags = page.getByTestId("task-card-task-1").locator(".task-tag");
+  await expect(updatedTaskTags).toHaveText(["backend", "release"]);
+  await expect(updatedTaskTags.nth(0)).toHaveCSS("background-color", "rgb(255, 241, 217)");
+  await expect(updatedTaskTags.nth(1)).toHaveCSS("background-color", "rgb(242, 229, 255)");
 
   await page.getByLabel("Search cards").fill("callback");
   await expect(page.getByText("Review retry scope")).toBeVisible();

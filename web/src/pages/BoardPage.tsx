@@ -19,7 +19,12 @@ import ReactMarkdown from "react-markdown";
 import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import { CSS } from "@dnd-kit/utilities";
 
-import { api, type BoardLane, type Task } from "../api";
+import { api, type BoardLane, type Task, type TaskTag, type TaskTagColor } from "../api";
+import {
+  defaultTaskTagColor,
+  getTaskTagStyle,
+  taskTagColorOptions
+} from "../app/tag-colors";
 import {
   formatIsoDate,
   formatTagInput,
@@ -142,9 +147,9 @@ function moveTaskId(
   return nextTaskIdsByLane;
 }
 
-function mergeUniqueTags(currentTags: string[], nextValue: string) {
-  const seen = new Set(currentTags.map((tag) => normalizeTagKey(tag)));
-  const additions: string[] = [];
+function mergeUniqueTags(currentTags: TaskTag[], nextValue: string, color: TaskTagColor) {
+  const seen = new Set(currentTags.map((tag) => normalizeTagKey(tag.label)));
+  const additions: TaskTag[] = [];
 
   parseTagInput(nextValue).forEach((tag) => {
     const key = normalizeTagKey(tag);
@@ -153,18 +158,21 @@ function mergeUniqueTags(currentTags: string[], nextValue: string) {
     }
 
     seen.add(key);
-    additions.push(tag);
+    additions.push({
+      color,
+      label: tag
+    });
   });
 
   return additions.length > 0 ? [...currentTags, ...additions] : currentTags;
 }
 
 function listSuggestedTags(tasks: Task[]) {
-  const tagsByKey = new Map<string, string>();
+  const tagsByKey = new Map<string, TaskTag>();
 
   tasks.forEach((task) => {
     task.tags.forEach((tag) => {
-      const key = normalizeTagKey(tag);
+      const key = normalizeTagKey(tag.label);
       if (!key || tagsByKey.has(key)) {
         return;
       }
@@ -174,7 +182,7 @@ function listSuggestedTags(tasks: Task[]) {
   });
 
   return Array.from(tagsByKey.values()).sort((left, right) =>
-    left.localeCompare(right, undefined, { sensitivity: "base" })
+    left.label.localeCompare(right.label, undefined, { sensitivity: "base" })
   );
 }
 
@@ -275,10 +283,11 @@ function TaskCardPreview({
         <div className="task-card__tags">
           {task.tags.map((tag) => (
             <span
-              className={`task-tag${activeTagKeys.has(normalizeTagKey(tag)) ? " is-active" : ""}`}
-              key={tag}
+              className={`task-tag${activeTagKeys.has(normalizeTagKey(tag.label)) ? " is-active" : ""}`}
+              key={tag.label}
+              style={getTaskTagStyle(tag.color)}
             >
-              {tag}
+              {tag.label}
             </span>
           ))}
         </div>
@@ -429,17 +438,18 @@ function TaskCard({
         <div className="task-card__tags">
           {task.tags.map((tag) => (
             <button
-              className={`task-tag${activeTagKeys.has(normalizeTagKey(tag)) ? " is-active" : ""}`}
+              className={`task-tag${activeTagKeys.has(normalizeTagKey(tag.label)) ? " is-active" : ""}`}
               data-no-dnd="true"
-              key={tag}
+              key={tag.label}
               onClick={(event) => {
                 event.stopPropagation();
-                onTagSelect(tag);
+                onTagSelect(tag.label);
               }}
               onPointerDown={(event) => event.stopPropagation()}
+              style={getTaskTagStyle(tag.color)}
               type="button"
             >
-              {tag}
+              {tag.label}
             </button>
           ))}
         </div>
@@ -480,27 +490,37 @@ function MarkdownPreviewIcon() {
 
 function TaskTagEditor({
   availableTags,
+  inputColor,
   inputValue,
+  onInputColorChange,
   onInputValueChange,
   onSelectedTagsChange,
   selectedTags
 }: {
-  availableTags: string[];
+  availableTags: TaskTag[];
+  inputColor: TaskTagColor;
   inputValue: string;
+  onInputColorChange: (color: TaskTagColor) => void;
   onInputValueChange: (value: string) => void;
-  onSelectedTagsChange: (tags: string[]) => void;
-  selectedTags: string[];
+  onSelectedTagsChange: (tags: TaskTag[]) => void;
+  selectedTags: TaskTag[];
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedColorTargetKey, setSelectedColorTargetKey] = useState<string | null>(null);
   const selectedTagKeys = useMemo(
-    () => new Set(selectedTags.map((tag) => normalizeTagKey(tag))),
+    () => new Set(selectedTags.map((tag) => normalizeTagKey(tag.label))),
     [selectedTags]
   );
   const suggestionQuery = normalizeTagKey(inputValue);
+  const selectedColorTarget =
+    selectedColorTargetKey === null
+      ? null
+      : selectedTags.find((tag) => normalizeTagKey(tag.label) === selectedColorTargetKey) ?? null;
+  const activePaletteColor = selectedColorTarget?.color ?? inputColor;
   const visibleSuggestions = useMemo(
     () =>
       availableTags.filter((tag) => {
-        const key = normalizeTagKey(tag);
+        const key = normalizeTagKey(tag.label);
         if (selectedTagKeys.has(key)) {
           return false;
         }
@@ -510,8 +530,17 @@ function TaskTagEditor({
     [availableTags, selectedTagKeys, suggestionQuery]
   );
 
+  useEffect(() => {
+    if (
+      selectedColorTargetKey !== null &&
+      !selectedTags.some((tag) => normalizeTagKey(tag.label) === selectedColorTargetKey)
+    ) {
+      setSelectedColorTargetKey(null);
+    }
+  }, [selectedColorTargetKey, selectedTags]);
+
   function commitInputValue() {
-    const nextTags = mergeUniqueTags(selectedTags, inputValue);
+    const nextTags = mergeUniqueTags(selectedTags, inputValue, inputColor);
 
     if (nextTags !== selectedTags) {
       onSelectedTagsChange(nextTags);
@@ -526,15 +555,32 @@ function TaskTagEditor({
 
   function removeTag(tagToRemove: string) {
     onSelectedTagsChange(
-      selectedTags.filter((tag) => normalizeTagKey(tag) !== normalizeTagKey(tagToRemove))
+      selectedTags.filter((tag) => normalizeTagKey(tag.label) !== normalizeTagKey(tagToRemove))
     );
+    if (selectedColorTargetKey === normalizeTagKey(tagToRemove)) {
+      setSelectedColorTargetKey(null);
+    }
     inputRef.current?.focus();
   }
 
-  function addSuggestedTag(tag: string) {
-    onSelectedTagsChange(mergeUniqueTags(selectedTags, tag));
+  function addSuggestedTag(tag: TaskTag) {
+    onSelectedTagsChange(mergeUniqueTags(selectedTags, tag.label, tag.color));
     onInputValueChange("");
+    setSelectedColorTargetKey(normalizeTagKey(tag.label));
     inputRef.current?.focus();
+  }
+
+  function updateTagColor(color: TaskTagColor) {
+    if (selectedColorTargetKey === null) {
+      onInputColorChange(color);
+      return;
+    }
+
+    onSelectedTagsChange(
+      selectedTags.map((tag) =>
+        normalizeTagKey(tag.label) === selectedColorTargetKey ? { ...tag, color } : tag
+      )
+    );
   }
 
   return (
@@ -557,20 +603,43 @@ function TaskTagEditor({
       >
         <div
           className="task-tag-editor__input-shell"
-          onClick={() => inputRef.current?.focus()}
+          onClick={() => {
+            setSelectedColorTargetKey(null);
+            inputRef.current?.focus();
+          }}
           role="presentation"
         >
           {selectedTags.map((tag) => (
-            <span className="task-tag-editor__chip" key={tag}>
-              <span className="task-tag-editor__chip-label">{tag}</span>
+            <span
+              className={`task-tag-editor__chip${selectedColorTargetKey === normalizeTagKey(tag.label) ? " is-selected" : ""}`}
+              key={tag.label}
+              style={getTaskTagStyle(tag.color)}
+            >
               <button
-                aria-label={`Remove tag ${tag}`}
-                className="task-tag-editor__chip-remove"
-                onClick={() => removeTag(tag)}
+                aria-label={`Edit color for tag ${tag.label}`}
+                aria-pressed={selectedColorTargetKey === normalizeTagKey(tag.label)}
+                className="task-tag-editor__chip-main"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedColorTargetKey(normalizeTagKey(tag.label));
+                }}
                 onMouseDown={(event) => event.preventDefault()}
                 type="button"
               >
-                <span aria-hidden="true">x</span>
+                <span aria-hidden="true" className="task-tag-editor__chip-swatch" />
+                <span className="task-tag-editor__chip-label">{tag.label}</span>
+              </button>
+              <button
+                aria-label={`Remove tag ${tag.label}`}
+                className="task-tag-editor__chip-remove"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  removeTag(tag.label);
+                }}
+                onMouseDown={(event) => event.preventDefault()}
+                type="button"
+              >
+                <CloseIcon />
               </button>
             </span>
           ))}
@@ -600,18 +669,45 @@ function TaskTagEditor({
             value={inputValue}
           />
         </div>
+        <div className="task-tag-editor__palette-panel">
+          <span className="task-tag-editor__palette-label">
+            {selectedColorTarget ? `Color for ${selectedColorTarget.label}` : "New tag color"}
+          </span>
+          <div className="task-tag-editor__palette" role="list">
+            {taskTagColorOptions.map((option) => (
+              <button
+                aria-label={
+                  selectedColorTarget
+                    ? `Set ${selectedColorTarget.label} color to ${option.label}`
+                    : `Set new tag color to ${option.label}`
+                }
+                aria-pressed={activePaletteColor === option.value}
+                className={`task-tag-editor__swatch${activePaletteColor === option.value ? " is-active" : ""}`}
+                key={option.value}
+                onClick={() => updateTagColor(option.value)}
+                onMouseDown={(event) => event.preventDefault()}
+                style={getTaskTagStyle(option.value)}
+                type="button"
+              >
+                <span aria-hidden="true" className="task-tag-editor__swatch-dot" />
+                <span className="task-tag-editor__swatch-name">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         {visibleSuggestions.length > 0 ? (
           <div aria-label="Suggested tags" className="task-tag-editor__suggestions" role="list">
             {visibleSuggestions.map((tag) => (
               <button
-                aria-label={`Add tag ${tag}`}
+                aria-label={`Add tag ${tag.label}`}
                 className="task-tag-editor__suggestion"
-                key={tag}
+                key={tag.label}
                 onClick={() => addSuggestedTag(tag)}
                 onMouseDown={(event) => event.preventDefault()}
+                style={getTaskTagStyle(tag.color)}
                 type="button"
               >
-                {tag}
+                {tag.label}
               </button>
             ))}
           </div>
@@ -629,16 +725,19 @@ function TaskEditorDialog({
   onSave,
   task
 }: {
-  availableTags: string[];
+  availableTags: TaskTag[];
   error: Error | null;
   isPending: boolean;
   onClose: () => void;
-  onSave: (input: { body: string; tags: string[]; title: string }) => void;
+  onSave: (input: { body: string; tags: TaskTag[]; title: string }) => void;
   task: Task;
 }) {
   const [title, setTitle] = useState(task.title);
   const [body, setBody] = useState(task.body);
   const [selectedTags, setSelectedTags] = useState(task.tags);
+  const [tagInputColor, setTagInputColor] = useState<TaskTagColor>(
+    task.tags[0]?.color ?? defaultTaskTagColor
+  );
   const [tagInputValue, setTagInputValue] = useState("");
   const [activeView, setActiveView] = useState<TaskEditorView>("source");
 
@@ -646,6 +745,7 @@ function TaskEditorDialog({
     setTitle(task.title);
     setBody(task.body);
     setSelectedTags(task.tags);
+    setTagInputColor(task.tags[0]?.color ?? defaultTaskTagColor);
     setTagInputValue("");
     setActiveView("source");
   }, [task.body, task.id, task.tags, task.title]);
@@ -674,7 +774,7 @@ function TaskEditorDialog({
           className="dialog-form task-editor"
           onSubmit={(event) => {
             event.preventDefault();
-            const tags = mergeUniqueTags(selectedTags, tagInputValue);
+            const tags = mergeUniqueTags(selectedTags, tagInputValue, tagInputColor);
             setSelectedTags(tags);
             setTagInputValue("");
             onSave({
@@ -698,7 +798,9 @@ function TaskEditorDialog({
             </label>
             <TaskTagEditor
               availableTags={availableTags}
+              inputColor={tagInputColor}
               inputValue={tagInputValue}
+              onInputColorChange={setTagInputColor}
               onInputValueChange={setTagInputValue}
               onSelectedTagsChange={setSelectedTags}
               selectedTags={selectedTags}
@@ -852,7 +954,7 @@ export function BoardPage() {
   );
 
   function taskMatchesBoardFilters(task: Task) {
-    const haystack = `${task.title}\n${task.body}\n${task.tags.join("\n")}`.toLowerCase();
+    const haystack = `${task.title}\n${task.body}\n${task.tags.map((tag) => tag.label).join("\n")}`.toLowerCase();
     const matchesSearch = !boardSearch || haystack.includes(boardSearch);
     if (!matchesSearch) {
       return false;
@@ -862,7 +964,7 @@ export function BoardPage() {
       return true;
     }
 
-    const taskTagKeys = new Set(task.tags.map((tag) => normalizeTagKey(tag)));
+    const taskTagKeys = new Set(task.tags.map((tag) => normalizeTagKey(tag.label)));
     return Array.from(activeTagKeys).every((tag) => taskTagKeys.has(tag));
   }
 
@@ -929,7 +1031,7 @@ export function BoardPage() {
       title
     }: {
       body: string;
-      tags: string[];
+      tags: TaskTag[];
       taskId: string;
       title: string;
     }) => api.updateTask(projectId ?? "", taskId, { body, tags, title }),

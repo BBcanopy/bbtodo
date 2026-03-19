@@ -15,6 +15,13 @@
       "when": 1773908482086,
       "tag": "0001_bouncy_risque",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1773956474058,
+      "tag": "0002_minor_tattoo",
+      "breakpoints": true
     }
   ]
 }

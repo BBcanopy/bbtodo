@@ -120,6 +120,11 @@ describe("database migrations", () => {
       ).map((column) => column.name);
       expect(taskColumns).toEqual(expect.arrayContaining(["body", "lane_id", "position"]));
 
+      const taskTagColumns = (
+        services.database.prepare("PRAGMA table_info(task_tags)").all() as Array<{ name: string }>
+      ).map((column) => column.name);
+      expect(taskTagColumns).toEqual(expect.arrayContaining(["color"]));
+
       const lanes = services.database
         .prepare(
           "SELECT id, name, system_key, position FROM lanes WHERE project_id = ? ORDER BY position ASC"
@@ -148,6 +153,11 @@ describe("database migrations", () => {
         lane_id: lanes[0]?.id ?? null,
         position: 0
       });
+
+      const migratedTaskTags = services.database
+        .prepare("SELECT color FROM task_tags WHERE task_id = ?")
+        .all("task-1") as Array<{ color: string }>;
+      expect(migratedTaskTags).toEqual([]);
 
       const migrationRows = services.database
         .prepare('SELECT hash, created_at FROM "__drizzle_migrations"')

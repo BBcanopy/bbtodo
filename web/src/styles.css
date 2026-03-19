@@ -1619,10 +1619,10 @@ textarea:focus {
   align-items: center;
   min-height: 1.8rem;
   padding: 0.28rem 0.62rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--tag-border, var(--line));
   border-radius: 999px;
-  background: var(--surface-muted);
-  color: var(--ink-soft);
+  background: var(--tag-bg, var(--surface-muted));
+  color: var(--tag-fg, var(--ink-soft));
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -1635,8 +1635,7 @@ textarea:focus {
 
 .task-tag:hover {
   transform: translateY(-1px);
-  border-color: var(--line-strong);
-  color: var(--ink);
+  filter: saturate(1.05);
 }
 
 .task-tag:active {
@@ -1644,9 +1643,9 @@ textarea:focus {
 }
 
 .task-tag.is-active {
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--tag-border, var(--line)) 65%, var(--accent));
+  background: color-mix(in srgb, var(--tag-bg, var(--surface-muted)) 78%, var(--accent-soft));
+  box-shadow: 0 0 0 3px rgba(47, 119, 116, 0.1);
 }
 
 .task-card.is-dragging {
@@ -1928,12 +1927,46 @@ textarea:focus {
   align-items: center;
   gap: 0.35rem;
   min-height: 2rem;
-  padding: 0.2rem 0.28rem 0.2rem 0.7rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  padding: 0.2rem 0.28rem 0.2rem 0.24rem;
+  border: 1px solid var(--tag-border, color-mix(in srgb, var(--accent) 24%, transparent));
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  background: var(--tag-bg, var(--accent-soft));
+  color: var(--tag-fg, var(--accent-strong));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.task-tag-editor__chip.is-selected {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 0 3px rgba(47, 119, 116, 0.1);
+}
+
+.task-tag-editor__chip-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 1.55rem;
+  padding: 0 0.28rem 0 0.4rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+}
+
+.task-tag-editor__chip-main:focus-visible,
+.task-tag-editor__swatch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(47, 119, 116, 0.12);
+}
+
+.task-tag-editor__chip-swatch {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tag-fg, var(--accent-strong)) 82%, white);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 0 0 1px color-mix(in srgb, var(--tag-fg, var(--accent-strong)) 22%, transparent);
 }
 
 .task-tag-editor__chip-label {
@@ -1956,6 +1989,11 @@ textarea:focus {
     transform 180ms var(--ease),
     background-color 180ms var(--ease),
     color 180ms var(--ease);
+}
+
+.task-tag-editor__chip-remove .ui-icon {
+  width: 0.82rem;
+  height: 0.82rem;
 }
 
 .task-tag-editor__chip-remove:hover {
@@ -1990,30 +2028,91 @@ textarea:focus {
   gap: 0.5rem;
 }
 
-.task-tag-editor__suggestion {
+.task-tag-editor__palette-panel {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.task-tag-editor__palette-label {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.task-tag-editor__palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.task-tag-editor__swatch {
   display: inline-flex;
   align-items: center;
+  gap: 0.45rem;
   min-height: 2rem;
-  padding: 0.35rem 0.75rem;
-  border: 1px dashed color-mix(in srgb, var(--accent) 30%, transparent);
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--tag-border, var(--line));
   border-radius: 999px;
-  background: var(--surface-muted);
-  color: var(--ink-soft);
+  background: var(--tag-bg, var(--surface-muted));
+  color: var(--tag-fg, var(--ink-soft));
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.03em;
   transition:
     transform 180ms var(--ease),
     border-color 180ms var(--ease),
-    background-color 180ms var(--ease),
-    color 180ms var(--ease);
+    box-shadow 180ms var(--ease);
+}
+
+.task-tag-editor__swatch:hover {
+  transform: translateY(-1px);
+}
+
+.task-tag-editor__swatch:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.task-tag-editor__swatch.is-active {
+  box-shadow: 0 0 0 3px rgba(47, 119, 116, 0.1);
+}
+
+.task-tag-editor__swatch-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tag-fg, var(--accent-strong)) 82%, white);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 0 0 1px color-mix(in srgb, var(--tag-fg, var(--accent-strong)) 18%, transparent);
+}
+
+.task-tag-editor__swatch-name {
+  line-height: 1;
+}
+
+.task-tag-editor__suggestion {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px dashed var(--tag-border, color-mix(in srgb, var(--accent) 30%, transparent));
+  border-radius: 999px;
+  background: var(--tag-bg, var(--surface-muted));
+  color: var(--tag-fg, var(--ink-soft));
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  transition:
+    transform 180ms var(--ease),
+    border-color 180ms var(--ease),
+    box-shadow 180ms var(--ease);
 }
 
 .task-tag-editor__suggestion:hover {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
-  background: rgba(47, 119, 116, 0.08);
-  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--tag-border, var(--line)) 78%, var(--accent));
+  box-shadow: 0 10px 22px -20px rgba(18, 34, 36, 0.28);
 }
 
 .task-tag-editor__suggestion:active {

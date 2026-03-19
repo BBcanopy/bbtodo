@@ -1,6 +1,12 @@
 export type TaskStatus = "todo" | "in_progress" | "done";
 export type UserTheme = "sea" | "ember" | "midnight";
+export type TaskTagColor = "moss" | "sky" | "amber" | "coral" | "orchid" | "slate";
 export type TaskCounts = Record<TaskStatus, number>;
+
+export interface TaskTag {
+  color: TaskTagColor;
+  label: string;
+}
 
 export interface User {
   email: string | null;
@@ -37,7 +43,7 @@ export interface Task {
   position: number;
   projectId: string;
   status: TaskStatus;
-  tags: string[];
+  tags: TaskTag[];
   title: string;
   updatedAt: string;
 }
@@ -116,7 +122,7 @@ export const api = {
       method: "POST"
     });
   },
-  createTask(projectId: string, input: { body?: string; laneId?: string; tags?: string[]; title: string }) {
+  createTask(projectId: string, input: { body?: string; laneId?: string; tags?: TaskTag[]; title: string }) {
     return request<Task>(`/api/v1/projects/${projectId}/tasks`, {
       body: JSON.stringify(input),
       method: "POST"

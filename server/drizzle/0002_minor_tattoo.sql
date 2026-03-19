@@ -1,0 +1,1 @@
+ALTER TABLE `task_tags` ADD `color` text DEFAULT 'moss' NOT NULL;
