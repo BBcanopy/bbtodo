@@ -977,6 +977,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(page.getByRole("button", { name: "Create Lane" })).toBeVisible();
   await expect(page.getByLabel("Search cards")).toBeVisible();
   await expect(page.getByLabel("Filter by tags")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show tag filter suggestions" })).toBeVisible();
   await expect(page.locator(".subnav__search-label")).toHaveCount(0);
   await expect(page.getByLabel("Filter by tags")).toHaveAttribute("placeholder", "tags");
   const currentProjectBackground = await page
@@ -1098,7 +1099,18 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(page.getByText("Tighten callback logging")).toBeVisible();
   await expect(page.getByText("Remove healthcheck loop")).toHaveCount(0);
   await page.getByLabel("Search cards").fill("");
-  await page.getByLabel("Filter by tags").fill("release");
+  const tagFilterInput = page.getByLabel("Filter by tags");
+  await page.getByRole("button", { name: "Show tag filter suggestions" }).click();
+  const tagFilterDropdown = page.getByRole("list", { name: "Available tag filters" });
+  await expect(tagFilterDropdown).toBeVisible();
+  await expect(tagFilterDropdown.getByRole("button", { name: "Add tag filter release" })).toBeVisible();
+  await expect(tagFilterDropdown.getByRole("button", { name: "Add tag filter global-brand" })).toBeVisible();
+  await tagFilterDropdown.getByRole("button", { name: "Add tag filter release" }).click();
+  await expect(tagFilterInput).toHaveValue("release");
+  await expect(page.getByText("Review retry scope")).toBeVisible();
+  await expect(page.getByText("Tighten callback logging")).toHaveCount(0);
+  await expect(page.getByText("Queue copy pass")).toHaveCount(0);
+  await tagFilterInput.fill("backend");
   await expect(page.getByText("Review retry scope")).toBeVisible();
   await expect(page.getByText("Tighten callback logging")).toHaveCount(0);
   await expect(page.getByText("Queue copy pass")).toHaveCount(0);

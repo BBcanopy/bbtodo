@@ -10,9 +10,10 @@ import {
   useSearchParams
 } from "react-router-dom";
 
-import { api, type User } from "../api";
+import { api, type TaskTag, type User } from "../api";
+import { getTaskTagStyle } from "../app/tag-colors";
 import { themeOptions } from "../app/constants";
-import { getAvatarLetter } from "../app/utils";
+import { formatTagInput, getAvatarLetter, normalizeTagKey, parseTagInput } from "../app/utils";
 import { ChevronDownIcon, ErrorBanner, PencilIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
@@ -23,13 +24,21 @@ export function AppShell({ user }: { user: User }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProjectSwitcherOpen, setIsProjectSwitcherOpen] = useState(false);
+  const [isTagFilterOpen, setIsTagFilterOpen] = useState(false);
   const [projectSwitcherInput, setProjectSwitcherInput] = useState("");
   const queryClient = useQueryClient();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const projectSwitcherRef = useRef<HTMLDivElement | null>(null);
+  const tagFilterRef = useRef<HTMLDivElement | null>(null);
+  const tagFilterInputRef = useRef<HTMLInputElement | null>(null);
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
+    enabled: Boolean(boardMatch)
+  });
+  const taskTagsQuery = useQuery({
+    queryKey: ["task-tags"],
+    queryFn: () => api.listTaskTags(),
     enabled: Boolean(boardMatch)
   });
   const createProjectMutation = useMutation({
@@ -68,6 +77,42 @@ export function AppShell({ user }: { user: User }) {
   const isProjectsRoute = location.pathname === "/";
   const navSearch = boardMatch || isProjectsRoute ? searchParams.get("q") ?? "" : "";
   const navTagSearch = boardMatch ? searchParams.get("tags") ?? "" : "";
+  const availableTagFilters = taskTagsQuery.data ?? [];
+  const availableTagFilterKeys = useMemo(
+    () => new Set(availableTagFilters.map((tag) => normalizeTagKey(tag.label))),
+    [availableTagFilters]
+  );
+  const hasTagFilterTrailingSeparator = /,\s*$/.test(navTagSearch);
+  const tagFilterSegments = navTagSearch.split(",");
+  const tagFilterDraftValue = tagFilterSegments.at(-1) ?? "";
+  const tagFilterDraftKey = normalizeTagKey(tagFilterDraftValue);
+  const hasTagFilterDraft =
+    !hasTagFilterTrailingSeparator &&
+    tagFilterDraftKey.length > 0 &&
+    !availableTagFilterKeys.has(tagFilterDraftKey);
+  const committedTagFilterInput = hasTagFilterDraft
+    ? tagFilterSegments.slice(0, -1).join(",")
+    : navTagSearch;
+  const committedTagFilters = useMemo(
+    () => parseTagInput(committedTagFilterInput),
+    [committedTagFilterInput]
+  );
+  const committedTagFilterKeys = useMemo(
+    () => new Set(committedTagFilters.map((tag) => normalizeTagKey(tag))),
+    [committedTagFilters]
+  );
+  const visibleTagFilterOptions = useMemo(
+    () =>
+      availableTagFilters.filter((tag) => {
+        const key = normalizeTagKey(tag.label);
+        if (committedTagFilterKeys.has(key)) {
+          return false;
+        }
+
+        return !hasTagFilterDraft || key.includes(tagFilterDraftKey);
+      }),
+    [availableTagFilters, committedTagFilterKeys, hasTagFilterDraft, tagFilterDraftKey]
+  );
   const activeProject =
     boardMatch && projectsQuery.data
       ? projectsQuery.data.find((project) => project.id === boardMatch.params.projectId) ?? null
@@ -89,6 +134,7 @@ export function AppShell({ user }: { user: User }) {
 
   useDismissableLayer(isMenuOpen, menuRef, () => setIsMenuOpen(false));
   useDismissableLayer(isProjectSwitcherOpen, projectSwitcherRef, () => setIsProjectSwitcherOpen(false));
+  useDismissableLayer(isTagFilterOpen, tagFilterRef, () => setIsTagFilterOpen(false));
 
   useEffect(() => {
     if (isProjectSwitcherOpen) {
@@ -99,6 +145,14 @@ export function AppShell({ user }: { user: User }) {
     createProjectMutation.reset();
     renameProjectMutation.reset();
   }, [isProjectSwitcherOpen]);
+
+  useEffect(() => {
+    if (boardMatch) {
+      return;
+    }
+
+    setIsTagFilterOpen(false);
+  }, [boardMatch]);
 
   function updateRouteParams(updater: (params: URLSearchParams) => void) {
     const nextParams = new URLSearchParams(searchParams);
@@ -111,6 +165,28 @@ export function AppShell({ user }: { user: User }) {
     setProjectSwitcherInput("");
     startTransition(() => {
       navigate(`/projects/${projectId}`);
+    });
+  }
+
+  function selectTagFilter(tag: TaskTag) {
+    const nextTags = committedTagFilters.some(
+      (selectedTag) => normalizeTagKey(selectedTag) === normalizeTagKey(tag.label)
+    )
+      ? committedTagFilters
+      : [...committedTagFilters, tag.label];
+
+    updateRouteParams((params) => {
+      const nextValue = formatTagInput(nextTags);
+      if (nextValue) {
+        params.set("tags", nextValue);
+      } else {
+        params.delete("tags");
+      }
+    });
+
+    setIsTagFilterOpen(true);
+    window.requestAnimationFrame(() => {
+      tagFilterInputRef.current?.focus();
     });
   }
 
@@ -243,24 +319,92 @@ export function AppShell({ user }: { user: User }) {
                     />
                   </label>
                   {boardMatch ? (
-                    <label className="subnav__search">
-                      <input
-                        aria-label="Filter by tags"
-                        onChange={(event) =>
-                          updateRouteParams((params) => {
-                            const value = event.target.value;
-                            if (value.trim()) {
-                              params.set("tags", value);
-                            } else {
-                              params.delete("tags");
+                    <div className="subnav__search subnav__search--tag-filter" ref={tagFilterRef}>
+                      <div className={`subnav__search-combo${isTagFilterOpen ? " is-open" : ""}`}>
+                        <input
+                          aria-controls="tag-filter-dropdown"
+                          aria-expanded={isTagFilterOpen}
+                          aria-label="Filter by tags"
+                          onChange={(event) => {
+                            setIsTagFilterOpen(true);
+                            updateRouteParams((params) => {
+                              const value = event.target.value;
+                              if (value.trim()) {
+                                params.set("tags", value);
+                              } else {
+                                params.delete("tags");
+                              }
+                            });
+                          }}
+                          onFocus={() => setIsTagFilterOpen(true)}
+                          onKeyDown={(event) => {
+                            if (event.key === "ArrowDown") {
+                              event.preventDefault();
+                              setIsTagFilterOpen(true);
                             }
-                          })
-                        }
-                        placeholder="tags"
-                        type="search"
-                        value={navTagSearch}
-                      />
-                    </label>
+
+                            if (event.key === "Escape") {
+                              setIsTagFilterOpen(false);
+                            }
+                          }}
+                          placeholder="tags"
+                          ref={tagFilterInputRef}
+                          type="search"
+                          value={navTagSearch}
+                        />
+                        <button
+                          aria-expanded={isTagFilterOpen}
+                          aria-label="Show tag filter suggestions"
+                          className="subnav__search-toggle"
+                          onClick={() => {
+                            setIsTagFilterOpen((current) => !current);
+                            window.requestAnimationFrame(() => {
+                              tagFilterInputRef.current?.focus();
+                            });
+                          }}
+                          type="button"
+                        >
+                          <ChevronDownIcon className={`project-switcher__chevron${isTagFilterOpen ? " is-open" : ""}`} />
+                        </button>
+                      </div>
+                      {isTagFilterOpen ? (
+                        <div
+                          aria-label="Available tag filters"
+                          className="subnav__search-dropdown"
+                          id="tag-filter-dropdown"
+                          role="list"
+                        >
+                          {taskTagsQuery.error ? <ErrorBanner error={taskTagsQuery.error} /> : null}
+                          {!taskTagsQuery.error ? (
+                            taskTagsQuery.isPending ? (
+                              <p className="subnav__search-empty">Loading tags...</p>
+                            ) : visibleTagFilterOptions.length > 0 ? (
+                              <div className="subnav__tag-option-list">
+                                {visibleTagFilterOptions.map((tag) => (
+                                  <button
+                                    aria-label={`Add tag filter ${tag.label}`}
+                                    className="subnav__tag-option"
+                                    key={tag.label}
+                                    onClick={() => selectTagFilter(tag)}
+                                    style={getTaskTagStyle(tag.color)}
+                                    type="button"
+                                  >
+                                    <span aria-hidden="true" className="subnav__tag-option-swatch" />
+                                    <span>{tag.label}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="subnav__search-empty">
+                                {availableTagFilters.length === 0
+                                  ? "No reusable tags yet."
+                                  : "No tags match that input."}
+                              </p>
+                            )
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
                   {boardMatch ? (
                     <button
