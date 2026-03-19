@@ -1024,19 +1024,19 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   expect(retryCardBox).not.toBeNull();
   expect(queueCopyCardBox).not.toBeNull();
   await page.mouse.move(
-    (queueCopyCardBox?.x ?? 0) + (queueCopyCardBox?.width ?? 0) / 2,
-    (queueCopyCardBox?.y ?? 0) + (queueCopyCardBox?.height ?? 0) / 2
+    (retryCardBox?.x ?? 0) + (retryCardBox?.width ?? 0) / 2,
+    (retryCardBox?.y ?? 0) + (retryCardBox?.height ?? 0) / 2
   );
   await page.mouse.down();
   await page.mouse.move(
-    (queueCopyCardBox?.x ?? 0) + (queueCopyCardBox?.width ?? 0) / 2,
-    (queueCopyCardBox?.y ?? 0) + (queueCopyCardBox?.height ?? 0) / 2 - 16,
+    (retryCardBox?.x ?? 0) + (retryCardBox?.width ?? 0) / 2,
+    (retryCardBox?.y ?? 0) + (retryCardBox?.height ?? 0) / 2 + 18,
     { steps: 6 }
   );
-  await expect(page.locator(".task-drop-indicator")).toHaveCount(0);
+  await expect(page.getByText("Drop here")).toHaveCount(0);
   await page.mouse.move(
-    (retryCardBox?.x ?? 0) + (retryCardBox?.width ?? 0) / 2,
-    (retryCardBox?.y ?? 0) + (retryCardBox?.height ?? 0) * 0.25,
+    (queueCopyCardBox?.x ?? 0) + (queueCopyCardBox?.width ?? 0) / 2,
+    (queueCopyCardBox?.y ?? 0) + (queueCopyCardBox?.height ?? 0) * 0.82,
     { steps: 18 }
   );
   await page.mouse.up();
@@ -1082,7 +1082,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
     (retryCardDragBox?.y ?? 0) + (retryCardDragBox?.height ?? 0) / 2,
     { steps: 6 }
   );
-  await expect(page.locator(".task-drop-indicator")).toHaveCount(0);
+  await expect(page.getByText("Drop here")).toHaveCount(0);
   const createdCardBox = await createdCard.boundingBox();
   expect(createdCardBox).not.toBeNull();
   await page.mouse.move(

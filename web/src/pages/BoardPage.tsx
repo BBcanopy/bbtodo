@@ -47,6 +47,18 @@ const taskDropAnimation = {
 const taskCollisionDetection: CollisionDetection = (args) => {
   const pointerHits = pointerWithin(args);
   if (pointerHits.length > 0) {
+    const slotHits = pointerHits.filter((collision) => {
+      const container = args.droppableContainers.find(
+        (droppableContainer) => droppableContainer.id === collision.id
+      );
+
+      return container?.data.current?.type === "slot";
+    });
+
+    if (slotHits.length > 0) {
+      return slotHits;
+    }
+
     const taskHits = pointerHits.filter((collision) => {
       const container = args.droppableContainers.find(
         (droppableContainer) => droppableContainer.id === collision.id
@@ -209,6 +221,38 @@ function LaneDropArea({
     <div className="board-column__content" ref={setNodeRef}>
       {children}
     </div>
+  );
+}
+
+function TaskDropSlot({
+  isVisible,
+  laneId,
+  position
+}: {
+  isVisible: boolean;
+  laneId: string;
+  position: number;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `slot:${laneId}:${position}`,
+    data: {
+      laneId,
+      position,
+      type: "slot"
+    }
+  });
+
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
+    <div
+      aria-hidden="true"
+      className={`task-drop-slot${isOver ? " is-active" : ""}`}
+      data-testid={`task-drop-slot-${laneId}-${position}`}
+      ref={setNodeRef}
+    />
   );
 }
 
@@ -766,6 +810,7 @@ export function BoardPage() {
   const [laneName, setLaneName] = useState("");
   const [taskDragPreviewWidth, setTaskDragPreviewWidth] = useState<number | null>(null);
   const laneDragPreviewRef = useRef<HTMLElement | null>(null);
+  const pointerClientYRef = useRef<number | null>(null);
   const taskDragOrderRef = useRef<TaskIdsByLane | null>(null);
 
   const projectsQuery = useQuery({
@@ -971,6 +1016,18 @@ export function BoardPage() {
     taskDragOrderRef.current = null;
   }
 
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      pointerClientYRef.current = event.clientY;
+    }
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+    };
+  }, []);
+
   function resolveLanePosition(targetLaneId: string, insertAfter: boolean) {
     const visibleLaneIds = lanes
       .filter((lane) => lane.id !== draggedLaneId)
@@ -1059,18 +1116,25 @@ export function BoardPage() {
     let targetLaneId: string | null = null;
     let targetIndex: number | null = null;
 
+    if (overData.type === "slot") {
+      targetLaneId = String(overData.laneId);
+      targetIndex = Number(overData.position);
+    }
+
     if (overData.type === "lane") {
       targetLaneId = String(overData.laneId);
       const laneTaskIds = currentTaskOrder[targetLaneId] ?? [];
       if (laneTaskIds.length === 0) {
         targetIndex = 0;
       } else {
+        const pointerClientY = pointerClientYRef.current;
         const translated = event.active.rect.current.translated;
         const activeHeight = event.active.rect.current.initial?.height ?? 0;
         const activeCenterY =
-          translated !== null
+          pointerClientY ??
+          (translated !== null
             ? translated.top + activeHeight / 2
-            : event.over.rect.top + event.over.rect.height / 2;
+            : event.over.rect.top + event.over.rect.height / 2);
         const relativeCenterY = Math.max(0, activeCenterY - event.over.rect.top);
         const normalizedIndex = Math.floor(
           (relativeCenterY / Math.max(event.over.rect.height, 1)) * laneTaskIds.length
@@ -1085,10 +1149,11 @@ export function BoardPage() {
       const overTaskId = String(overData.taskId);
       const overIndex = currentTaskOrder[targetLaneId]?.indexOf(overTaskId) ?? -1;
       if (overIndex !== -1) {
+        const pointerClientY = pointerClientYRef.current;
         const translated = event.active.rect.current.translated;
         const activeHeight = event.active.rect.current.initial?.height ?? event.over.rect.height;
         const translatedCenter =
-          translated !== null ? translated.top + activeHeight / 2 : event.over.rect.top;
+          pointerClientY ?? (translated !== null ? translated.top + activeHeight / 2 : event.over.rect.top);
         const isBelowOverItem =
           translatedCenter > event.over.rect.top + event.over.rect.height / 2;
         targetIndex = overIndex + (isBelowOverItem ? 1 : 0);
@@ -1394,18 +1459,25 @@ export function BoardPage() {
                         </div>
                       </form>
                     ) : null}
+                    <TaskDropSlot isVisible={Boolean(draggedTaskId)} laneId={lane.id} position={0} />
                     {lane.displayTasks.map((task, taskIndex) => (
-                      <TaskCard
-                        activeTagKeys={activeTagKeys}
-                        isDragDisabled={isDragDisabled}
-                        key={task.id}
-                        laneId={lane.id}
-                        onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
-                        onOpen={(taskToEdit) => setEditingTaskId(taskToEdit.id)}
-                        onTagSelect={handleTagSelect}
-                        task={task}
-                        taskIndex={taskIndex}
-                      />
+                      <div key={task.id}>
+                        <TaskCard
+                          activeTagKeys={activeTagKeys}
+                          isDragDisabled={isDragDisabled}
+                          laneId={lane.id}
+                          onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
+                          onOpen={(taskToEdit) => setEditingTaskId(taskToEdit.id)}
+                          onTagSelect={handleTagSelect}
+                          task={task}
+                          taskIndex={taskIndex}
+                        />
+                        <TaskDropSlot
+                          isVisible={Boolean(draggedTaskId)}
+                          laneId={lane.id}
+                          position={taskIndex + 1}
+                        />
+                      </div>
                     ))}
                   </SortableContext>
                 </LaneDropArea>
