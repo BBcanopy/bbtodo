@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import type {
+  LaneRecord,
+  LaneWithTaskCount,
   ProjectRecord,
   ProjectTaskCounts,
   TaskRecord,
@@ -26,18 +28,33 @@ export const taskCountsResponseSchema = z.object({
   done: z.number().int().nonnegative()
 });
 
+export const laneResponseSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  name: z.string(),
+  systemKey: taskStatusSchema.nullable(),
+  position: z.number().int().nonnegative(),
+  taskCount: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+
 export const projectResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  taskCounts: taskCountsResponseSchema
+  taskCounts: taskCountsResponseSchema,
+  laneSummaries: z.array(laneResponseSchema)
 });
 
 export const taskResponseSchema = z.object({
   id: z.string(),
   projectId: z.string(),
+  laneId: z.string().nullable(),
   title: z.string(),
+  body: z.string(),
+  position: z.number().int().nonnegative(),
   status: taskStatusSchema,
   createdAt: z.string(),
   updatedAt: z.string()
@@ -59,6 +76,10 @@ export const createProjectBodySchema = z.object({
   name: z.string().trim().min(1).max(120)
 });
 
+export const createLaneBodySchema = z.object({
+  name: z.string().trim().min(1).max(80)
+});
+
 export const createApiTokenBodySchema = z.object({
   name: z.string().trim().min(1).max(120)
 });
@@ -72,7 +93,9 @@ export const apiTokenParamsSchema = z.object({
 });
 
 export const createTaskBodySchema = z.object({
-  title: z.string().trim().min(1).max(240)
+  title: z.string().trim().min(1).max(240),
+  body: z.string().max(40_000).optional(),
+  laneId: z.string().uuid().optional()
 });
 
 export const taskParamsSchema = z.object({
@@ -87,13 +110,25 @@ export const listTasksQuerySchema = z.object({
 export const updateTaskBodySchema = z
   .object({
     title: z.string().trim().min(1).max(240).optional(),
+    body: z.string().max(40_000).optional(),
+    laneId: z.string().uuid().optional(),
+    position: z.number().int().nonnegative().optional(),
     status: taskStatusSchema.optional()
   })
-  .refine((value) => value.title !== undefined || value.status !== undefined, {
-    message: "Provide at least one field to update."
-  });
+  .refine(
+    (value) =>
+      value.title !== undefined ||
+      value.body !== undefined ||
+      value.laneId !== undefined ||
+      value.position !== undefined ||
+      value.status !== undefined,
+    {
+      message: "Provide at least one field to update."
+    }
+  );
 
 z.globalRegistry.add(meResponseSchema, { id: "Me" });
+z.globalRegistry.add(laneResponseSchema, { id: "Lane" });
 z.globalRegistry.add(projectResponseSchema, { id: "Project" });
 z.globalRegistry.add(taskResponseSchema, { id: "Task" });
 z.globalRegistry.add(apiTokenSummarySchema, { id: "ApiTokenSummary" });
@@ -115,16 +150,31 @@ export function toMeResponse(user: UserRecord) {
   });
 }
 
+export function toLaneResponse(lane: LaneRecord | LaneWithTaskCount, taskCount = 0) {
+  return laneResponseSchema.parse({
+    id: lane.id,
+    projectId: lane.projectId,
+    name: lane.name,
+    systemKey: lane.systemKey ?? null,
+    position: lane.position,
+    taskCount: "taskCount" in lane ? lane.taskCount : taskCount,
+    createdAt: lane.createdAt,
+    updatedAt: lane.updatedAt
+  });
+}
+
 export function toProjectResponse(
   project: ProjectRecord,
-  taskCounts: ProjectTaskCounts = createEmptyTaskCounts()
+  taskCounts: ProjectTaskCounts = createEmptyTaskCounts(),
+  laneSummaries: Array<LaneRecord | LaneWithTaskCount> = []
 ) {
   return projectResponseSchema.parse({
     id: project.id,
     name: project.name,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
-    taskCounts
+    taskCounts,
+    laneSummaries: laneSummaries.map((lane) => toLaneResponse(lane))
   });
 }
 
@@ -132,7 +182,10 @@ export function toTaskResponse(task: TaskRecord) {
   return taskResponseSchema.parse({
     id: task.id,
     projectId: task.projectId,
+    laneId: task.laneId ?? null,
     title: task.title,
+    body: task.body,
+    position: task.position,
     status: task.status,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt

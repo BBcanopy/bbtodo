@@ -52,6 +52,11 @@ describe("projects and tasks API", () => {
       in_progress: 0,
       done: 0
     });
+    expect(project.laneSummaries.map((lane: { name: string }) => lane.name)).toEqual([
+      "Todo",
+      "In Progress",
+      "Done"
+    ]);
 
     const listProjectsResponse = await app.inject({
       method: "GET",
@@ -77,7 +82,10 @@ describe("projects and tasks API", () => {
 
     expect(createTaskResponse.statusCode).toBe(201);
     expect(createTaskResponse.json()).toMatchObject({
+      body: "",
+      laneId: project.laneSummaries[0].id,
       projectId: project.id,
+      position: 0,
       status: "todo",
       title: "Write the first task"
     });
@@ -233,6 +241,150 @@ describe("projects and tasks API", () => {
     const openApi = openApiResponse.json();
     expect(openApi.openapi).toBe("3.1.0");
     expect(openApi.paths["/api/v1/projects"]).toBeDefined();
+    expect(openApi.paths["/api/v1/projects/{projectId}/lanes"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/tasks"]).toBeDefined();
+  });
+
+  it("supports custom lanes plus task body and ordering updates", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const createProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Editorial board"
+      }
+    });
+    const project = createProjectResponse.json();
+
+    const createLaneResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/lanes`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Ready for QA"
+      }
+    });
+
+    expect(createLaneResponse.statusCode).toBe(201);
+    expect(createLaneResponse.json()).toMatchObject({
+      name: "Ready for QA",
+      position: 3,
+      systemKey: null,
+      taskCount: 0
+    });
+    const qaLane = createLaneResponse.json();
+
+    const createTaskOneResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Draft release note",
+        body: "## Summary\n\n- ship docs",
+        laneId: qaLane.id
+      }
+    });
+    const createTaskTwoResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Polish QA copy",
+        laneId: qaLane.id
+      }
+    });
+
+    expect(createTaskOneResponse.statusCode).toBe(201);
+    expect(createTaskTwoResponse.statusCode).toBe(201);
+    expect(createTaskOneResponse.json()).toMatchObject({
+      body: "## Summary\n\n- ship docs",
+      laneId: qaLane.id,
+      position: 0
+    });
+    expect(createTaskTwoResponse.json()).toMatchObject({
+      laneId: qaLane.id,
+      position: 1
+    });
+
+    const firstTask = createTaskOneResponse.json();
+    const secondTask = createTaskTwoResponse.json();
+
+    const reorderTaskResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/tasks/${secondTask.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        body: "Updated body",
+        position: 0
+      }
+    });
+
+    expect(reorderTaskResponse.statusCode).toBe(200);
+    expect(reorderTaskResponse.json()).toMatchObject({
+      body: "Updated body",
+      id: secondTask.id,
+      laneId: qaLane.id,
+      position: 0
+    });
+
+    const lanesResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${project.id}/lanes`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(lanesResponse.statusCode).toBe(200);
+    expect(lanesResponse.json()).toHaveLength(4);
+    expect(lanesResponse.json()[3]).toMatchObject({
+      id: qaLane.id,
+      name: "Ready for QA",
+      taskCount: 2
+    });
+
+    const qaTasksResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(qaTasksResponse.statusCode).toBe(200);
+    expect(qaTasksResponse.json().filter((task: { laneId: string }) => task.laneId === qaLane.id)).toEqual([
+      expect.objectContaining({
+        id: secondTask.id,
+        position: 0
+      }),
+      expect.objectContaining({
+        id: firstTask.id,
+        position: 1
+      })
+    ]);
   });
 });

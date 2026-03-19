@@ -15,9 +15,11 @@ import {
   apiTokenSummarySchema,
   createApiTokenBodySchema,
   createApiTokenResponseSchema,
+  createLaneBodySchema,
   createProjectBodySchema,
   createTaskBodySchema,
   errorResponseSchema,
+  laneResponseSchema,
   listTasksQuerySchema,
   meResponseSchema,
   projectParamsSchema,
@@ -25,6 +27,7 @@ import {
   taskParamsSchema,
   taskResponseSchema,
   toApiTokenSummary,
+  toLaneResponse,
   toMeResponse,
   toProjectResponse,
   toTaskResponse,
@@ -35,6 +38,7 @@ import {
   SQLITE_DATABASE_PATH,
   type DatabaseClient,
   createApiToken,
+  createLane,
   createDatabase,
   createProject,
   createSession,
@@ -45,6 +49,7 @@ import {
   deleteSession,
   getUserForApiToken,
   getUserForSession,
+  listLanesForProject,
   listApiTokensForUser,
   listProjectsForUser,
   listTasksForProject,
@@ -418,7 +423,7 @@ export function buildApp(options: {
       }
 
       return listProjectsForUser(database.db, user.id).map((project) =>
-        toProjectResponse(project, project.taskCounts)
+        toProjectResponse(project, project.taskCounts, project.laneSummaries)
       );
     }
   });
@@ -441,7 +446,14 @@ export function buildApp(options: {
       }
 
       const project = createProject(database.db, user.id, request.body.name.trim());
-      return reply.status(201).send(toProjectResponse(project));
+      const laneSummaries = listLanesForProject(database.db, {
+        userId: user.id,
+        projectId: project.id
+      });
+
+      return reply
+        .status(201)
+        .send(toProjectResponse(project, undefined, laneSummaries ?? []));
     }
   });
 
@@ -471,6 +483,72 @@ export function buildApp(options: {
       }
 
       return reply.status(204).send(null);
+    }
+  });
+
+  typedApp.route({
+    method: "GET",
+    url: "/api/v1/projects/:projectId/lanes",
+    schema: {
+      params: projectParamsSchema,
+      response: {
+        200: z.array(laneResponseSchema),
+        401: errorResponseSchema,
+        404: errorResponseSchema
+      },
+      tags: ["lanes"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      const projectLanes = listLanesForProject(database.db, {
+        userId: user.id,
+        projectId: request.params.projectId
+      });
+      if (!projectLanes) {
+        return reply.status(404).send({
+          message: "Project not found."
+        });
+      }
+
+      return projectLanes.map(toLaneResponse);
+    }
+  });
+
+  typedApp.route({
+    method: "POST",
+    url: "/api/v1/projects/:projectId/lanes",
+    schema: {
+      body: createLaneBodySchema,
+      params: projectParamsSchema,
+      response: {
+        201: laneResponseSchema,
+        401: errorResponseSchema,
+        404: errorResponseSchema
+      },
+      tags: ["lanes"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      const lane = createLane(database.db, {
+        userId: user.id,
+        projectId: request.params.projectId,
+        name: request.body.name.trim()
+      });
+      if (!lane) {
+        return reply.status(404).send({
+          message: "Project not found."
+        });
+      }
+
+      return reply.status(201).send(toLaneResponse(lane));
     }
   });
 
@@ -530,11 +608,13 @@ export function buildApp(options: {
       const task = createTask(database.db, {
         userId: user.id,
         projectId: request.params.projectId,
-        title: request.body.title.trim()
+        title: request.body.title.trim(),
+        body: request.body.body,
+        laneId: request.body.laneId
       });
       if (!task) {
         return reply.status(404).send({
-          message: "Project not found."
+          message: "Project or lane not found."
         });
       }
 
@@ -566,11 +646,14 @@ export function buildApp(options: {
         projectId: request.params.projectId,
         taskId: request.params.taskId,
         title: request.body.title?.trim(),
+        body: request.body.body,
+        laneId: request.body.laneId,
+        position: request.body.position,
         status: request.body.status
       });
       if (!task) {
         return reply.status(404).send({
-          message: "Task not found."
+          message: "Task or lane not found."
         });
       }
 

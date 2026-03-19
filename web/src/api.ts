@@ -7,17 +7,32 @@ export interface User {
   name: string | null;
 }
 
+export interface BoardLane {
+  createdAt: string;
+  id: string;
+  name: string;
+  position: number;
+  projectId: string;
+  systemKey: TaskStatus | null;
+  taskCount: number;
+  updatedAt: string;
+}
+
 export interface Project {
   createdAt: string;
   id: string;
+  laneSummaries: BoardLane[];
   name: string;
   taskCounts: TaskCounts;
   updatedAt: string;
 }
 
 export interface Task {
+  body: string;
   createdAt: string;
   id: string;
+  laneId: string | null;
+  position: number;
   projectId: string;
   status: TaskStatus;
   title: string;
@@ -86,15 +101,21 @@ export const api = {
       method: "POST"
     });
   },
+  createLane(projectId: string, name: string) {
+    return request<BoardLane>(`/api/v1/projects/${projectId}/lanes`, {
+      body: JSON.stringify({ name }),
+      method: "POST"
+    });
+  },
   createApiToken(name: string) {
     return request<CreateApiTokenResponse>("/api/v1/api-tokens", {
       body: JSON.stringify({ name }),
       method: "POST"
     });
   },
-  createTask(projectId: string, title: string) {
+  createTask(projectId: string, input: { body?: string; laneId?: string; title: string }) {
     return request<Task>(`/api/v1/projects/${projectId}/tasks`, {
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(input),
       method: "POST"
     });
   },
@@ -119,6 +140,9 @@ export const api = {
   listProjects() {
     return request<Project[]>("/api/v1/projects");
   },
+  listLanes(projectId: string) {
+    return request<BoardLane[]>(`/api/v1/projects/${projectId}/lanes`);
+  },
   listApiTokens() {
     return request<ApiTokenSummary[]>("/api/v1/api-tokens");
   },
@@ -130,7 +154,11 @@ export const api = {
       method: "POST"
     });
   },
-  updateTask(projectId: string, taskId: string, input: Partial<Pick<Task, "status" | "title">>) {
+  updateTask(
+    projectId: string,
+    taskId: string,
+    input: Partial<Pick<Task, "body" | "laneId" | "position" | "status" | "title">>
+  ) {
     return request<Task>(`/api/v1/projects/${projectId}/tasks/${taskId}`, {
       body: JSON.stringify(input),
       method: "PATCH"
