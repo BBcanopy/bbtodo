@@ -635,6 +635,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.getByTestId("project-card-project-1").getByLabel("Done 1")).toBeVisible();
   await expect(page.locator(".subnav__current")).toHaveCount(0);
   await expect(page.getByLabel("Search projects")).toBeVisible();
+  await expect(page.locator(".subnav__search-label")).toHaveCount(0);
   await expect(page.locator(".topbar__identity")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
   await expect(page.getByLabel("Open account menu")).toHaveText("N");
@@ -827,6 +828,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(page.locator(".subnav__current")).toHaveText("Billing cleanup");
   await expect(page.getByRole("button", { name: "Create Lane" })).toBeVisible();
   await expect(page.getByLabel("Search cards")).toBeVisible();
+  await expect(page.locator(".subnav__search-label")).toHaveText("Search");
 
   const maxWidth = await page.locator(".page-shell--board").evaluate((element) => getComputedStyle(element).maxWidth);
   expect(maxWidth).toBe("none");
@@ -888,7 +890,8 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
     dataTransfer: reorderTransfer
   });
   await expect(page.getByTestId(`task-drop-indicator-${laneId("project-1", "todo")}-0`)).toBeVisible();
-  await todoColumn.dispatchEvent("drop", { dataTransfer: reorderTransfer });
+  await retryCard.dispatchEvent("drop", { dataTransfer: reorderTransfer });
+  await queueCopyCard.dispatchEvent("dragend", { dataTransfer: reorderTransfer });
   const todoTitles = todoColumn.locator(".task-card__title");
   await expect(todoTitles.nth(0)).toHaveText("Queue copy pass");
   await expect(todoTitles.nth(1)).toHaveText("Review retry scope");
@@ -916,7 +919,8 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await qaColumn.locator(".board-column__content").dispatchEvent("dragover", { dataTransfer: moveTransfer });
   await expect(page.getByTestId(`task-drop-indicator-project-1-lane-custom-1-1`)).toBeVisible();
   await expect(qaColumn).toHaveClass(/is-drop-target/);
-  await qaColumn.dispatchEvent("drop", { dataTransfer: moveTransfer });
+  await qaColumn.locator(".board-column__content").dispatchEvent("drop", { dataTransfer: moveTransfer });
+  await retryCard.dispatchEvent("dragend", { dataTransfer: moveTransfer });
   await expect(qaColumn.getByText("Review retry scope")).toBeVisible();
   await expect(todoColumn.getByText("Review retry scope")).toHaveCount(0);
 

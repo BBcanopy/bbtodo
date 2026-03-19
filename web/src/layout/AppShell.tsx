@@ -74,7 +74,7 @@ export function AppShell({ user }: { user: User }) {
               ) : null}
               {boardMatch || isProjectsRoute ? (
                 <label className="subnav__search">
-                  <span className="subnav__search-label">Search</span>
+                  {boardMatch ? <span className="subnav__search-label">Search</span> : null}
                   <input
                     aria-label={isProjectsRoute ? "Search projects" : "Search cards"}
                     onChange={(event) =>

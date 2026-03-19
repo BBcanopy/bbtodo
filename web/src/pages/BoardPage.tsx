@@ -13,6 +13,7 @@ function TaskCard({
   onDelete,
   onDragEnd,
   onDragOver,
+  onDrop,
   onDragStart,
   onOpen,
   task,
@@ -22,6 +23,7 @@ function TaskCard({
   onDelete: (taskId: string) => void;
   onDragEnd: () => void;
   onDragOver: (event: DragEvent<HTMLElement>) => void;
+  onDrop: (event: DragEvent<HTMLElement>) => void;
   onDragStart: (task: Task) => void;
   onOpen: (task: Task) => void;
   task: Task;
@@ -40,6 +42,7 @@ function TaskCard({
       onClick={() => onOpen(task)}
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
+      onDrop={onDrop}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", task.id);
@@ -586,10 +589,6 @@ export function BoardPage() {
                   setDropTarget((current) => (current?.laneId === lane.id ? null : current));
                 }
               }}
-              onDrop={(event) => {
-                event.preventDefault();
-                handleDrop(lane);
-              }}
               style={itemStyle(laneIndex)}
             >
               <div className="board-column__header">
@@ -600,6 +599,10 @@ export function BoardPage() {
               <div
                 className="board-column__content"
                 onDragOver={(event) => handleColumnDragOver(event, lane)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  handleDrop(lane);
+                }}
               >
                 {composerLaneId === lane.id ? (
                   <form
@@ -668,6 +671,10 @@ export function BoardPage() {
                           laneId: lane.id,
                           position: taskIndex
                         });
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        handleDrop(lane);
                       }}
                       onOpen={(taskToEdit) => setEditingTaskId(taskToEdit.id)}
                       task={task}
