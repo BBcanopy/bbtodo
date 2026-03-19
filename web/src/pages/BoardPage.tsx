@@ -230,7 +230,13 @@ export function BoardPage() {
   const queryClient = useQueryClient();
   const [composerLaneId, setComposerLaneId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+  const [draggedLaneId, setDraggedLaneId] = useState<string | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [laneDropTarget, setLaneDropTarget] = useState<{
+    insertAfter: boolean;
+    laneId: string;
+    position: number;
+  } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ laneId: string; position: number } | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [laneName, setLaneName] = useState("");
@@ -255,6 +261,7 @@ export function BoardPage() {
   const project = projectsQuery.data?.find((candidate) => candidate.id === projectId);
   const lanes = lanesQuery.data ?? project?.laneSummaries ?? [];
   const tasks = tasksQuery.data ?? [];
+  const draggedLane = draggedLaneId ? lanes.find((lane) => lane.id === draggedLaneId) ?? null : null;
   const draggedTask = draggedTaskId ? tasks.find((task) => task.id === draggedTaskId) ?? null : null;
   const editingTask = editingTaskId ? tasks.find((task) => task.id === editingTaskId) ?? null : null;
   const isBoardFiltered = boardSearch.length > 0;
@@ -313,6 +320,13 @@ export function BoardPage() {
       await invalidateBoardData();
     }
   });
+  const moveLaneMutation = useMutation({
+    mutationFn: ({ laneId, position }: { laneId: string; position: number }) =>
+      api.updateLane(projectId ?? "", laneId, { position }),
+    onSuccess: async () => {
+      await invalidateBoardData();
+    }
+  });
 
   const saveTaskMutation = useMutation({
     mutationFn: ({ body, taskId, title }: { body: string; taskId: string; title: string }) =>
@@ -329,7 +343,13 @@ export function BoardPage() {
       await invalidateBoardData();
     }
   });
-  const isDragDisabled = isBoardFiltered || moveTaskMutation.isPending || saveTaskMutation.isPending;
+  const isDragDisabled =
+    isBoardFiltered ||
+    moveTaskMutation.isPending ||
+    moveLaneMutation.isPending ||
+    saveTaskMutation.isPending ||
+    draggedLaneId !== null;
+  const isLaneDragDisabled = moveLaneMutation.isPending || draggedTaskId !== null;
 
   function updateBoardParams(updater: (params: URLSearchParams) => void) {
     const nextParams = new URLSearchParams(searchParams);
@@ -360,6 +380,23 @@ export function BoardPage() {
     saveTaskMutation.reset();
   }
 
+  function clearLaneDrag() {
+    setDraggedLaneId(null);
+    setLaneDropTarget(null);
+  }
+
+  function resolveLanePosition(targetLaneId: string, insertAfter: boolean) {
+    const visibleLaneIds = lanes
+      .filter((lane) => lane.id !== draggedLaneId)
+      .map((lane) => lane.id);
+    const targetIndex = visibleLaneIds.indexOf(targetLaneId);
+    if (targetIndex === -1) {
+      return null;
+    }
+
+    return Math.max(0, Math.min(targetIndex + (insertAfter ? 1 : 0), visibleLaneIds.length));
+  }
+
   function handleDrop(lane: { id: string; tasks: Task[] }) {
     const target = dropTarget ?? {
       laneId: lane.id,
@@ -378,6 +415,51 @@ export function BoardPage() {
       taskId: draggedTask.id
     });
     setDraggedTaskId(null);
+  }
+
+  function handleLaneDragOver(event: DragEvent<HTMLElement>, lane: BoardLane) {
+    if (!draggedLaneId || isLaneDragDisabled || lane.id === draggedLaneId) {
+      return;
+    }
+
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const insertAfter = event.clientX > bounds.left + bounds.width / 2;
+    const position = resolveLanePosition(lane.id, insertAfter);
+    if (position === null) {
+      return;
+    }
+
+    setLaneDropTarget((current) => {
+      if (
+        current?.laneId === lane.id &&
+        current.position === position &&
+        current.insertAfter === insertAfter
+      ) {
+        return current;
+      }
+
+      return {
+        laneId: lane.id,
+        position,
+        insertAfter
+      };
+    });
+  }
+
+  function handleLaneDrop() {
+    const laneId = draggedLane?.id;
+    const position = laneDropTarget?.position;
+
+    clearLaneDrag();
+    if (!laneId || position === undefined) {
+      return;
+    }
+
+    moveLaneMutation.mutate({
+      laneId,
+      position
+    });
   }
 
   function handleColumnDragOver(
@@ -565,6 +647,7 @@ export function BoardPage() {
       {tasksQuery.error ? <ErrorBanner error={tasksQuery.error} /> : null}
       {createTaskMutation.error ? <ErrorBanner error={createTaskMutation.error} /> : null}
       {moveTaskMutation.error ? <ErrorBanner error={moveTaskMutation.error} /> : null}
+      {moveLaneMutation.error ? <ErrorBanner error={moveLaneMutation.error} /> : null}
       {deleteTaskMutation.error ? <ErrorBanner error={deleteTaskMutation.error} /> : null}
 
       {projectsQuery.isPending || lanesQuery.isPending || tasksQuery.isPending ? <BoardSkeleton /> : null}
@@ -581,7 +664,7 @@ export function BoardPage() {
         <section className="board-grid board-grid--lanes" data-testid="board-grid">
           {groupedTasks.map((lane, laneIndex) => (
             <div
-              className={`board-column${dropTarget?.laneId === lane.id ? " is-drop-target" : ""}`}
+              className={`board-column${dropTarget?.laneId === lane.id ? " is-drop-target" : ""}${draggedLaneId === lane.id ? " is-lane-dragging" : ""}${laneDropTarget?.laneId === lane.id ? " is-lane-drop-target" : ""}${laneDropTarget?.laneId === lane.id && laneDropTarget.insertAfter ? " is-lane-drop-after" : ""}${laneDropTarget?.laneId === lane.id && !laneDropTarget.insertAfter ? " is-lane-drop-before" : ""}`}
               data-testid={`board-column-${lane.systemKey ?? lane.id}`}
               key={lane.id}
               onDoubleClick={(event) => {
@@ -595,7 +678,18 @@ export function BoardPage() {
               onDragLeave={(event) => {
                 if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) {
                   setDropTarget((current) => (current?.laneId === lane.id ? null : current));
+                  setLaneDropTarget((current) => (current?.laneId === lane.id ? null : current));
                 }
+              }}
+              onDragOver={(event) => handleLaneDragOver(event, lane)}
+              onDrop={(event) => {
+                if (!draggedLaneId) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                handleLaneDrop();
               }}
               style={itemStyle(laneIndex)}
             >
@@ -603,11 +697,38 @@ export function BoardPage() {
                 <div>
                   <h2>{lane.name}</h2>
                 </div>
+                <button
+                  aria-label={`Reorder lane ${lane.name}`}
+                  className="lane-drag-handle"
+                  draggable={!isLaneDragDisabled}
+                  onClick={(event) => event.stopPropagation()}
+                  onDragEnd={() => clearLaneDrag()}
+                  onDragStart={(event) => {
+                    event.stopPropagation();
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", lane.id);
+                    setDraggedLaneId(lane.id);
+                    setLaneDropTarget(null);
+                  }}
+                  type="button"
+                >
+                  <span aria-hidden="true">::</span>
+                </button>
               </div>
               <div
                 className="board-column__content"
-                onDragOver={(event) => handleColumnDragOver(event, lane)}
+                onDragOver={(event) => {
+                  if (draggedLaneId) {
+                    return;
+                  }
+
+                  handleColumnDragOver(event, lane);
+                }}
                 onDrop={(event) => {
+                  if (draggedLaneId) {
+                    return;
+                  }
+
                   event.preventDefault();
                   handleDrop(lane);
                 }}
@@ -668,10 +789,12 @@ export function BoardPage() {
                         setDropTarget(null);
                       }}
                       onDragOver={(event) =>
-                        handleCardDragOver(event, {
-                          laneId: lane.id,
-                          taskIndex
-                        })
+                        draggedLaneId
+                          ? undefined
+                          : handleCardDragOver(event, {
+                              laneId: lane.id,
+                              taskIndex
+                            })
                       }
                       onDragStart={(currentTask) => {
                         setDraggedTaskId(currentTask.id);
@@ -681,6 +804,10 @@ export function BoardPage() {
                         });
                       }}
                       onDrop={(event) => {
+                        if (draggedLaneId) {
+                          return;
+                        }
+
                         event.preventDefault();
                         handleDrop(lane);
                       }}

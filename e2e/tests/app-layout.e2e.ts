@@ -348,6 +348,31 @@ async function mockAuthenticated(
     });
   }
 
+  function moveLane(projectId: string, laneIdValue: string, targetPosition: number) {
+    const project = getProject(projectId);
+    if (!project) {
+      return null;
+    }
+
+    const lane = project.laneSummaries.find((candidate) => candidate.id === laneIdValue);
+    if (!lane) {
+      return null;
+    }
+
+    const orderedLanes = [...project.laneSummaries].sort((left, right) => left.position - right.position);
+    const reorderedLanes = orderedLanes.filter((candidate) => candidate.id !== laneIdValue);
+    const clampedPosition = Math.max(0, Math.min(targetPosition, reorderedLanes.length));
+    reorderedLanes.splice(clampedPosition, 0, lane);
+    reorderedLanes.forEach((candidate, index) => {
+      candidate.position = index;
+      candidate.updatedAt = "2026-03-18T08:12:00.000Z";
+    });
+
+    project.laneSummaries = reorderedLanes;
+    syncProject(projectId);
+    return project.laneSummaries.find((candidate) => candidate.id === laneIdValue) ?? null;
+  }
+
   syncAllProjects();
 
   await page.route("**/auth/logout", async (route) => {
@@ -451,6 +476,19 @@ async function mockAuthenticated(
       project.laneSummaries.push(createdLane);
       syncProject(projectId);
       await fulfillJson(route, 201, createdLane);
+      return;
+    }
+
+    if (request.method() === "PATCH" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.includes("/lanes/")) {
+      const [projectId, laneIdValue] = [url.pathname.split("/")[4], url.pathname.split("/").pop() ?? ""];
+      const lane = moveLane(projectId, laneIdValue, body?.position ?? 0);
+
+      if (!lane) {
+        await fulfillJson(route, 404, { message: "Lane not found." });
+        return;
+      }
+
+      await fulfillJson(route, 200, lane);
       return;
     }
 
@@ -915,6 +953,13 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await laneDialog.getByRole("button", { exact: true, name: "Create Lane" }).click();
 
   await expect(page.getByRole("heading", { name: "Ready for QA" })).toBeVisible();
+  const laneHeadings = page.locator(".board-column__header h2");
+  await expect(laneHeadings).toHaveText(["Todo", "In Progress", "Done", "Ready for QA"]);
+
+  await page.getByLabel("Reorder lane Ready for QA").dragTo(page.getByTestId("board-column-in_progress"), {
+    targetPosition: { x: 16, y: 40 }
+  });
+  await expect(laneHeadings).toHaveText(["Todo", "Ready for QA", "In Progress", "Done"]);
 
   const qaColumn = page.getByTestId("board-column-project-1-lane-custom-1");
   await qaColumn.dblclick();

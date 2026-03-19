@@ -87,12 +87,21 @@ export const createLaneBodySchema = z.object({
   name: z.string().trim().min(1).max(80)
 });
 
+export const updateLaneBodySchema = z.object({
+  position: z.number().int().nonnegative()
+});
+
 export const createApiTokenBodySchema = z.object({
   name: z.string().trim().min(1).max(120)
 });
 
 export const projectParamsSchema = z.object({
   projectId: z.string().uuid()
+});
+
+export const laneParamsSchema = z.object({
+  projectId: z.string().uuid(),
+  laneId: z.string().uuid()
 });
 
 export const apiTokenParamsSchema = z.object({

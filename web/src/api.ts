@@ -171,5 +171,11 @@ export const api = {
       body: JSON.stringify(input),
       method: "PATCH"
     });
+  },
+  updateLane(projectId: string, laneId: string, input: Pick<BoardLane, "position">) {
+    return request<BoardLane>(`/api/v1/projects/${projectId}/lanes/${laneId}`, {
+      body: JSON.stringify(input),
+      method: "PATCH"
+    });
   }
 };

@@ -915,6 +915,59 @@ export function createLane(
   };
 }
 
+export function updateOwnedLane(
+  db: DatabaseClient,
+  input: {
+    laneId: string;
+    position: number;
+    projectId: string;
+    userId: string;
+  }
+) {
+  const project = getOwnedProject(db, input.userId, input.projectId);
+  if (!project) {
+    return null;
+  }
+
+  const lane = getProjectLaneById(db, input.projectId, input.laneId);
+  if (!lane) {
+    return null;
+  }
+
+  const orderedLanes = listProjectLanesByProjectId(db, input.projectId);
+  if (!orderedLanes.some((candidate) => candidate.id === input.laneId)) {
+    return null;
+  }
+
+  const reorderedLanes = orderedLanes.filter((candidate) => candidate.id !== input.laneId);
+  const nextIndex = Math.max(0, Math.min(input.position, reorderedLanes.length));
+  reorderedLanes.splice(nextIndex, 0, lane);
+  if (reorderedLanes.every((candidate, index) => candidate.id === orderedLanes[index]?.id)) {
+    return lane;
+  }
+
+  const updatedAt = new Date().toISOString();
+
+  reorderedLanes.forEach((candidate, index) => {
+    if (candidate.position === index && candidate.id !== lane.id) {
+      return;
+    }
+
+    db
+      .update(lanes)
+      .set({
+        position: index,
+        updatedAt
+      })
+      .where(eq(lanes.id, candidate.id))
+      .run();
+  });
+
+  touchProject(db, input.projectId, updatedAt);
+
+  return db.select().from(lanes).where(eq(lanes.id, input.laneId)).get() ?? null;
+}
+
 export function listTasksForProject(
   db: DatabaseClient,
   input: {

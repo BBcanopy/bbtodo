@@ -19,6 +19,7 @@ import {
   createProjectBodySchema,
   createTaskBodySchema,
   errorResponseSchema,
+  laneParamsSchema,
   laneResponseSchema,
   listTasksQuerySchema,
   meResponseSchema,
@@ -31,6 +32,7 @@ import {
   toMeResponse,
   toProjectResponse,
   toTaskResponse,
+  updateLaneBodySchema,
   updateThemeBodySchema,
   updateTaskBodySchema
 } from "./api-schemas.js";
@@ -54,6 +56,7 @@ import {
   listApiTokensForUser,
   listProjectsForUser,
   listTasksForProject,
+  updateOwnedLane,
   updateUserTheme,
   updateOwnedTask,
   upsertUser,
@@ -577,6 +580,47 @@ export function buildApp(options: {
       }
 
       return reply.status(201).send(toLaneResponse(lane));
+    }
+  });
+
+  typedApp.route({
+    method: "PATCH",
+    url: "/api/v1/projects/:projectId/lanes/:laneId",
+    schema: {
+      body: updateLaneBodySchema,
+      params: laneParamsSchema,
+      response: {
+        200: laneResponseSchema,
+        401: errorResponseSchema,
+        404: errorResponseSchema
+      },
+      tags: ["lanes"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      const lane = updateOwnedLane(database.db, {
+        userId: user.id,
+        projectId: request.params.projectId,
+        laneId: request.params.laneId,
+        position: request.body.position
+      });
+      if (!lane) {
+        return reply.status(404).send({
+          message: "Lane not found."
+        });
+      }
+
+      const projectLanes = listLanesForProject(database.db, {
+        userId: user.id,
+        projectId: request.params.projectId
+      });
+      const updatedLane = projectLanes?.find((candidate) => candidate.id === lane.id);
+
+      return toLaneResponse(updatedLane ?? lane);
     }
   });
 

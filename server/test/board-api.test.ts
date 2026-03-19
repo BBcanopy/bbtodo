@@ -242,6 +242,7 @@ describe("projects and tasks API", () => {
     expect(openApi.openapi).toBe("3.1.0");
     expect(openApi.paths["/api/v1/projects"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/lanes"]).toBeDefined();
+    expect(openApi.paths["/api/v1/projects/{projectId}/lanes/{laneId}"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/tasks"]).toBeDefined();
   });
 
@@ -351,6 +352,23 @@ describe("projects and tasks API", () => {
       position: 0
     });
 
+    const reorderLaneResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/lanes/${qaLane.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        position: 1
+      }
+    });
+
+    expect(reorderLaneResponse.statusCode).toBe(200);
+    expect(reorderLaneResponse.json()).toMatchObject({
+      id: qaLane.id,
+      position: 1
+    });
+
     const lanesResponse = await app.inject({
       method: "GET",
       url: `/api/v1/projects/${project.id}/lanes`,
@@ -361,7 +379,13 @@ describe("projects and tasks API", () => {
 
     expect(lanesResponse.statusCode).toBe(200);
     expect(lanesResponse.json()).toHaveLength(4);
-    expect(lanesResponse.json()[3]).toMatchObject({
+    expect(lanesResponse.json().map((lane: { name: string }) => lane.name)).toEqual([
+      "Todo",
+      "Ready for QA",
+      "In Progress",
+      "Done"
+    ]);
+    expect(lanesResponse.json()[1]).toMatchObject({
       id: qaLane.id,
       name: "Ready for QA",
       taskCount: 2
