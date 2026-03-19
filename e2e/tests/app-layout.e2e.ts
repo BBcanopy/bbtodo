@@ -1101,11 +1101,12 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await editDialog.getByRole("button", { name: "Remove tag ops" }).click();
   await editDialog.getByLabel("Title").fill("Review retry scope");
   await tagInput.fill("release");
-  await expect(editDialog.getByText("New tag color")).toBeVisible();
-  await editDialog.getByRole("button", { name: "Set new tag color to Orchid" }).click();
+  await expect(editDialog.getByText("Color for release")).toBeVisible();
+  await expect(editDialog.locator(".task-tag-editor__swatch[aria-pressed='true']")).toHaveCount(1);
+  await editDialog.getByRole("button", { name: "Set release color to Orchid" }).click();
   await tagInput.press("Enter");
   await expect(tagInput).toHaveValue("");
-  await expect(editDialog.getByText("New tag color")).toHaveCount(0);
+  await expect(editDialog.getByText("Color for release")).toHaveCount(0);
   await expect(editDialog.getByRole("button", { name: "Remove tag release" })).toBeVisible();
   await editDialog
     .getByLabel("Task body")

@@ -65,3 +65,8 @@ export function getTaskTagStyle(color: TaskTagColor): CSSProperties {
     "--tag-fg": tone.text
   } as CSSProperties;
 }
+
+export function getRandomTaskTagColor() {
+  const randomIndex = Math.floor(Math.random() * taskTagColorOptions.length);
+  return taskTagColorOptions[randomIndex]?.value ?? defaultTaskTagColor;
+}

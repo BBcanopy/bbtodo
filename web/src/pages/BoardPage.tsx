@@ -21,7 +21,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 import { api, type BoardLane, type Task, type TaskTag, type TaskTagColor } from "../api";
 import {
-  defaultTaskTagColor,
+  getRandomTaskTagColor,
   getTaskTagStyle,
   taskTagColorOptions
 } from "../app/tag-colors";
@@ -541,8 +541,12 @@ function TaskTagEditor({
     selectedColorTargetKey === null
       ? null
       : selectedTags.find((tag) => normalizeTagKey(tag.label) === selectedColorTargetKey) ?? null;
-  const activePaletteColor = selectedColorTarget?.color ?? inputColor;
-  const shouldShowPalette = selectedColorTarget !== null || inputValue.trim().length > 0;
+  const draftColorTargetLabel = parseTagInput(inputValue)[0] ?? null;
+  const activeColorTarget =
+    selectedColorTarget ??
+    (draftColorTargetLabel ? { color: inputColor, label: draftColorTargetLabel } : null);
+  const activePaletteColor = activeColorTarget?.color ?? inputColor;
+  const shouldShowPalette = activeColorTarget !== null;
   const visibleSuggestions = useMemo(
     () =>
       availableTags.filter((tag) => {
@@ -574,6 +578,7 @@ function TaskTagEditor({
 
     if (inputValue.length > 0) {
       onInputValueChange("");
+      onInputColorChange(getRandomTaskTagColor());
     }
 
     return nextTags;
@@ -673,7 +678,16 @@ function TaskTagEditor({
             aria-label="Task tags"
             className="task-tag-editor__input"
             maxLength={240}
-            onChange={(event) => onInputValueChange(event.target.value)}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              if (selectedColorTargetKey !== null) {
+                setSelectedColorTargetKey(null);
+              }
+              if (inputValue.trim().length === 0 && nextValue.trim().length > 0) {
+                onInputColorChange(getRandomTaskTagColor());
+              }
+              onInputValueChange(nextValue);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === ",") {
                 event.preventDefault();
@@ -698,16 +712,12 @@ function TaskTagEditor({
         {shouldShowPalette ? (
           <div className="task-tag-editor__palette-panel">
             <span className="task-tag-editor__palette-label">
-              {selectedColorTarget ? `Color for ${selectedColorTarget.label}` : "New tag color"}
+              {`Color for ${activeColorTarget?.label ?? ""}`}
             </span>
             <div className="task-tag-editor__palette" role="list">
               {taskTagColorOptions.map((option) => (
                 <button
-                  aria-label={
-                    selectedColorTarget
-                      ? `Set ${selectedColorTarget.label} color to ${option.label}`
-                      : `Set new tag color to ${option.label}`
-                  }
+                  aria-label={`Set ${activeColorTarget?.label ?? "tag"} color to ${option.label}`}
                   aria-pressed={activePaletteColor === option.value}
                   className={`task-tag-editor__swatch${activePaletteColor === option.value ? " is-active" : ""}`}
                   key={option.value}
@@ -763,9 +773,7 @@ function TaskEditorDialog({
   const [title, setTitle] = useState(task.title);
   const [body, setBody] = useState(task.body);
   const [selectedTags, setSelectedTags] = useState(task.tags);
-  const [tagInputColor, setTagInputColor] = useState<TaskTagColor>(
-    task.tags[0]?.color ?? defaultTaskTagColor
-  );
+  const [tagInputColor, setTagInputColor] = useState<TaskTagColor>(() => getRandomTaskTagColor());
   const [tagInputValue, setTagInputValue] = useState("");
   const [activeView, setActiveView] = useState<TaskEditorView>("source");
 
@@ -773,7 +781,7 @@ function TaskEditorDialog({
     setTitle(task.title);
     setBody(task.body);
     setSelectedTags(task.tags);
-    setTagInputColor(task.tags[0]?.color ?? defaultTaskTagColor);
+    setTagInputColor(getRandomTaskTagColor());
     setTagInputValue("");
     setActiveView("source");
   }, [task.body, task.id, task.tags, task.title]);
