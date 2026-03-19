@@ -634,6 +634,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.getByTestId("project-card-project-1").getByLabel("In Progress 1")).toBeVisible();
   await expect(page.getByTestId("project-card-project-1").getByLabel("Done 1")).toBeVisible();
   await expect(page.locator(".subnav__current")).toHaveCount(0);
+  await expect(page.getByLabel("Search projects")).toBeVisible();
   await expect(page.locator(".topbar__identity")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
   await expect(page.getByLabel("Open account menu")).toHaveText("N");
@@ -704,6 +705,17 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   expect(createProjectBackground).toBe("rgba(0, 0, 0, 0)");
   expect(createProjectHeight).toBeLessThan(36);
   await expect(page.locator(".subnav__action-mark")).toHaveText("+");
+
+  await page.getByLabel("Search projects").fill("partner");
+  await expect(page.locator(".project-grid .project-card")).toHaveCount(1);
+  await expect(page.getByTestId("project-card-project-6")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No boards match that search." })).toHaveCount(0);
+  await page.getByLabel("Search projects").fill("zzzz");
+  await expect(page.locator(".project-grid .project-card")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "No boards match that search." })).toBeVisible();
+  await page.getByLabel("Search projects").fill("");
+  await expect(page.locator(".project-grid .project-card")).toHaveCount(6);
+
   await page.getByLabel("Open account menu").click();
   await expect(page.getByRole("button", { pressed: true, name: /Sea Cool glass and teal accents/i })).toBeVisible();
   await page.getByRole("button", { name: /Ember Warm paper and copper highlights/i }).click();

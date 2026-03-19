@@ -41,14 +41,14 @@ export function AppShell({ user }: { user: User }) {
   });
   const avatarLetter = getAvatarLetter(user);
   const isProjectsRoute = location.pathname === "/";
-  const boardSearch = boardMatch ? searchParams.get("q") ?? "" : "";
+  const navSearch = boardMatch || isProjectsRoute ? searchParams.get("q") ?? "" : "";
   const activeBoard = boardMatch
     ? projectsQuery.data?.find((project) => project.id === boardMatch.params.projectId)?.name ?? "Board"
     : null;
 
   useDismissableLayer(isMenuOpen, menuRef, () => setIsMenuOpen(false));
 
-  function updateBoardParams(updater: (params: URLSearchParams) => void) {
+  function updateRouteParams(updater: (params: URLSearchParams) => void) {
     const nextParams = new URLSearchParams(searchParams);
     updater(nextParams);
     setSearchParams(nextParams, { replace: true });
@@ -72,31 +72,33 @@ export function AppShell({ user }: { user: User }) {
                   {activeBoard}
                 </span>
               ) : null}
+              {boardMatch || isProjectsRoute ? (
+                <label className="subnav__search">
+                  <span className="subnav__search-label">Search</span>
+                  <input
+                    aria-label={isProjectsRoute ? "Search projects" : "Search cards"}
+                    onChange={(event) =>
+                      updateRouteParams((params) => {
+                        const value = event.target.value.trim();
+                        if (value) {
+                          params.set("q", value);
+                        } else {
+                          params.delete("q");
+                        }
+                      })
+                    }
+                    placeholder={isProjectsRoute ? "Search projects" : "Search cards"}
+                    type="search"
+                    value={navSearch}
+                  />
+                </label>
+              ) : null}
               {boardMatch ? (
                 <>
-                  <label className="subnav__search">
-                    <span className="subnav__search-label">Search</span>
-                    <input
-                      aria-label="Search cards"
-                      onChange={(event) =>
-                        updateBoardParams((params) => {
-                          const value = event.target.value.trim();
-                          if (value) {
-                            params.set("q", value);
-                          } else {
-                            params.delete("q");
-                          }
-                        })
-                      }
-                      placeholder="Search cards"
-                      type="search"
-                      value={boardSearch}
-                    />
-                  </label>
                   <button
                     className="subnav__action"
                     onClick={() =>
-                      updateBoardParams((params) => {
+                      updateRouteParams((params) => {
                         params.set("createLane", "1");
                       })
                     }
