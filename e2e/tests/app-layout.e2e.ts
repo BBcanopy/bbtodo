@@ -680,9 +680,25 @@ test("login screen uses the updated cool accent palette", async ({ page }) => {
 });
 
 test("projects page uses a modal create flow and removes extra board chrome", async ({ page }) => {
+  const projectsForGridWithExtraLane = structuredClone(projectsForGrid);
+  const billingCleanupProject = projectsForGridWithExtraLane.find((project) => project.id === "project-1");
+  if (!billingCleanupProject) {
+    throw new Error("Expected project-1 test fixture to exist");
+  }
+  billingCleanupProject.laneSummaries.push({
+    createdAt: "2026-03-18T08:00:00.000Z",
+    id: "project-1-lane-custom-qa",
+    name: "Ready for QA",
+    position: 3,
+    projectId: "project-1",
+    systemKey: null,
+    taskCount: 0,
+    updatedAt: "2026-03-18T08:00:00.000Z"
+  });
+
   await mockAuthenticated(page, {
     nextProjectId: 7,
-    projects: projectsForGrid
+    projects: projectsForGridWithExtraLane
   });
 
   await page.setViewportSize({ width: 2048, height: 900 });
@@ -705,6 +721,9 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.getByTestId("project-card-project-1").getByLabel("Todo 2")).toBeVisible();
   await expect(page.getByTestId("project-card-project-1").getByLabel("In Progress 1")).toBeVisible();
   await expect(page.getByTestId("project-card-project-1").getByLabel("Done 1")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-1").getByLabel("Ready for QA 0")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-1").locator(".project-card__lane-pill")).toHaveCount(4);
+  await expect(page.getByTestId("project-card-project-1").getByText("More")).toHaveCount(0);
   await expect(page.locator(".subnav__current")).toHaveCount(0);
   await expect(page.getByLabel("Search projects")).toBeVisible();
   await expect(page.locator(".subnav__search-label")).toHaveCount(0);
@@ -814,7 +833,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page).toHaveURL(/\/projects\/project-7$/);
   await expect(page).toHaveTitle("API polish | BBTodo");
   await expect(page.getByTestId("board-grid")).toBeVisible();
-  await expect(page.locator(".subnav__current-label")).toHaveText("Project");
+  await expect(page.locator(".subnav__current-label")).toHaveCount(0);
   await expect(page.locator(".subnav__current-value")).toHaveText("API polish");
 
   await page.getByLabel("Open account menu").click();
@@ -901,12 +920,13 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(page.locator(".workspace-form")).toHaveCount(0);
   await expect(page.locator(".workspace-summary")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Back to projects" })).toHaveCount(0);
-  await expect(page.locator(".subnav__current-label")).toHaveText("Project");
+  await expect(page.locator(".subnav__current-label")).toHaveCount(0);
   await expect(page.locator(".subnav__current-value")).toHaveText("Billing cleanup");
   await expect(page.getByRole("button", { name: "Create Lane" })).toBeVisible();
   await expect(page.getByLabel("Search cards")).toBeVisible();
   await expect(page.getByLabel("Filter by tags")).toBeVisible();
-  await expect(page.locator(".subnav__search-label")).toHaveText(["Search", "Tags"]);
+  await expect(page.locator(".subnav__search-label")).toHaveCount(0);
+  await expect(page.getByLabel("Filter by tags")).toHaveAttribute("placeholder", "tags");
   const currentProjectBackground = await page
     .locator(".subnav__current")
     .evaluate((element) => getComputedStyle(element).backgroundColor);

@@ -140,7 +140,6 @@ export function AppShell({ user }: { user: User }) {
                       type="button"
                     >
                       <span className="subnav__current-copy">
-                        <span className="subnav__current-label">Project</span>
                         <span className="subnav__current-value">{activeProject.name}</span>
                       </span>
                       <ChevronDownIcon
@@ -227,7 +226,6 @@ export function AppShell({ user }: { user: User }) {
               {boardMatch || isProjectsRoute ? (
                 <div className="subnav__cluster subnav__cluster--tools">
                   <label className="subnav__search">
-                    {boardMatch ? <span className="subnav__search-label">Search</span> : null}
                     <input
                       aria-label={isProjectsRoute ? "Search projects" : "Search cards"}
                       onChange={(event) =>
@@ -247,7 +245,6 @@ export function AppShell({ user }: { user: User }) {
                   </label>
                   {boardMatch ? (
                     <label className="subnav__search">
-                      <span className="subnav__search-label">Tags</span>
                       <input
                         aria-label="Filter by tags"
                         onChange={(event) =>
@@ -260,7 +257,7 @@ export function AppShell({ user }: { user: User }) {
                             }
                           })
                         }
-                        placeholder="bug, docs"
+                        placeholder="tags"
                         type="search"
                         value={navTagSearch}
                       />

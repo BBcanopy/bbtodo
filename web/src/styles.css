@@ -499,16 +499,6 @@ h3 {
   display: none;
 }
 
-.subnav__current-label {
-  color: var(--ink-soft);
-  font-size: 0.63rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  flex: 0 0 auto;
-  line-height: 1;
-}
-
 .subnav__current-value {
   min-width: 0;
   overflow: hidden;
@@ -1347,10 +1337,6 @@ textarea:focus {
   font-size: 1rem;
   line-height: 1;
   letter-spacing: -0.03em;
-}
-
-.project-card__lane-pill--muted {
-  background: color-mix(in srgb, var(--surface-muted) 65%, transparent);
 }
 
 .label-chip {

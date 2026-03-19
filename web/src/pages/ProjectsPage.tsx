@@ -20,8 +20,6 @@ function ProjectCard({
 }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const confirmRef = useRef<HTMLDivElement | null>(null);
-  const visibleLanes = project.laneSummaries.slice(0, 3);
-  const hiddenLaneCount = project.laneSummaries.length - visibleLanes.length;
 
   useDismissableLayer(isConfirmOpen, confirmRef, () => setIsConfirmOpen(false));
 
@@ -87,7 +85,7 @@ function ProjectCard({
       <div className="project-card__body">
         <h2>{project.name}</h2>
         <div aria-label={`Lane counts for ${project.name}`} className="project-card__lane-counts">
-          {visibleLanes.map((lane) => (
+          {project.laneSummaries.map((lane) => (
             <div
               aria-label={`${lane.name} ${lane.taskCount}`}
               className="project-card__lane-pill"
@@ -97,12 +95,6 @@ function ProjectCard({
               <strong>{lane.taskCount}</strong>
             </div>
           ))}
-          {hiddenLaneCount > 0 ? (
-            <div aria-label={`${hiddenLaneCount} more lanes`} className="project-card__lane-pill project-card__lane-pill--muted">
-              <span>More</span>
-              <strong>+{hiddenLaneCount}</strong>
-            </div>
-          ) : null}
         </div>
         <time className="project-card__timestamp" dateTime={project.updatedAt}>
           {formatIsoDate(project.updatedAt)}
