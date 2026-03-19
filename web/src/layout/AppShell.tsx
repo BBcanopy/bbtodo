@@ -153,7 +153,6 @@ export function AppShell({ user }: { user: User }) {
                         role="dialog"
                       >
                         <label className="project-switcher__field">
-                          <span className="subnav__search-label">Switch or name</span>
                           <input
                             aria-label="Project switcher input"
                             onChange={(event) => setProjectSwitcherInput(event.target.value)}

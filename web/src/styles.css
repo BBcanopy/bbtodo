@@ -578,13 +578,6 @@ h3 {
   min-width: min(16rem, 34vw);
 }
 
-.subnav__search-label {
-  color: var(--ink-soft);
-  font-size: 0.67rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .subnav__search input {
   min-height: 2.5rem;
   padding: 0.6rem 0.85rem;
