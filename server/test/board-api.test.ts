@@ -69,6 +69,23 @@ describe("projects and tasks API", () => {
     expect(listProjectsResponse.statusCode).toBe(200);
     expect(listProjectsResponse.json()).toEqual([project]);
 
+    const updateProjectResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Launch board v2"
+      }
+    });
+
+    expect(updateProjectResponse.statusCode).toBe(200);
+    expect(updateProjectResponse.json()).toMatchObject({
+      id: project.id,
+      name: "Launch board v2"
+    });
+
     const createTaskResponse = await app.inject({
       method: "POST",
       url: `/api/v1/projects/${project.id}/tasks`,
@@ -125,7 +142,7 @@ describe("projects and tasks API", () => {
     expect(updatedProjectsResponse.json()).toHaveLength(1);
     expect(updatedProjectsResponse.json()[0]).toMatchObject({
       id: project.id,
-      name: project.name,
+      name: "Launch board v2",
       taskCounts: {
         todo: 0,
         in_progress: 1,

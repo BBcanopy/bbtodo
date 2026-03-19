@@ -441,6 +441,9 @@ async function mockAuthenticated(
         await fulfillJson(route, 201, createdProject);
         return;
       }
+      case "PATCH /api/v1/projects":
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
       case "GET /api/v1/api-tokens":
         await fulfillJson(route, 200, []);
         return;
@@ -495,6 +498,26 @@ async function mockAuthenticated(
       }
 
       await fulfillJson(route, 200, lane);
+      return;
+    }
+
+    if (
+      request.method() === "PATCH" &&
+      url.pathname.startsWith("/api/v1/projects/") &&
+      !url.pathname.includes("/lanes/") &&
+      !url.pathname.includes("/tasks/")
+    ) {
+      const projectId = url.pathname.split("/").pop() ?? "";
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      }
+
+      project.name = body?.name ?? project.name;
+      project.updatedAt = "2026-03-18T08:12:00.000Z";
+      syncProject(projectId);
+      await fulfillJson(route, 200, project);
       return;
     }
 
@@ -904,6 +927,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(page.getByRole("button", { name: /Move to / })).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-1").locator(".label-chip")).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-1").locator(".task-tag")).toHaveText(["backend", "retry"]);
+  await expect(page.getByLabel("Delete task Review retry settings").locator("svg")).toHaveCount(1);
   await expect(page.getByTestId("task-card-task-1").locator(".task-card__timestamp")).toHaveText("2026-03-18");
   await expect(page.getByTestId("task-card-task-1").locator(".task-card__timestamp")).toHaveAttribute(
     "datetime",
@@ -913,25 +937,40 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await page.getByTestId("task-card-task-1").click();
   const editDialog = page.getByRole("dialog", { name: "Edit Card" });
   await expect(editDialog).toBeVisible();
+  const sourceTab = editDialog.getByRole("tab", { name: "Markdown source" });
+  const previewTab = editDialog.getByRole("tab", { name: "Rendered preview" });
+  const tagInput = editDialog.getByLabel("Task tags");
   await expect(editDialog.getByLabel("Title")).toHaveValue("Review retry settings");
-  await expect(editDialog.getByLabel("Task tags")).toHaveValue("backend, retry");
+  await expect(tagInput).toHaveValue("");
+  await expect(editDialog.getByRole("button", { name: "Remove tag backend" })).toBeVisible();
+  await expect(editDialog.getByRole("button", { name: "Remove tag retry" })).toBeVisible();
+  await expect(editDialog.getByRole("button", { name: "Add tag ops" })).toBeVisible();
   await expect(editDialog.getByLabel("Task body")).toHaveValue("Callback logs mention **retry** scope.");
-  await expect(editDialog.locator(".task-editor__preview-panel")).toHaveCount(0);
   await expect(editDialog.getByTestId("task-markdown-preview")).toHaveCount(0);
-  await expect(editDialog.getByRole("button", { name: "Render markdown" })).toBeVisible();
+  await expect(sourceTab).toHaveAttribute("aria-selected", "true");
+  await expect(previewTab).toHaveAttribute("aria-selected", "false");
   const dialogBox = await editDialog.boundingBox();
   const bodyFieldBox = await editDialog.getByLabel("Task body").boundingBox();
   expect(dialogBox).not.toBeNull();
   expect(bodyFieldBox).not.toBeNull();
   expect((bodyFieldBox?.width ?? 0) / (dialogBox?.width ?? 1)).toBeGreaterThan(0.75);
-  await editDialog.getByRole("button", { name: "Render markdown" }).click();
-  await expect(editDialog.getByRole("button", { name: "Hide markdown" })).toBeVisible();
+  await previewTab.click();
+  await expect(previewTab).toHaveAttribute("aria-selected", "true");
   await expect(editDialog.locator(".markdown-preview strong")).toHaveText("retry");
+  await sourceTab.click();
+  await editDialog.getByRole("button", { name: "Add tag ops" }).click();
+  await expect(editDialog.getByRole("button", { name: "Remove tag ops" })).toBeVisible();
+  await editDialog.getByRole("button", { name: "Remove tag retry" }).click();
+  await editDialog.getByRole("button", { name: "Remove tag ops" }).click();
   await editDialog.getByLabel("Title").fill("Review retry scope");
-  await editDialog.getByLabel("Task tags").fill("backend, release");
+  await tagInput.fill("release");
+  await tagInput.press("Enter");
+  await expect(tagInput).toHaveValue("");
+  await expect(editDialog.getByRole("button", { name: "Remove tag release" })).toBeVisible();
   await editDialog
     .getByLabel("Task body")
     .fill("Callback logs mention **scope**.\n\n- Keep raw claims\n- Verify issuer");
+  await previewTab.click();
   await expect(editDialog.locator(".markdown-preview strong")).toHaveText("scope");
   await expect(editDialog.locator(".markdown-preview li")).toHaveCount(2);
   await editDialog.getByRole("button", { name: "Save card" }).click();
@@ -974,13 +1013,10 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
     (queueCopyCardBox?.y ?? 0) + (queueCopyCardBox?.height ?? 0) / 2 - 16,
     { steps: 6 }
   );
-  const todoTopSlot = page.getByTestId(`task-drop-indicator-${laneId("project-1", "todo")}-0`);
-  await expect(todoTopSlot).toBeVisible();
-  const todoTopSlotBox = await todoTopSlot.boundingBox();
-  expect(todoTopSlotBox).not.toBeNull();
+  await expect(page.locator(".task-drop-indicator")).toHaveCount(0);
   await page.mouse.move(
-    (todoTopSlotBox?.x ?? 0) + (todoTopSlotBox?.width ?? 0) / 2,
-    (todoTopSlotBox?.y ?? 0) + (todoTopSlotBox?.height ?? 0) / 2,
+    (retryCardBox?.x ?? 0) + (retryCardBox?.width ?? 0) / 2,
+    (retryCardBox?.y ?? 0) + (retryCardBox?.height ?? 0) * 0.25,
     { steps: 18 }
   );
   await page.mouse.up();
@@ -1012,6 +1048,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await laneInput.press("Enter");
 
   await expect(page.getByText("Ship progress note")).toBeVisible();
+  const createdCard = page.getByTestId("task-card-task-5");
 
   const retryCardDragBox = await retryCard.boundingBox();
   expect(retryCardDragBox).not.toBeNull();
@@ -1025,13 +1062,12 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
     (retryCardDragBox?.y ?? 0) + (retryCardDragBox?.height ?? 0) / 2,
     { steps: 6 }
   );
-  const qaSlot = page.getByTestId("task-drop-indicator-project-1-lane-custom-1-1");
-  await expect(qaSlot).toBeVisible();
-  const qaSlotBox = await qaSlot.boundingBox();
-  expect(qaSlotBox).not.toBeNull();
+  await expect(page.locator(".task-drop-indicator")).toHaveCount(0);
+  const createdCardBox = await createdCard.boundingBox();
+  expect(createdCardBox).not.toBeNull();
   await page.mouse.move(
-    (qaSlotBox?.x ?? 0) + (qaSlotBox?.width ?? 0) / 2,
-    (qaSlotBox?.y ?? 0) + (qaSlotBox?.height ?? 0) / 2,
+    (createdCardBox?.x ?? 0) + (createdCardBox?.width ?? 0) / 2,
+    (createdCardBox?.y ?? 0) + (createdCardBox?.height ?? 0) * 0.8,
     { steps: 24 }
   );
   await expect(qaColumn).toHaveClass(/is-drop-target/);
@@ -1040,10 +1076,43 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(todoColumn.getByText("Review retry scope")).toHaveCount(0);
 
   await expect(page.locator(".column-empty")).toHaveCount(0);
-
-  const createdCard = page.getByTestId("task-card-task-5");
   await createdCard.getByLabel("Delete task Ship progress note").click();
   await expect(createdCard.getByRole("button", { exact: true, name: "Delete" })).toBeVisible();
   await createdCard.getByRole("button", { exact: true, name: "Delete" }).click();
   await expect(page.getByText("Ship progress note")).toHaveCount(0);
+});
+
+test("board nav switcher changes, renames, and creates projects", async ({ page }) => {
+  await mockAuthenticated(page, {
+    nextProjectId: 7,
+    projects: projectsForGrid
+  });
+
+  await page.goto("/projects/project-1");
+
+  const switcherButton = page.getByRole("button", { name: "Open project switcher" });
+  await switcherButton.click();
+
+  const switcherInput = page.getByLabel("Project switcher input");
+  await switcherInput.fill("road");
+  await expect(page.getByRole("button", { name: "Open project Roadmap review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open project Billing cleanup" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open project Roadmap review" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/project-2$/);
+  await expect(page.locator(".subnav__current-value")).toHaveText("Roadmap review");
+
+  await page.goto("/projects/project-1");
+  await switcherButton.click();
+  await page.getByLabel("Project switcher input").fill("Billing relaunch");
+  await page.getByRole("button", { name: "Rename Project" }).click();
+
+  await expect(page.locator(".subnav__current-value")).toHaveText("Billing relaunch");
+
+  await switcherButton.click();
+  await page.getByLabel("Project switcher input").fill("Program rollout");
+  await page.getByRole("button", { name: "Create Project" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/project-7$/);
+  await expect(page.locator(".subnav__current-value")).toHaveText("Program rollout");
 });

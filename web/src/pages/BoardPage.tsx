@@ -4,9 +4,11 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  pointerWithin,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent
@@ -26,10 +28,42 @@ import {
   normalizeTagKey,
   parseTagInput
 } from "../app/utils";
-import { BoardSkeleton, EmptyState, ErrorBanner } from "../components/ui";
+import { BoardSkeleton, CloseIcon, EmptyState, ErrorBanner, TrashIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
 type TaskIdsByLane = Record<string, string[]>;
+type TaskEditorView = "preview" | "source";
+
+const taskSortableTransition = {
+  duration: 220,
+  easing: "cubic-bezier(0.22, 1, 0.36, 1)"
+};
+
+const taskDropAnimation = {
+  duration: 220,
+  easing: "cubic-bezier(0.22, 1, 0.36, 1)"
+};
+
+const taskCollisionDetection: CollisionDetection = (args) => {
+  const pointerHits = pointerWithin(args);
+  if (pointerHits.length > 0) {
+    const taskHits = pointerHits.filter((collision) => {
+      const container = args.droppableContainers.find(
+        (droppableContainer) => droppableContainer.id === collision.id
+      );
+
+      return container?.data.current?.type === "task";
+    });
+
+    if (taskHits.length > 0) {
+      return taskHits;
+    }
+
+    return pointerHits;
+  }
+
+  return closestCorners(args);
+};
 
 function compareTasks(left: Task, right: Task) {
   if (left.position !== right.position) {
@@ -96,6 +130,42 @@ function moveTaskId(
   return nextTaskIdsByLane;
 }
 
+function mergeUniqueTags(currentTags: string[], nextValue: string) {
+  const seen = new Set(currentTags.map((tag) => normalizeTagKey(tag)));
+  const additions: string[] = [];
+
+  parseTagInput(nextValue).forEach((tag) => {
+    const key = normalizeTagKey(tag);
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    additions.push(tag);
+  });
+
+  return additions.length > 0 ? [...currentTags, ...additions] : currentTags;
+}
+
+function listSuggestedTags(tasks: Task[]) {
+  const tagsByKey = new Map<string, string>();
+
+  tasks.forEach((task) => {
+    task.tags.forEach((tag) => {
+      const key = normalizeTagKey(tag);
+      if (!key || tagsByKey.has(key)) {
+        return;
+      }
+
+      tagsByKey.set(key, tag);
+    });
+  });
+
+  return Array.from(tagsByKey.values()).sort((left, right) =>
+    left.localeCompare(right, undefined, { sensitivity: "base" })
+  );
+}
+
 function createNativeDragPreview(node: HTMLElement) {
   const preview = node.cloneNode(true);
   if (!(preview instanceof HTMLElement)) {
@@ -138,39 +208,6 @@ function LaneDropArea({
   return (
     <div className="board-column__content" ref={setNodeRef}>
       {children}
-    </div>
-  );
-}
-
-function TaskDropSlot({
-  isVisible,
-  laneId,
-  position
-}: {
-  isVisible: boolean;
-  laneId: string;
-  position: number;
-}) {
-  const { isOver, setNodeRef } = useDroppable({
-    id: `slot:${laneId}:${position}`,
-    data: {
-      laneId,
-      position,
-      type: "slot"
-    }
-  });
-
-  if (!isVisible) {
-    return null;
-  }
-
-  return (
-    <div
-      className={`task-drop-indicator${isOver ? " is-active" : ""}`}
-      data-testid={`task-drop-indicator-${laneId}-${position}`}
-      ref={setNodeRef}
-    >
-      <span>Drop here</span>
     </div>
   );
 }
@@ -231,6 +268,7 @@ function TaskCard({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     disabled: isDragDisabled,
+    transition: taskSortableTransition,
     data: {
       laneId,
       taskId: task.id,
@@ -300,7 +338,7 @@ function TaskCard({
             onPointerDown={(event) => event.stopPropagation()}
             type="button"
           >
-            <span aria-hidden="true">x</span>
+            <TrashIcon />
           </button>
           {isConfirmOpen ? (
             <div
@@ -366,13 +404,188 @@ function TaskCard({
   );
 }
 
+function MarkdownSourceIcon() {
+  return (
+    <svg aria-hidden="true" className="task-editor__tab-icon" viewBox="0 0 24 24">
+      <path
+        d="M4.75 6.75h14.5v10.5H4.75zm4.75 0-3.25 5.25 3.25 5.25m5-10.5 3.25 5.25-3.25 5.25"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function MarkdownPreviewIcon() {
+  return (
+    <svg aria-hidden="true" className="task-editor__tab-icon" viewBox="0 0 24 24">
+      <path
+        d="M2.75 12s3.5-5.75 9.25-5.75S21.25 12 21.25 12 17.75 17.75 12 17.75 2.75 12 2.75 12Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <circle cx="12" cy="12" fill="none" r="3" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function TaskTagEditor({
+  availableTags,
+  inputValue,
+  onInputValueChange,
+  onSelectedTagsChange,
+  selectedTags
+}: {
+  availableTags: string[];
+  inputValue: string;
+  onInputValueChange: (value: string) => void;
+  onSelectedTagsChange: (tags: string[]) => void;
+  selectedTags: string[];
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const selectedTagKeys = useMemo(
+    () => new Set(selectedTags.map((tag) => normalizeTagKey(tag))),
+    [selectedTags]
+  );
+  const suggestionQuery = normalizeTagKey(inputValue);
+  const visibleSuggestions = useMemo(
+    () =>
+      availableTags.filter((tag) => {
+        const key = normalizeTagKey(tag);
+        if (selectedTagKeys.has(key)) {
+          return false;
+        }
+
+        return suggestionQuery.length === 0 || key.includes(suggestionQuery);
+      }),
+    [availableTags, selectedTagKeys, suggestionQuery]
+  );
+
+  function commitInputValue() {
+    const nextTags = mergeUniqueTags(selectedTags, inputValue);
+
+    if (nextTags !== selectedTags) {
+      onSelectedTagsChange(nextTags);
+    }
+
+    if (inputValue.length > 0) {
+      onInputValueChange("");
+    }
+
+    return nextTags;
+  }
+
+  function removeTag(tagToRemove: string) {
+    onSelectedTagsChange(
+      selectedTags.filter((tag) => normalizeTagKey(tag) !== normalizeTagKey(tagToRemove))
+    );
+    inputRef.current?.focus();
+  }
+
+  function addSuggestedTag(tag: string) {
+    onSelectedTagsChange(mergeUniqueTags(selectedTags, tag));
+    onInputValueChange("");
+    inputRef.current?.focus();
+  }
+
+  return (
+    <div className="field">
+      <span className="field__label" id="task-tag-editor-label">
+        Tags
+      </span>
+      <div
+        aria-labelledby="task-tag-editor-label"
+        className="task-tag-editor"
+        onBlur={(event) => {
+          const nextFocusedNode = event.relatedTarget as Node | null;
+          if (nextFocusedNode && event.currentTarget.contains(nextFocusedNode)) {
+            return;
+          }
+
+          commitInputValue();
+        }}
+        role="group"
+      >
+        <div
+          className="task-tag-editor__input-shell"
+          onClick={() => inputRef.current?.focus()}
+          role="presentation"
+        >
+          {selectedTags.map((tag) => (
+            <span className="task-tag-editor__chip" key={tag}>
+              <span className="task-tag-editor__chip-label">{tag}</span>
+              <button
+                aria-label={`Remove tag ${tag}`}
+                className="task-tag-editor__chip-remove"
+                onClick={() => removeTag(tag)}
+                onMouseDown={(event) => event.preventDefault()}
+                type="button"
+              >
+                <span aria-hidden="true">x</span>
+              </button>
+            </span>
+          ))}
+          <input
+            aria-label="Task tags"
+            className="task-tag-editor__input"
+            maxLength={240}
+            onChange={(event) => onInputValueChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === ",") {
+                event.preventDefault();
+                commitInputValue();
+                return;
+              }
+
+              if (
+                (event.key === "Backspace" || event.key === "Delete") &&
+                inputValue.length === 0 &&
+                selectedTags.length > 0
+              ) {
+                event.preventDefault();
+                onSelectedTagsChange(selectedTags.slice(0, -1));
+              }
+            }}
+            placeholder={selectedTags.length > 0 ? "Add another tag" : "Add a tag"}
+            ref={inputRef}
+            value={inputValue}
+          />
+        </div>
+        {visibleSuggestions.length > 0 ? (
+          <div aria-label="Suggested tags" className="task-tag-editor__suggestions" role="list">
+            {visibleSuggestions.map((tag) => (
+              <button
+                aria-label={`Add tag ${tag}`}
+                className="task-tag-editor__suggestion"
+                key={tag}
+                onClick={() => addSuggestedTag(tag)}
+                onMouseDown={(event) => event.preventDefault()}
+                type="button"
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function TaskEditorDialog({
+  availableTags,
   error,
   isPending,
   onClose,
   onSave,
   task
 }: {
+  availableTags: string[];
   error: Error | null;
   isPending: boolean;
   onClose: () => void;
@@ -381,14 +594,16 @@ function TaskEditorDialog({
 }) {
   const [title, setTitle] = useState(task.title);
   const [body, setBody] = useState(task.body);
-  const [tagsInput, setTagsInput] = useState(formatTagInput(task.tags));
-  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+  const [selectedTags, setSelectedTags] = useState(task.tags);
+  const [tagInputValue, setTagInputValue] = useState("");
+  const [activeView, setActiveView] = useState<TaskEditorView>("source");
 
   useEffect(() => {
     setTitle(task.title);
     setBody(task.body);
-    setTagsInput(formatTagInput(task.tags));
-    setIsPreviewVisible(false);
+    setSelectedTags(task.tags);
+    setTagInputValue("");
+    setActiveView("source");
   }, [task.body, task.id, task.tags, task.title]);
 
   return (
@@ -408,16 +623,19 @@ function TaskEditorDialog({
             onClick={onClose}
             type="button"
           >
-            <span aria-hidden="true">x</span>
+            <CloseIcon />
           </button>
         </div>
         <form
           className="dialog-form task-editor"
           onSubmit={(event) => {
             event.preventDefault();
+            const tags = mergeUniqueTags(selectedTags, tagInputValue);
+            setSelectedTags(tags);
+            setTagInputValue("");
             onSave({
               body,
-              tags: parseTagInput(tagsInput),
+              tags,
               title: title.trim()
             });
           }}
@@ -434,41 +652,77 @@ function TaskEditorDialog({
                 value={title}
               />
             </label>
-            <label className="field">
-              <span className="field__label">Tags</span>
-              <input
-                aria-label="Task tags"
-                maxLength={240}
-                onChange={(event) => setTagsInput(event.target.value)}
-                placeholder="bug, docs, release"
-                value={tagsInput}
-              />
-            </label>
+            <TaskTagEditor
+              availableTags={availableTags}
+              inputValue={tagInputValue}
+              onInputValueChange={setTagInputValue}
+              onSelectedTagsChange={setSelectedTags}
+              selectedTags={selectedTags}
+            />
             <div className="field field--editor">
               <div className="task-editor__field-header">
                 <span className="field__label">Body</span>
-                <button
-                  aria-controls="task-markdown-preview"
-                  aria-expanded={isPreviewVisible}
-                  className="micro-button"
-                  onClick={() => setIsPreviewVisible((current) => !current)}
-                  type="button"
+                <div
+                  aria-label="Markdown editor view"
+                  className="task-editor__view-tabs"
+                  role="tablist"
                 >
-                  {isPreviewVisible ? "Hide markdown" : "Render markdown"}
-                </button>
+                  <button
+                    aria-controls="task-markdown-source-panel"
+                    aria-label="Markdown source"
+                    aria-selected={activeView === "source"}
+                    className={`task-editor__view-tab${activeView === "source" ? " is-active" : ""}`}
+                    id="task-markdown-source-tab"
+                    onClick={() => setActiveView("source")}
+                    role="tab"
+                    type="button"
+                  >
+                    <MarkdownSourceIcon />
+                  </button>
+                  <button
+                    aria-controls="task-markdown-preview-panel"
+                    aria-label="Rendered preview"
+                    aria-selected={activeView === "preview"}
+                    className={`task-editor__view-tab${activeView === "preview" ? " is-active" : ""}`}
+                    id="task-markdown-preview-tab"
+                    onClick={() => setActiveView("preview")}
+                    role="tab"
+                    type="button"
+                  >
+                    <MarkdownPreviewIcon />
+                  </button>
+                </div>
               </div>
-              <textarea
-                aria-label="Task body"
-                maxLength={12000}
-                onChange={(event) => setBody(event.target.value)}
-                placeholder="Write markdown here"
-                rows={12}
-                value={body}
-              />
+              {activeView === "source" ? (
+                <div
+                  aria-labelledby="task-markdown-source-tab"
+                  className="task-editor__panel"
+                  id="task-markdown-source-panel"
+                  role="tabpanel"
+                >
+                  <textarea
+                    aria-label="Task body"
+                    maxLength={12000}
+                    onChange={(event) => setBody(event.target.value)}
+                    placeholder="Write markdown here"
+                    rows={12}
+                    value={body}
+                  />
+                </div>
+              ) : null}
             </div>
-            {isPreviewVisible ? (
-              <div className="task-editor__preview-inline">
-                <div className="markdown-preview" data-testid="task-markdown-preview" id="task-markdown-preview">
+            {activeView === "preview" ? (
+              <div
+                aria-labelledby="task-markdown-preview-tab"
+                className="task-editor__preview-inline"
+                id="task-markdown-preview-panel"
+                role="tabpanel"
+              >
+                <div
+                  className="markdown-preview"
+                  data-testid="task-markdown-preview"
+                  id="task-markdown-preview"
+                >
                   {body.trim() ? (
                     <ReactMarkdown>{body}</ReactMarkdown>
                   ) : (
@@ -541,6 +795,7 @@ export function BoardPage() {
   const isBoardFiltered = boardSearch.length > 0 || activeTagKeys.size > 0;
   const taskMap = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
   const draggedTask = draggedTaskId ? taskMap.get(draggedTaskId) ?? null : null;
+  const availableTaskTags = useMemo(() => listSuggestedTags(tasks), [tasks]);
   const orderedTaskIdsByLane = useMemo(() => buildTaskIdsByLane(lanes, tasks), [lanes, tasks]);
   const previewTaskIdsByLane = taskDragOrder ?? orderedTaskIdsByLane;
   const taskSensors = useSensors(
@@ -804,14 +1059,25 @@ export function BoardPage() {
     let targetLaneId: string | null = null;
     let targetIndex: number | null = null;
 
-    if (overData.type === "slot") {
-      targetLaneId = String(overData.laneId);
-      targetIndex = Number(overData.position);
-    }
-
     if (overData.type === "lane") {
       targetLaneId = String(overData.laneId);
-      targetIndex = currentTaskOrder[targetLaneId]?.length ?? 0;
+      const laneTaskIds = currentTaskOrder[targetLaneId] ?? [];
+      if (laneTaskIds.length === 0) {
+        targetIndex = 0;
+      } else {
+        const translated = event.active.rect.current.translated;
+        const activeHeight = event.active.rect.current.initial?.height ?? 0;
+        const activeCenterY =
+          translated !== null
+            ? translated.top + activeHeight / 2
+            : event.over.rect.top + event.over.rect.height / 2;
+        const relativeCenterY = Math.max(0, activeCenterY - event.over.rect.top);
+        const normalizedIndex = Math.floor(
+          (relativeCenterY / Math.max(event.over.rect.height, 1)) * laneTaskIds.length
+        );
+
+        targetIndex = Math.max(0, Math.min(normalizedIndex, laneTaskIds.length));
+      }
     }
 
     if (overData.type === "task") {
@@ -820,8 +1086,11 @@ export function BoardPage() {
       const overIndex = currentTaskOrder[targetLaneId]?.indexOf(overTaskId) ?? -1;
       if (overIndex !== -1) {
         const translated = event.active.rect.current.translated;
+        const activeHeight = event.active.rect.current.initial?.height ?? event.over.rect.height;
+        const translatedCenter =
+          translated !== null ? translated.top + activeHeight / 2 : event.over.rect.top;
         const isBelowOverItem =
-          translated !== null && translated.top > event.over.rect.top + event.over.rect.height / 2;
+          translatedCenter > event.over.rect.top + event.over.rect.height / 2;
         targetIndex = overIndex + (isBelowOverItem ? 1 : 0);
       }
     }
@@ -930,7 +1199,7 @@ export function BoardPage() {
                 onClick={() => closeCreateLaneDialog()}
                 type="button"
               >
-                <span aria-hidden="true">x</span>
+                <CloseIcon />
               </button>
             </div>
             <form
@@ -971,6 +1240,7 @@ export function BoardPage() {
 
       {editingTask ? (
         <TaskEditorDialog
+          availableTags={availableTaskTags}
           error={saveTaskMutation.error}
           isPending={saveTaskMutation.isPending}
           onClose={closeTaskDialog}
@@ -1006,7 +1276,7 @@ export function BoardPage() {
 
       {!projectsQuery.isPending && !lanesQuery.isPending && !tasksQuery.isPending && project ? (
         <DndContext
-          collisionDetection={closestCorners}
+          collisionDetection={taskCollisionDetection}
           onDragCancel={clearTaskDrag}
           onDragEnd={handleTaskDragEnd}
           onDragOver={handleTaskDragOver}
@@ -1124,32 +1394,25 @@ export function BoardPage() {
                         </div>
                       </form>
                     ) : null}
-                    <TaskDropSlot isVisible={Boolean(draggedTaskId)} laneId={lane.id} position={0} />
                     {lane.displayTasks.map((task, taskIndex) => (
-                      <div key={task.id}>
-                        <TaskCard
-                          activeTagKeys={activeTagKeys}
-                          isDragDisabled={isDragDisabled}
-                          laneId={lane.id}
-                          onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
-                          onOpen={(taskToEdit) => setEditingTaskId(taskToEdit.id)}
-                          onTagSelect={handleTagSelect}
-                          task={task}
-                          taskIndex={taskIndex}
-                        />
-                        <TaskDropSlot
-                          isVisible={Boolean(draggedTaskId)}
-                          laneId={lane.id}
-                          position={taskIndex + 1}
-                        />
-                      </div>
+                      <TaskCard
+                        activeTagKeys={activeTagKeys}
+                        isDragDisabled={isDragDisabled}
+                        key={task.id}
+                        laneId={lane.id}
+                        onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
+                        onOpen={(taskToEdit) => setEditingTaskId(taskToEdit.id)}
+                        onTagSelect={handleTagSelect}
+                        task={task}
+                        taskIndex={taskIndex}
+                      />
                     ))}
                   </SortableContext>
                 </LaneDropArea>
               </div>
             ))}
           </section>
-          <DragOverlay>
+          <DragOverlay dropAnimation={taskDropAnimation}>
             {draggedTask ? (
               <div
                 className="task-drag-overlay"

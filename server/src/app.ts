@@ -33,6 +33,7 @@ import {
   toProjectResponse,
   toTaskResponse,
   updateLaneBodySchema,
+  updateProjectBodySchema,
   updateThemeBodySchema,
   updateTaskBodySchema
 } from "./api-schemas.js";
@@ -57,6 +58,7 @@ import {
   listProjectsForUser,
   listTasksForProject,
   updateOwnedLane,
+  updateOwnedProjectName,
   updateUserTheme,
   updateOwnedTask,
   upsertUser,
@@ -485,6 +487,45 @@ export function buildApp(options: {
       return reply
         .status(201)
         .send(toProjectResponse(project, undefined, laneSummaries ?? []));
+    }
+  });
+
+  typedApp.route({
+    method: "PATCH",
+    url: "/api/v1/projects/:projectId",
+    schema: {
+      body: updateProjectBodySchema,
+      params: projectParamsSchema,
+      response: {
+        200: projectResponseSchema,
+        401: errorResponseSchema,
+        404: errorResponseSchema
+      },
+      tags: ["projects"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      const project = updateOwnedProjectName(database.db, {
+        name: request.body.name.trim(),
+        projectId: request.params.projectId,
+        userId: user.id
+      });
+      if (!project) {
+        return reply.status(404).send({
+          message: "Project not found."
+        });
+      }
+
+      const laneSummaries = listLanesForProject(database.db, {
+        userId: user.id,
+        projectId: project.id
+      });
+
+      return toProjectResponse(project, undefined, laneSummaries ?? []);
     }
   });
 

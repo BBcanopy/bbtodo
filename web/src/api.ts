@@ -163,6 +163,12 @@ export const api = {
       method: "PATCH"
     });
   },
+  updateProject(projectId: string, input: Pick<Project, "name">) {
+    return request<Project>(`/api/v1/projects/${projectId}`, {
+      body: JSON.stringify(input),
+      method: "PATCH"
+    });
+  },
   updateTask(
     projectId: string,
     taskId: string,

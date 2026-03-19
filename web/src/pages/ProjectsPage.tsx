@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, type Project } from "../api";
 import { formatIsoDate, itemStyle } from "../app/utils";
-import { EmptyState, ErrorBanner, ProjectGridSkeleton } from "../components/ui";
+import { CloseIcon, EmptyState, ErrorBanner, ProjectGridSkeleton, TrashIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
 function ProjectCard({
@@ -52,7 +52,7 @@ function ProjectCard({
             }}
             type="button"
           >
-            <span aria-hidden="true">x</span>
+            <TrashIcon />
           </button>
           {isConfirmOpen ? (
             <div className="task-delete-popover" onClick={(event) => event.stopPropagation()} role="alertdialog">
@@ -191,7 +191,7 @@ export function ProjectsPage() {
                 onClick={() => closeCreateDialog()}
                 type="button"
               >
-                <span aria-hidden="true">x</span>
+                <CloseIcon />
               </button>
             </div>
             <form

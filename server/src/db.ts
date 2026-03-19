@@ -908,6 +908,33 @@ export function createProject(db: DatabaseClient, userId: string, name: string) 
   return project;
 }
 
+export function updateOwnedProjectName(
+  db: DatabaseClient,
+  input: {
+    name: string;
+    projectId: string;
+    userId: string;
+  }
+) {
+  const project = getOwnedProject(db, input.userId, input.projectId);
+  if (!project) {
+    return null;
+  }
+
+  const updatedAt = new Date().toISOString();
+
+  db
+    .update(projects)
+    .set({
+      name: input.name,
+      updatedAt
+    })
+    .where(eq(projects.id, input.projectId))
+    .run();
+
+  return db.select().from(projects).where(eq(projects.id, input.projectId)).get() ?? null;
+}
+
 export function getOwnedProject(db: DatabaseClient, userId: string, projectId: string) {
   return db
     .select()

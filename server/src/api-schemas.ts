@@ -87,6 +87,10 @@ export const createProjectBodySchema = z.object({
   name: z.string().trim().min(1).max(120)
 });
 
+export const updateProjectBodySchema = z.object({
+  name: z.string().trim().min(1).max(120)
+});
+
 export const createLaneBodySchema = z.object({
   name: z.string().trim().min(1).max(80)
 });
