@@ -1484,6 +1484,20 @@ textarea:focus {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   box-shadow: inset 0 1px 0 var(--surface-highlight);
+  transition:
+    border-color 180ms var(--ease),
+    background-color 180ms var(--ease),
+    box-shadow 180ms var(--ease),
+    transform 180ms var(--ease);
+}
+
+.task-drop-indicator.is-active {
+  border-color: rgba(47, 119, 116, 0.5);
+  background: rgba(47, 119, 116, 0.14);
+  box-shadow:
+    inset 0 1px 0 var(--surface-highlight),
+    0 14px 26px -28px rgba(18, 34, 36, 0.34);
+  transform: scale(1.01);
 }
 
 .lane-composer {

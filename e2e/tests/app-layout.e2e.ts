@@ -958,19 +958,32 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   expect(todoCardBox).not.toBeNull();
   expect(((todoCardBox?.y ?? 0) - (todoColumnBox?.y ?? 0)) / (todoColumnBox?.height ?? 1)).toBeLessThan(0.3);
 
-  const reorderTransfer = await page.evaluateHandle(() => new DataTransfer());
   const queueCopyCard = page.getByTestId("task-card-task-4");
   const retryCard = page.getByTestId("task-card-task-1");
   const retryCardBox = await retryCard.boundingBox();
+  const queueCopyCardBox = await queueCopyCard.boundingBox();
   expect(retryCardBox).not.toBeNull();
-  await queueCopyCard.dispatchEvent("dragstart", { dataTransfer: reorderTransfer });
-  await retryCard.dispatchEvent("dragover", {
-    clientY: (retryCardBox?.y ?? 0) + (retryCardBox?.height ?? 0) * 0.25,
-    dataTransfer: reorderTransfer
-  });
-  await expect(page.getByTestId(`task-drop-indicator-${laneId("project-1", "todo")}-0`)).toBeVisible();
-  await retryCard.dispatchEvent("drop", { dataTransfer: reorderTransfer });
-  await queueCopyCard.dispatchEvent("dragend", { dataTransfer: reorderTransfer });
+  expect(queueCopyCardBox).not.toBeNull();
+  await page.mouse.move(
+    (queueCopyCardBox?.x ?? 0) + (queueCopyCardBox?.width ?? 0) / 2,
+    (queueCopyCardBox?.y ?? 0) + (queueCopyCardBox?.height ?? 0) / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    (queueCopyCardBox?.x ?? 0) + (queueCopyCardBox?.width ?? 0) / 2,
+    (queueCopyCardBox?.y ?? 0) + (queueCopyCardBox?.height ?? 0) / 2 - 16,
+    { steps: 6 }
+  );
+  const todoTopSlot = page.getByTestId(`task-drop-indicator-${laneId("project-1", "todo")}-0`);
+  await expect(todoTopSlot).toBeVisible();
+  const todoTopSlotBox = await todoTopSlot.boundingBox();
+  expect(todoTopSlotBox).not.toBeNull();
+  await page.mouse.move(
+    (todoTopSlotBox?.x ?? 0) + (todoTopSlotBox?.width ?? 0) / 2,
+    (todoTopSlotBox?.y ?? 0) + (todoTopSlotBox?.height ?? 0) / 2,
+    { steps: 18 }
+  );
+  await page.mouse.up();
   const todoTitles = todoColumn.locator(".task-card__title");
   await expect(todoTitles.nth(0)).toHaveText("Queue copy pass");
   await expect(todoTitles.nth(1)).toHaveText("Review retry scope");
@@ -1000,13 +1013,29 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
 
   await expect(page.getByText("Ship progress note")).toBeVisible();
 
-  const moveTransfer = await page.evaluateHandle(() => new DataTransfer());
-  await retryCard.dispatchEvent("dragstart", { dataTransfer: moveTransfer });
-  await qaColumn.locator(".board-column__content").dispatchEvent("dragover", { dataTransfer: moveTransfer });
-  await expect(page.getByTestId(`task-drop-indicator-project-1-lane-custom-1-1`)).toBeVisible();
+  const retryCardDragBox = await retryCard.boundingBox();
+  expect(retryCardDragBox).not.toBeNull();
+  await page.mouse.move(
+    (retryCardDragBox?.x ?? 0) + (retryCardDragBox?.width ?? 0) / 2,
+    (retryCardDragBox?.y ?? 0) + (retryCardDragBox?.height ?? 0) / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    (retryCardDragBox?.x ?? 0) + (retryCardDragBox?.width ?? 0) / 2 + 18,
+    (retryCardDragBox?.y ?? 0) + (retryCardDragBox?.height ?? 0) / 2,
+    { steps: 6 }
+  );
+  const qaSlot = page.getByTestId("task-drop-indicator-project-1-lane-custom-1-1");
+  await expect(qaSlot).toBeVisible();
+  const qaSlotBox = await qaSlot.boundingBox();
+  expect(qaSlotBox).not.toBeNull();
+  await page.mouse.move(
+    (qaSlotBox?.x ?? 0) + (qaSlotBox?.width ?? 0) / 2,
+    (qaSlotBox?.y ?? 0) + (qaSlotBox?.height ?? 0) / 2,
+    { steps: 24 }
+  );
   await expect(qaColumn).toHaveClass(/is-drop-target/);
-  await qaColumn.locator(".board-column__content").dispatchEvent("drop", { dataTransfer: moveTransfer });
-  await retryCard.dispatchEvent("dragend", { dataTransfer: moveTransfer });
+  await page.mouse.up();
   await expect(qaColumn.getByText("Review retry scope")).toBeVisible();
   await expect(todoColumn.getByText("Review retry scope")).toHaveCount(0);
 
