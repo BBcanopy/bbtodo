@@ -26,6 +26,7 @@ import {
   projectParamsSchema,
   projectResponseSchema,
   taskParamsSchema,
+  taskTagsResponseSchema,
   taskResponseSchema,
   toApiTokenSummary,
   toLaneResponse,
@@ -56,6 +57,7 @@ import {
   listLanesForProject,
   listApiTokensForUser,
   listProjectsForUser,
+  listTaskTagsForUser,
   listTasksForProject,
   updateOwnedLane,
   updateOwnedProjectName,
@@ -436,6 +438,26 @@ export function buildApp(options: {
       }
 
       return reply.status(204).send(null);
+    }
+  });
+
+  typedApp.route({
+    method: "GET",
+    url: "/api/v1/task-tags",
+    schema: {
+      response: {
+        200: taskTagsResponseSchema,
+        401: errorResponseSchema
+      },
+      tags: ["tags"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      return taskTagsResponseSchema.parse(listTaskTagsForUser(database.db, user.id));
     }
   });
 

@@ -949,6 +949,10 @@ export function BoardPage() {
     queryKey: ["tasks", projectId],
     queryFn: () => api.listTasks(projectId ?? "")
   });
+  const taskTagsQuery = useQuery({
+    queryKey: ["task-tags"],
+    queryFn: () => api.listTaskTags()
+  });
 
   const isCreateLaneDialogOpen = searchParams.get("createLane") === "1";
   const boardSearch = searchParams.get("q")?.trim().toLowerCase() ?? "";
@@ -962,7 +966,7 @@ export function BoardPage() {
   const isBoardFiltered = boardSearch.length > 0 || activeTagKeys.size > 0;
   const taskMap = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
   const draggedTask = draggedTaskId ? taskMap.get(draggedTaskId) ?? null : null;
-  const availableTaskTags = useMemo(() => listSuggestedTags(tasks), [tasks]);
+  const availableTaskTags = taskTagsQuery.data ?? listSuggestedTags(tasks);
   const orderedTaskIdsByLane = useMemo(() => buildTaskIdsByLane(lanes, tasks), [lanes, tasks]);
   const previewTaskIdsByLane = taskDragOrder ?? orderedTaskIdsByLane;
   const taskSensors = useSensors(
@@ -1002,6 +1006,7 @@ export function BoardPage() {
   async function invalidateBoardData() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["tasks", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["task-tags"] }),
       queryClient.invalidateQueries({ queryKey: ["projects"] }),
       queryClient.invalidateQueries({ queryKey: ["lanes", projectId] })
     ]);

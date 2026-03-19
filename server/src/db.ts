@@ -786,6 +786,43 @@ export function listApiTokensForUser(db: DatabaseClient, userId: string) {
     .all();
 }
 
+export function listTaskTagsForUser(db: DatabaseClient, userId: string) {
+  const rows = db
+    .select({
+      color: taskTags.color,
+      label: taskTags.tag
+    })
+    .from(taskTags)
+    .innerJoin(tasks, eq(taskTags.taskId, tasks.id))
+    .innerJoin(projects, eq(tasks.projectId, projects.id))
+    .where(eq(projects.userId, userId))
+    .orderBy(desc(tasks.updatedAt), asc(taskTags.position), asc(taskTags.tag))
+    .all();
+
+  const tagsByKey = new Map<string, TaskTagData>();
+
+  rows.forEach((row) => {
+    const normalizedLabel = normalizeTaskTagLabel(row.label);
+    if (!normalizedLabel) {
+      return;
+    }
+
+    const key = normalizedLabel.toLowerCase();
+    if (tagsByKey.has(key)) {
+      return;
+    }
+
+    tagsByKey.set(key, {
+      color: normalizeTaskTagColor(row.color),
+      label: normalizedLabel
+    });
+  });
+
+  return Array.from(tagsByKey.values()).sort((left, right) =>
+    left.label.localeCompare(right.label, undefined, { sensitivity: "base" })
+  );
+}
+
 export function createApiToken(db: DatabaseClient, userId: string, name: string) {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();

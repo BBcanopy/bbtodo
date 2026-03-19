@@ -149,6 +149,9 @@ export const api = {
   listProjects() {
     return request<Project[]>("/api/v1/projects");
   },
+  listTaskTags() {
+    return request<TaskTag[]>("/api/v1/task-tags");
+  },
   listLanes(projectId: string) {
     return request<BoardLane[]>(`/api/v1/projects/${projectId}/lanes`);
   },

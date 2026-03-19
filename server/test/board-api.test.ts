@@ -202,6 +202,85 @@ describe("projects and tasks API", () => {
     expect(afterDeleteListResponse.json()).toEqual([]);
   });
 
+  it("lists reusable tags across the user's projects", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const firstProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Marketing board"
+      }
+    });
+    const secondProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Website board"
+      }
+    });
+
+    const firstProject = firstProjectResponse.json();
+    const secondProject = secondProjectResponse.json();
+
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${firstProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Plan Q2 work",
+        tags: [tag("strategy", "sky"), tag("shared", "moss")]
+      }
+    });
+
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${secondProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Refresh homepage",
+        tags: [tag("design", "amber"), tag("shared", "moss")]
+      }
+    });
+
+    const taskTagsResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/task-tags",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(taskTagsResponse.statusCode).toBe(200);
+    expect(taskTagsResponse.json()).toEqual([
+      tag("design", "amber"),
+      tag("shared", "moss"),
+      tag("strategy", "sky")
+    ]);
+  });
+
   it("isolates projects and tasks between users and exposes OpenAPI", async () => {
     const oidc = createMutableMockOidcProvider({
       subject: "owner",
@@ -230,6 +309,20 @@ describe("projects and tasks API", () => {
 
     const project = createProjectResponse.json();
 
+    const createTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: ownerSession.sessionCookie
+      },
+      payload: {
+        title: "Owner-only tag seed",
+        tags: [tag("private", "slate")]
+      }
+    });
+
+    expect(createTaskResponse.statusCode).toBe(201);
+
     oidc.setIdentity({
       subject: "other-user",
       email: "other@example.com",
@@ -247,6 +340,17 @@ describe("projects and tasks API", () => {
 
     expect(otherProjectsResponse.statusCode).toBe(200);
     expect(otherProjectsResponse.json()).toEqual([]);
+
+    const otherTaskTagsResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/task-tags",
+      cookies: {
+        bbtodo_session: otherSession.sessionCookie
+      }
+    });
+
+    expect(otherTaskTagsResponse.statusCode).toBe(200);
+    expect(otherTaskTagsResponse.json()).toEqual([]);
 
     const otherDeleteResponse = await app.inject({
       method: "DELETE",
@@ -266,6 +370,7 @@ describe("projects and tasks API", () => {
     expect(openApiResponse.statusCode).toBe(200);
     const openApi = openApiResponse.json();
     expect(openApi.openapi).toBe("3.1.0");
+    expect(openApi.paths["/api/v1/task-tags"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/lanes"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/lanes/{laneId}"]).toBeDefined();

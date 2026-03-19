@@ -329,6 +329,27 @@ async function mockAuthenticated(
     projectState.forEach((project) => syncProject(project.id));
   }
 
+  function listReusableTags() {
+    const tagsByKey = new Map<string, TaskTag>();
+
+    [...taskState]
+      .sort((left, right) => (left.updatedAt < right.updatedAt ? 1 : -1))
+      .forEach((task) => {
+        task.tags.forEach((taskTag) => {
+          const key = taskTag.label.trim().toLowerCase();
+          if (!key || tagsByKey.has(key)) {
+            return;
+          }
+
+          tagsByKey.set(key, taskTag);
+        });
+      });
+
+    return Array.from(tagsByKey.values()).sort((left, right) =>
+      left.label.localeCompare(right.label, undefined, { sensitivity: "base" })
+    );
+  }
+
   function reindexLane(projectId: string, laneIdValue: string) {
     sortTasksForProject(projectId, laneIdValue).forEach((task, index) => {
       task.position = index;
@@ -407,7 +428,7 @@ async function mockAuthenticated(
           name?: string;
           position?: number;
           status?: TaskStatus;
-          tags?: string[];
+          tags?: TaskTag[];
           theme?: UserTheme;
           title?: string;
         }
@@ -429,6 +450,9 @@ async function mockAuthenticated(
       case "GET /api/v1/projects":
         syncAllProjects();
         await fulfillJson(route, 200, projectState);
+        return;
+      case "GET /api/v1/task-tags":
+        await fulfillJson(route, 200, listReusableTags());
         return;
       case "POST /api/v1/projects": {
         const createdProjectId = `project-${nextProjectId++}`;
@@ -921,7 +945,24 @@ test("project cards open on click and delete through a confirmation popover", as
 });
 
 test("board workspace adds lanes and filters cards front-end only", async ({ page }) => {
-  await mockAuthenticated(page);
+  const tasksWithReusableGlobalTag = structuredClone(tasks);
+  tasksWithReusableGlobalTag.push({
+    body: "Homepage refresh backlog.",
+    createdAt: "2026-03-18T08:18:00.000Z",
+    id: "task-project-2-1",
+    laneId: laneId("project-2", "todo"),
+    position: 0,
+    projectId: "project-2",
+    status: "todo",
+    tags: [tag("global-brand", "amber")],
+    title: "Refresh homepage copy",
+    updatedAt: "2026-03-18T08:22:00.000Z"
+  });
+
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks: tasksWithReusableGlobalTag
+  });
 
   await page.goto("/projects/project-1");
 
@@ -998,6 +1039,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(editDialog.getByRole("button", { name: "Remove tag backend" })).toBeVisible();
   await expect(editDialog.getByRole("button", { name: "Remove tag retry" })).toBeVisible();
   await expect(editDialog.getByRole("button", { name: "Add tag ops" })).toBeVisible();
+  await expect(editDialog.getByRole("button", { name: "Add tag global-brand" })).toBeVisible();
   await expect(editDialog.getByLabel("Task body")).toHaveValue("Callback logs mention **retry** scope.");
   await expect(editDialog.getByTestId("task-markdown-preview")).toHaveCount(0);
   await expect(sourceTab).toHaveAttribute("aria-selected", "true");
