@@ -1724,6 +1724,11 @@ textarea:focus {
     border-color 220ms var(--ease);
 }
 
+.icon-button.danger-button {
+  border: none;
+  background: transparent;
+}
+
 .ui-icon {
   width: 1rem;
   height: 1rem;

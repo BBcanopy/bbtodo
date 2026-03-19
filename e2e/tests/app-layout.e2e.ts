@@ -947,7 +947,9 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(page.getByRole("button", { name: /Move to / })).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-1").locator(".label-chip")).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-1").locator(".task-tag")).toHaveText(["backend", "retry"]);
-  await expect(page.getByLabel("Delete task Review retry settings").locator("svg")).toHaveCount(1);
+  const taskDeleteButton = page.getByLabel("Delete task Review retry settings");
+  await expect(taskDeleteButton.locator("svg")).toHaveCount(1);
+  await expect(taskDeleteButton).toHaveCSS("border-top-width", "0px");
   await expect(page.getByTestId("task-card-task-1").locator(".task-card__timestamp")).toHaveText("2026-03-18");
   await expect(page.getByTestId("task-card-task-1").locator(".task-card__timestamp")).toHaveAttribute(
     "datetime",
