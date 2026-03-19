@@ -708,6 +708,7 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   const createProjectLinkBox = await createProjectLink.boundingBox();
   const createProjectBackground = await createProjectLink.evaluate((element) => getComputedStyle(element).backgroundColor);
   const createProjectHeight = await createProjectLink.evaluate((element) => parseFloat(getComputedStyle(element).height));
+  const createProjectRadius = await createProjectLink.evaluate((element) => parseFloat(getComputedStyle(element).borderRadius));
   const projectGridBox = await page.locator(".project-grid").boundingBox();
   const firstCard = page.getByTestId("project-card-project-1");
   const secondCard = page.getByTestId("project-card-project-2");
@@ -752,8 +753,9 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   expect((firstCardBox?.width ?? 0)).toBeLessThan(320);
   expect(createProjectLinkBox).not.toBeNull();
   expect((createProjectLinkBox?.x ?? 0)).toBeGreaterThan(120);
-  expect(createProjectBackground).toBe("rgba(0, 0, 0, 0)");
-  expect(createProjectHeight).toBeLessThan(36);
+  expect(createProjectBackground).not.toBe("rgba(0, 0, 0, 0)");
+  expect(createProjectHeight).toBeGreaterThan(40);
+  expect(createProjectRadius).toBeGreaterThan(20);
   await expect(page.locator(".subnav__action-mark")).toHaveText("+");
 
   await page.getByLabel("Search projects").fill("partner");
@@ -882,6 +884,10 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(page.getByLabel("Search cards")).toBeVisible();
   await expect(page.getByLabel("Filter by tags")).toBeVisible();
   await expect(page.locator(".subnav__search-label")).toHaveText(["Search", "Tags"]);
+  const currentProjectBackground = await page
+    .locator(".subnav__current")
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(currentProjectBackground).not.toBe("rgba(0, 0, 0, 0)");
 
   const maxWidth = await page.locator(".page-shell--board").evaluate((element) => getComputedStyle(element).maxWidth);
   expect(maxWidth).toBe("none");

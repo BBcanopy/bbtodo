@@ -65,82 +65,84 @@ export function AppShell({ user }: { user: User }) {
               <span className="brand-mark__text">bbtodo</span>
             </Link>
             <nav className="subnav">
-              <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} end to="/">
-                Projects
-              </NavLink>
-              {activeBoard ? (
-                <span className="subnav__current" title={activeBoard}>
-                  <span className="subnav__current-label">Project</span>
-                  <span className="subnav__current-value">{activeBoard}</span>
-                </span>
-              ) : null}
-              {boardMatch || isProjectsRoute ? (
-                <label className="subnav__search">
-                  {boardMatch ? <span className="subnav__search-label">Search</span> : null}
-                  <input
-                    aria-label={isProjectsRoute ? "Search projects" : "Search cards"}
-                    onChange={(event) =>
-                      updateRouteParams((params) => {
-                        const value = event.target.value.trim();
-                        if (value) {
-                          params.set("q", value);
-                        } else {
-                          params.delete("q");
-                        }
-                      })
-                    }
-                    placeholder={isProjectsRoute ? "Search projects" : "Search cards"}
-                    type="search"
-                    value={navSearch}
-                  />
-                </label>
-              ) : null}
-              {boardMatch ? (
-                <label className="subnav__search">
-                  <span className="subnav__search-label">Tags</span>
-                  <input
-                    aria-label="Filter by tags"
-                    onChange={(event) =>
-                      updateRouteParams((params) => {
-                        const value = event.target.value;
-                        if (value.trim()) {
-                          params.set("tags", value);
-                        } else {
-                          params.delete("tags");
-                        }
-                      })
-                    }
-                    placeholder="bug, docs"
-                    type="search"
-                    value={navTagSearch}
-                  />
-                </label>
-              ) : null}
-              {boardMatch ? (
-                <>
-                  <button
-                    className="subnav__action"
-                    onClick={() =>
-                      updateRouteParams((params) => {
-                        params.set("createLane", "1");
-                      })
-                    }
-                    type="button"
-                  >
-                    <span aria-hidden="true" className="subnav__action-mark">
-                      +
-                    </span>
-                    <span>Create Lane</span>
-                  </button>
-                </>
-              ) : null}
-              {isProjectsRoute ? (
-                <Link className="subnav__action" to="/?createProject=1">
-                  <span aria-hidden="true" className="subnav__action-mark">
-                    +
+              <div className="subnav__cluster subnav__cluster--primary">
+                <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} end to="/">
+                  Projects
+                </NavLink>
+                {activeBoard ? (
+                  <span className="subnav__current" title={activeBoard}>
+                    <span className="subnav__current-label">Project</span>
+                    <span className="subnav__current-value">{activeBoard}</span>
                   </span>
-                  <span>Create Project</span>
-                </Link>
+                ) : null}
+              </div>
+              {boardMatch || isProjectsRoute ? (
+                <div className="subnav__cluster subnav__cluster--tools">
+                  <label className="subnav__search">
+                    {boardMatch ? <span className="subnav__search-label">Search</span> : null}
+                    <input
+                      aria-label={isProjectsRoute ? "Search projects" : "Search cards"}
+                      onChange={(event) =>
+                        updateRouteParams((params) => {
+                          const value = event.target.value.trim();
+                          if (value) {
+                            params.set("q", value);
+                          } else {
+                            params.delete("q");
+                          }
+                        })
+                      }
+                      placeholder={isProjectsRoute ? "Search projects" : "Search cards"}
+                      type="search"
+                      value={navSearch}
+                    />
+                  </label>
+                  {boardMatch ? (
+                    <label className="subnav__search">
+                      <span className="subnav__search-label">Tags</span>
+                      <input
+                        aria-label="Filter by tags"
+                        onChange={(event) =>
+                          updateRouteParams((params) => {
+                            const value = event.target.value;
+                            if (value.trim()) {
+                              params.set("tags", value);
+                            } else {
+                              params.delete("tags");
+                            }
+                          })
+                        }
+                        placeholder="bug, docs"
+                        type="search"
+                        value={navTagSearch}
+                      />
+                    </label>
+                  ) : null}
+                  {boardMatch ? (
+                    <button
+                      className="subnav__action"
+                      onClick={() =>
+                        updateRouteParams((params) => {
+                          params.set("createLane", "1");
+                        })
+                      }
+                      type="button"
+                    >
+                      <span aria-hidden="true" className="subnav__action-mark">
+                        +
+                      </span>
+                      <span>Create Lane</span>
+                    </button>
+                  ) : null}
+                  {isProjectsRoute ? (
+                    <Link className="subnav__action" to="/?createProject=1">
+                      <span aria-hidden="true" className="subnav__action-mark">
+                        +
+                      </span>
+                      <span>Create Project</span>
+                    </Link>
+                  ) : null}
+                </div>
               ) : null}
             </nav>
           </div>
