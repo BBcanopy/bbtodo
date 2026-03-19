@@ -855,6 +855,16 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(editDialog).toBeVisible();
   await expect(editDialog.getByLabel("Title")).toHaveValue("Review retry settings");
   await expect(editDialog.getByLabel("Task body")).toHaveValue("Callback logs mention **retry** scope.");
+  await expect(editDialog.locator(".task-editor__preview-panel")).toHaveCount(0);
+  await expect(editDialog.getByTestId("task-markdown-preview")).toHaveCount(0);
+  await expect(editDialog.getByRole("button", { name: "Render markdown" })).toBeVisible();
+  const dialogBox = await editDialog.boundingBox();
+  const bodyFieldBox = await editDialog.getByLabel("Task body").boundingBox();
+  expect(dialogBox).not.toBeNull();
+  expect(bodyFieldBox).not.toBeNull();
+  expect((bodyFieldBox?.width ?? 0) / (dialogBox?.width ?? 1)).toBeGreaterThan(0.75);
+  await editDialog.getByRole("button", { name: "Render markdown" }).click();
+  await expect(editDialog.getByRole("button", { name: "Hide markdown" })).toBeVisible();
   await expect(editDialog.locator(".markdown-preview strong")).toHaveText("retry");
   await editDialog.getByLabel("Title").fill("Review retry scope");
   await editDialog

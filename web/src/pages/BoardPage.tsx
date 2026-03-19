@@ -125,10 +125,12 @@ function TaskEditorDialog({
 }) {
   const [title, setTitle] = useState(task.title);
   const [body, setBody] = useState(task.body);
+  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
 
   useEffect(() => {
     setTitle(task.title);
     setBody(task.body);
+    setIsPreviewVisible(false);
   }, [task.body, task.id, task.title]);
 
   return (
@@ -162,44 +164,50 @@ function TaskEditorDialog({
           }}
         >
           <div className="task-editor__grid">
-            <div className="task-editor__fields">
-              <label className="field">
-                <span className="field__label">Title</span>
-                <input
-                  autoFocus
-                  maxLength={240}
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Task title"
-                  required
-                  value={title}
-                />
-              </label>
-              <label className="field field--editor">
+            <label className="field">
+              <span className="field__label">Title</span>
+              <input
+                autoFocus
+                maxLength={240}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Task title"
+                required
+                value={title}
+              />
+            </label>
+            <div className="field field--editor">
+              <div className="task-editor__field-header">
                 <span className="field__label">Body</span>
-                <textarea
-                  aria-label="Task body"
-                  maxLength={12000}
-                  onChange={(event) => setBody(event.target.value)}
-                  placeholder="Write markdown here"
-                  rows={12}
-                  value={body}
-                />
-              </label>
+                <button
+                  aria-controls="task-markdown-preview"
+                  aria-expanded={isPreviewVisible}
+                  className="micro-button"
+                  onClick={() => setIsPreviewVisible((current) => !current)}
+                  type="button"
+                >
+                  {isPreviewVisible ? "Hide markdown" : "Render markdown"}
+                </button>
+              </div>
+              <textarea
+                aria-label="Task body"
+                maxLength={12000}
+                onChange={(event) => setBody(event.target.value)}
+                placeholder="Write markdown here"
+                rows={12}
+                value={body}
+              />
             </div>
-
-            <section className="task-editor__preview-panel">
-              <div className="task-editor__preview-header">
-                <h3>Preview</h3>
-                <span className="task-editor__preview-hint">Markdown</span>
+            {isPreviewVisible ? (
+              <div className="task-editor__preview-inline">
+                <div className="markdown-preview" data-testid="task-markdown-preview" id="task-markdown-preview">
+                  {body.trim() ? (
+                    <ReactMarkdown>{body}</ReactMarkdown>
+                  ) : (
+                    <p className="markdown-preview__empty">Nothing to preview yet.</p>
+                  )}
+                </div>
               </div>
-              <div className="markdown-preview" data-testid="task-markdown-preview">
-                {body.trim() ? (
-                  <ReactMarkdown>{body}</ReactMarkdown>
-                ) : (
-                  <p className="markdown-preview__empty">Nothing to preview yet.</p>
-                )}
-              </div>
-            </section>
+            ) : null}
           </div>
           {error ? <ErrorBanner error={error} /> : null}
           <div className="dialog-actions">
