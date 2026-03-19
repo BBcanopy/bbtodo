@@ -635,6 +635,7 @@ test("login screen uses the updated cool accent palette", async ({ page }) => {
 
   await page.goto("/");
 
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/favicon.svg");
   await expect(page.getByRole("heading", { name: "BBTodo" })).toBeVisible();
   await expect(page.locator(".hero-panel__brand .eyebrow")).toHaveCount(0);
   await expect(page.locator(".preview-panel")).toHaveCount(0);
