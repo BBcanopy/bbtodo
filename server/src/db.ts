@@ -1232,6 +1232,131 @@ export function updateOwnedLane(
   return db.select().from(lanes).where(eq(lanes.id, input.laneId)).get() ?? null;
 }
 
+export function deleteOwnedLane(
+  db: DatabaseClient,
+  input: {
+    destinationLaneId?: string;
+    laneId: string;
+    projectId: string;
+    userId: string;
+  }
+) {
+  const project = getOwnedProject(db, input.userId, input.projectId);
+  if (!project) {
+    return {
+      status: "project_not_found" as const
+    };
+  }
+
+  const lane = getProjectLaneById(db, input.projectId, input.laneId);
+  if (!lane) {
+    return {
+      status: "lane_not_found" as const
+    };
+  }
+
+  if (lane.systemKey) {
+    return {
+      status: "system_lane" as const
+    };
+  }
+
+  const remainingLanes = listProjectLanesByProjectId(db, input.projectId).filter(
+    (candidate) => candidate.id !== lane.id
+  );
+  const destinationLane =
+    input.destinationLaneId === undefined
+      ? null
+      : remainingLanes.find((candidate) => candidate.id === input.destinationLaneId) ?? null;
+
+  if (input.destinationLaneId !== undefined && !destinationLane) {
+    return {
+      status: "destination_not_found" as const
+    };
+  }
+
+  const laneTasks = db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.projectId, input.projectId), eq(tasks.laneId, lane.id)))
+    .orderBy(asc(tasks.position), desc(tasks.updatedAt))
+    .all();
+
+  if (laneTasks.length > 0 && !destinationLane) {
+    return {
+      status: "destination_required" as const
+    };
+  }
+
+  const updatedAt = new Date().toISOString();
+
+  db.transaction((tx) => {
+    if (destinationLane) {
+      const destinationTaskIds = tx
+        .select({
+          id: tasks.id
+        })
+        .from(tasks)
+        .where(and(eq(tasks.projectId, input.projectId), eq(tasks.laneId, destinationLane.id)))
+        .orderBy(asc(tasks.position), desc(tasks.updatedAt))
+        .all()
+        .map((task) => task.id);
+
+      laneTasks.forEach((task) => {
+        tx
+          .update(tasks)
+          .set({
+            laneId: destinationLane.id,
+            status: destinationLane.systemKey ?? task.status,
+            updatedAt
+          })
+          .where(eq(tasks.id, task.id))
+          .run();
+        destinationTaskIds.push(task.id);
+      });
+
+      destinationTaskIds.forEach((taskId, index) => {
+        tx
+          .update(tasks)
+          .set({
+            position: index
+          })
+          .where(eq(tasks.id, taskId))
+          .run();
+      });
+    }
+
+    tx.delete(lanes).where(eq(lanes.id, lane.id)).run();
+
+    remainingLanes.forEach((candidate, index) => {
+      if (candidate.position === index) {
+        return;
+      }
+
+      tx
+        .update(lanes)
+        .set({
+          position: index,
+          updatedAt
+        })
+        .where(eq(lanes.id, candidate.id))
+        .run();
+    });
+
+    tx
+      .update(projects)
+      .set({
+        updatedAt
+      })
+      .where(eq(projects.id, input.projectId))
+      .run();
+  });
+
+  return {
+    status: "deleted" as const
+  };
+}
+
 export function listTasksForProject(
   db: DatabaseClient,
   input: {

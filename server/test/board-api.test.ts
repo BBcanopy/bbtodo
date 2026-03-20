@@ -660,4 +660,174 @@ describe("projects and tasks API", () => {
       })
     ]);
   });
+
+  it("deletes custom lanes and moves tasks into another lane", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const createProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "QA board"
+      }
+    });
+    const project = createProjectResponse.json();
+    const todoLane = project.laneSummaries[0];
+    const doneLane = project.laneSummaries[2];
+
+    const createLaneResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/lanes`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Ready for QA"
+      }
+    });
+    const qaLane = createLaneResponse.json();
+
+    const doneTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Already shipped",
+        laneId: doneLane.id
+      }
+    });
+    const firstQaTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Draft changelog",
+        laneId: qaLane.id,
+        tags: [tag("qa", "orchid")]
+      }
+    });
+    const secondQaTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Verify release note",
+        laneId: qaLane.id
+      }
+    });
+
+    const deleteSystemLaneResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}/lanes/${todoLane.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(deleteSystemLaneResponse.statusCode).toBe(400);
+    expect(deleteSystemLaneResponse.json()).toEqual({
+      message: "System lanes cannot be deleted."
+    });
+
+    const deleteWithoutDestinationResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}/lanes/${qaLane.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(deleteWithoutDestinationResponse.statusCode).toBe(400);
+    expect(deleteWithoutDestinationResponse.json()).toEqual({
+      message: "Select a destination lane before deleting this lane."
+    });
+
+    const deleteLaneResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}/lanes/${qaLane.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        destinationLaneId: doneLane.id
+      }
+    });
+
+    expect(deleteLaneResponse.statusCode).toBe(204);
+
+    const lanesResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${project.id}/lanes`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(lanesResponse.statusCode).toBe(200);
+    expect(lanesResponse.json().map((lane: { name: string }) => lane.name)).toEqual([
+      "Todo",
+      "In Progress",
+      "Done"
+    ]);
+    expect(
+      lanesResponse.json().find((lane: { id: string }) => lane.id === doneLane.id)
+    ).toMatchObject({
+      id: doneLane.id,
+      taskCount: 3
+    });
+
+    const tasksResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(tasksResponse.statusCode).toBe(200);
+    expect(
+      tasksResponse.json().filter((task: { laneId: string }) => task.laneId === doneLane.id)
+    ).toEqual([
+      expect.objectContaining({
+        id: doneTaskResponse.json().id,
+        laneId: doneLane.id,
+        position: 0,
+        status: "done"
+      }),
+      expect.objectContaining({
+        id: firstQaTaskResponse.json().id,
+        laneId: doneLane.id,
+        position: 1,
+        status: "done",
+        tags: [tag("qa", "orchid")]
+      }),
+      expect.objectContaining({
+        id: secondQaTaskResponse.json().id,
+        laneId: doneLane.id,
+        position: 2,
+        status: "done"
+      })
+    ]);
+  });
 });

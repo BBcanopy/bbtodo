@@ -435,6 +435,63 @@ async function mockAuthenticated(
     return project.laneSummaries.find((candidate) => candidate.id === laneIdValue) ?? null;
   }
 
+  function deleteLane(projectId: string, laneIdValue: string, destinationLaneId?: string) {
+    const project = getProject(projectId);
+    if (!project) {
+      return { status: "project_not_found" as const };
+    }
+
+    const lane = project.laneSummaries.find((candidate) => candidate.id === laneIdValue);
+    if (!lane) {
+      return { status: "lane_not_found" as const };
+    }
+
+    if (lane.systemKey) {
+      return { status: "system_lane" as const };
+    }
+
+    const remainingLanes = project.laneSummaries
+      .filter((candidate) => candidate.id !== laneIdValue)
+      .sort((left, right) => left.position - right.position);
+    const destinationLane =
+      destinationLaneId === undefined
+        ? null
+        : remainingLanes.find((candidate) => candidate.id === destinationLaneId) ?? null;
+
+    if (destinationLaneId !== undefined && !destinationLane) {
+      return { status: "destination_not_found" as const };
+    }
+
+    const laneTasks = sortTasksForProject(projectId, laneIdValue);
+    if (laneTasks.length > 0 && !destinationLane) {
+      return { status: "destination_required" as const };
+    }
+
+    if (destinationLane) {
+      const destinationTasks = sortTasksForProject(projectId, destinationLane.id);
+      const movedTaskIds = new Set(laneTasks.map((task) => task.id));
+      const orderedTasks = [...destinationTasks, ...laneTasks];
+
+      orderedTasks.forEach((task, index) => {
+        task.laneId = destinationLane.id;
+        task.position = index;
+        if (movedTaskIds.has(task.id)) {
+          task.status = destinationLane.systemKey ?? task.status;
+          task.updatedAt = "2026-03-18T08:16:00.000Z";
+        }
+      });
+    }
+
+    project.laneSummaries = remainingLanes.map((candidate, index) => ({
+      ...candidate,
+      position: index,
+      updatedAt: "2026-03-18T08:16:00.000Z"
+    }));
+    syncProject(projectId);
+
+    return { status: "deleted" as const };
+  }
+
   syncAllProjects();
 
   await page.route("**/auth/logout", async (route) => {
@@ -449,6 +506,7 @@ async function mockAuthenticated(
     const body = request.postDataJSON() as
       | {
           body?: string;
+          destinationLaneId?: string;
           laneId?: string;
           name?: string;
           position?: number;
@@ -558,6 +616,36 @@ async function mockAuthenticated(
       }
 
       await fulfillJson(route, 200, lane);
+      return;
+    }
+
+    if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.includes("/lanes/")) {
+      const [projectId, laneIdValue] = [url.pathname.split("/")[4], url.pathname.split("/").pop() ?? ""];
+      const deleted = deleteLane(projectId, laneIdValue, body?.destinationLaneId);
+
+      if (deleted.status === "project_not_found" || deleted.status === "lane_not_found") {
+        await fulfillJson(route, 404, {
+          message: deleted.status === "project_not_found" ? "Project not found." : "Lane not found."
+        });
+        return;
+      }
+
+      if (deleted.status === "system_lane") {
+        await fulfillJson(route, 400, { message: "System lanes cannot be deleted." });
+        return;
+      }
+
+      if (deleted.status === "destination_required") {
+        await fulfillJson(route, 400, { message: "Select a destination lane before deleting this lane." });
+        return;
+      }
+
+      if (deleted.status === "destination_not_found") {
+        await fulfillJson(route, 400, { message: "Destination lane not found." });
+        return;
+      }
+
+      await fulfillJson(route, 204, null);
       return;
     }
 
@@ -1023,7 +1111,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
 
   await expect(page.locator(".board-column")).toHaveCount(3);
   await expect(page.locator(".board-column__note")).toHaveCount(0);
-  await expect(page.locator(".board-column__header > span")).toHaveCount(0);
+  await expect(page.locator(".lane-drag-handle")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Move to / })).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-1").locator(".label-chip")).toHaveCount(0);
   const initialTaskTags = page.getByTestId("task-card-task-1").locator(".task-tag");
@@ -1204,7 +1292,12 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   const laneHeadings = page.locator(".board-column__header h2");
   await expect(laneHeadings).toHaveText(["Todo", "In Progress", "Done", "Ready for QA"]);
 
-  await page.getByLabel("Reorder lane Ready for QA").dragTo(page.getByTestId("board-column-in_progress"), {
+  const qaLaneHeader = page.getByTestId("lane-header-project-1-lane-custom-1");
+  const qaLaneDeleteButton = page.getByLabel("Delete lane Ready for QA");
+  await expect(qaLaneDeleteButton).toBeVisible();
+  await expect(qaLaneDeleteButton).toHaveCSS("border-top-width", "0px");
+
+  await qaLaneHeader.dragTo(page.getByTestId("board-column-in_progress"), {
     targetPosition: { x: 16, y: 40 }
   });
   await expect(laneHeadings).toHaveText(["Todo", "Ready for QA", "In Progress", "Done"]);
@@ -1278,6 +1371,20 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(createdCard.getByRole("button", { exact: true, name: "Delete" })).toBeVisible();
   await createdCard.getByRole("button", { exact: true, name: "Delete" }).click();
   await expect(page.getByText("Ship progress note")).toHaveCount(0);
+
+  await qaLaneDeleteButton.click();
+  const laneDeleteDialog = page.getByRole("alertdialog", { name: "Delete lane Ready for QA" });
+  await expect(laneDeleteDialog).toBeVisible();
+  await expect(laneDeleteDialog.getByLabel("Move tasks from Ready for QA to")).toBeVisible();
+  await laneDeleteDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("heading", { name: "Ready for QA" })).toBeVisible();
+
+  await qaLaneDeleteButton.click();
+  await laneDeleteDialog.getByLabel("Move tasks from Ready for QA to").selectOption(laneId("project-1", "done"));
+  await laneDeleteDialog.getByRole("button", { exact: true, name: "Delete" }).click();
+  await expect(page.getByRole("heading", { name: "Ready for QA" })).toHaveCount(0);
+  await expect(page.getByTestId("board-column-done").getByText("Review retry scope")).toBeVisible();
+  await expect(qaColumn).toHaveCount(0);
 });
 
 test("board nav switcher changes, renames, and creates projects", async ({ page }) => {

@@ -104,6 +104,10 @@ export const createLaneBodySchema = z.object({
   name: z.string().trim().min(1).max(80)
 });
 
+export const deleteLaneBodySchema = z.object({
+  destinationLaneId: z.string().uuid().optional()
+});
+
 export const updateLaneBodySchema = z.object({
   position: z.number().int().nonnegative()
 });

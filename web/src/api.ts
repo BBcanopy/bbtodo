@@ -138,6 +138,12 @@ export const api = {
       method: "DELETE"
     });
   },
+  deleteLane(projectId: string, laneId: string, input?: { destinationLaneId?: string }) {
+    return request<null>(`/api/v1/projects/${projectId}/lanes/${laneId}`, {
+      body: input ? JSON.stringify(input) : undefined,
+      method: "DELETE"
+    });
+  },
   deleteTask(projectId: string, taskId: string) {
     return request<null>(`/api/v1/projects/${projectId}/tasks/${taskId}`, {
       method: "DELETE"

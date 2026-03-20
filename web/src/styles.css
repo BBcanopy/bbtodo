@@ -1116,7 +1116,8 @@ h3 {
   font-size: 0.84rem;
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 3.25rem;
   padding: 0.95rem 1rem;
@@ -1135,7 +1136,8 @@ input::placeholder {
   color: rgba(94, 110, 112, 0.78);
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: rgba(47, 119, 116, 0.42);
   box-shadow: 0 0 0 4px rgba(47, 119, 116, 0.08);
   transform: translateY(-1px);
@@ -1675,48 +1677,49 @@ textarea:focus {
   align-items: flex-start;
 }
 
-.lane-drag-handle {
-  display: inline-grid;
-  place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 0.9rem;
-  background: var(--surface-input);
-  color: var(--ink-soft);
-  box-shadow: inset 0 1px 0 var(--surface-highlight);
+.board-column__header.is-draggable {
   cursor: grab;
-  flex: 0 0 auto;
   user-select: none;
-  transition:
-    transform 220ms var(--ease),
-    background-color 220ms var(--ease),
-    border-color 220ms var(--ease),
-    color 220ms var(--ease),
-    box-shadow 220ms var(--ease);
 }
 
-.lane-drag-handle:hover {
-  transform: translateY(-1px);
-  border-color: var(--line-strong);
-  color: var(--ink);
-  box-shadow:
-    inset 0 1px 0 var(--surface-highlight-strong),
-    0 14px 24px -22px rgba(18, 34, 36, 0.44);
-}
-
-.lane-drag-handle:active {
-  transform: translateY(1px) scale(0.98);
+.board-column__header.is-draggable:active {
   cursor: grabbing;
 }
 
-.lane-drag-handle span {
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: -0.18em;
-  transform: translateX(-0.08rem);
+.board-column__header-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lane-header__actions {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 auto;
+}
+
+.lane-delete-button,
+.lane-header__action-spacer {
+  width: 2rem;
+  height: 2rem;
+}
+
+.lane-header__action-spacer {
+  flex: 0 0 auto;
+}
+
+.lane-delete-popover {
+  min-width: 15rem;
+}
+
+.lane-delete-popover__field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.lane-delete-popover__field span {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .board-column__content {

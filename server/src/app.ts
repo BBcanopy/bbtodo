@@ -18,6 +18,7 @@ import {
   createLaneBodySchema,
   createProjectBodySchema,
   createTaskBodySchema,
+  deleteLaneBodySchema,
   errorResponseSchema,
   laneParamsSchema,
   laneResponseSchema,
@@ -48,6 +49,7 @@ import {
   createProject,
   createSession,
   createTask,
+  deleteOwnedLane,
   deleteOwnedApiToken,
   deleteOwnedProject,
   deleteOwnedTask,
@@ -684,6 +686,61 @@ export function buildApp(options: {
       const updatedLane = projectLanes?.find((candidate) => candidate.id === lane.id);
 
       return toLaneResponse(updatedLane ?? lane);
+    }
+  });
+
+  typedApp.route({
+    method: "DELETE",
+    url: "/api/v1/projects/:projectId/lanes/:laneId",
+    schema: {
+      body: deleteLaneBodySchema.nullish(),
+      params: laneParamsSchema,
+      response: {
+        204: z.null(),
+        400: errorResponseSchema,
+        401: errorResponseSchema,
+        404: errorResponseSchema
+      },
+      tags: ["lanes"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      const deleted = deleteOwnedLane(database.db, {
+        userId: user.id,
+        projectId: request.params.projectId,
+        laneId: request.params.laneId,
+        destinationLaneId: request.body?.destinationLaneId
+      });
+
+      if (deleted.status === "project_not_found" || deleted.status === "lane_not_found") {
+        return reply.status(404).send({
+          message: deleted.status === "project_not_found" ? "Project not found." : "Lane not found."
+        });
+      }
+
+      if (deleted.status === "system_lane") {
+        return reply.status(400).send({
+          message: "System lanes cannot be deleted."
+        });
+      }
+
+      if (deleted.status === "destination_required") {
+        return reply.status(400).send({
+          message: "Select a destination lane before deleting this lane."
+        });
+      }
+
+      if (deleted.status === "destination_not_found") {
+        return reply.status(400).send({
+          message: "Destination lane not found."
+        });
+      }
+
+      return reply.status(204).send(null);
     }
   });
 
