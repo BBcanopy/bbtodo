@@ -148,6 +148,47 @@ function moveTaskId(
   return nextTaskIdsByLane;
 }
 
+function applyTaskMove(tasks: Task[], lanes: BoardLane[], taskId: string, targetLaneId: string, targetIndex: number) {
+  const currentTaskIdsByLane = buildTaskIdsByLane(lanes, tasks);
+  const nextTaskIdsByLane = moveTaskId(currentTaskIdsByLane, taskId, targetLaneId, targetIndex);
+  const nextTaskPositions = new Map<string, { laneId: string; position: number }>();
+  const lanesById = new Map(lanes.map((lane) => [lane.id, lane]));
+
+  Object.entries(nextTaskIdsByLane).forEach(([laneId, taskIds]) => {
+    taskIds.forEach((currentTaskId, position) => {
+      nextTaskPositions.set(currentTaskId, { laneId, position });
+    });
+  });
+
+  let hasChanges = false;
+  const nextTasks = tasks.map((task) => {
+    const nextLocation = nextTaskPositions.get(task.id);
+    if (!nextLocation) {
+      return task;
+    }
+
+    const nextLane = lanesById.get(nextLocation.laneId);
+    const nextStatus = task.id === taskId ? nextLane?.systemKey ?? task.status : task.status;
+    if (
+      task.laneId === nextLocation.laneId &&
+      task.position === nextLocation.position &&
+      task.status === nextStatus
+    ) {
+      return task;
+    }
+
+    hasChanges = true;
+    return {
+      ...task,
+      laneId: nextLocation.laneId,
+      position: nextLocation.position,
+      status: nextStatus
+    };
+  });
+
+  return hasChanges ? nextTasks : tasks;
+}
+
 function mergeUniqueTags(currentTags: TaskTag[], nextValue: string, color: TaskTagColor) {
   const seen = new Set(currentTags.map((tag) => normalizeTagKey(tag.label)));
   const additions: TaskTag[] = [];
@@ -1188,7 +1229,26 @@ export function BoardPage() {
   const moveTaskMutation = useMutation({
     mutationFn: ({ laneId, position, taskId }: { laneId: string; position: number; taskId: string }) =>
       api.updateTask(projectId ?? "", taskId, { laneId, position }),
-    onSuccess: async () => {
+    onMutate: async ({ laneId, position, taskId }) => {
+      if (!projectId) {
+        return { previousTasks: undefined };
+      }
+
+      await queryClient.cancelQueries({ queryKey: ["tasks", projectId] });
+      const previousTasks = queryClient.getQueryData<Task[]>(["tasks", projectId]) ?? tasks;
+      const optimisticTasks = applyTaskMove(previousTasks, lanes, taskId, laneId, position);
+
+      queryClient.setQueryData(["tasks", projectId], optimisticTasks);
+      return { previousTasks };
+    },
+    onError: (_error, _variables, context) => {
+      if (!projectId || !context?.previousTasks) {
+        return;
+      }
+
+      queryClient.setQueryData(["tasks", projectId], context.previousTasks);
+    },
+    onSettled: async () => {
       await invalidateBoardData();
     }
   });
@@ -1513,13 +1573,13 @@ export function BoardPage() {
     const currentTaskOrder = taskDragOrderRef.current ?? taskDragOrder ?? orderedTaskIdsByLane;
     const source = findTaskLocation(orderedTaskIdsByLane, activeTaskId);
     const destination = findTaskLocation(currentTaskOrder, activeTaskId);
-
-    clearTaskDrag();
     if (!source || !destination) {
+      clearTaskDrag();
       return;
     }
 
     if (source.laneId === destination.laneId && source.index === destination.index) {
+      clearTaskDrag();
       return;
     }
 
@@ -1528,6 +1588,7 @@ export function BoardPage() {
       position: destination.index,
       taskId: activeTaskId
     });
+    clearTaskDrag();
   }
 
   useEffect(() => {
