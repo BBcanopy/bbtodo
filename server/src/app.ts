@@ -112,7 +112,12 @@ function getSignedSessionId(
   return unsigned.valid ? unsigned.value : null;
 }
 
-async function requireApiUser(
+interface ApiAuthContext {
+  source: "bearer" | "session";
+  user: UserRecord;
+}
+
+function getApiAuthContext(
   app: ReturnType<typeof Fastify>,
   db: DatabaseClient,
   request: {
@@ -141,7 +146,10 @@ async function requireApiUser(
       return null;
     }
 
-    return user;
+    return {
+      source: "bearer",
+      user
+    };
   }
 
   const sessionId = getSignedSessionId(app, request.cookies[SESSION_COOKIE]);
@@ -163,7 +171,55 @@ async function requireApiUser(
     return null;
   }
 
-  return user;
+  return {
+    source: "session",
+    user
+  };
+}
+
+async function requireApiUser(
+  app: ReturnType<typeof Fastify>,
+  db: DatabaseClient,
+  request: {
+    headers: Record<string, string | string[] | undefined>;
+    cookies: Record<string, string | undefined>;
+  },
+  reply: {
+    clearCookie: ReturnType<typeof Fastify>["clearCookie"];
+    status: ReturnType<typeof Fastify>["status"];
+    send: ReturnType<typeof Fastify>["send"];
+  }
+) {
+  const auth = getApiAuthContext(app, db, request, reply);
+  return auth?.user ?? null;
+}
+
+async function requireSessionApiUser(
+  app: ReturnType<typeof Fastify>,
+  db: DatabaseClient,
+  request: {
+    headers: Record<string, string | string[] | undefined>;
+    cookies: Record<string, string | undefined>;
+  },
+  reply: {
+    clearCookie: ReturnType<typeof Fastify>["clearCookie"];
+    status: ReturnType<typeof Fastify>["status"];
+    send: ReturnType<typeof Fastify>["send"];
+  }
+) {
+  const auth = getApiAuthContext(app, db, request, reply);
+  if (!auth) {
+    return null;
+  }
+
+  if (auth.source === "bearer") {
+    reply.status(403).send({
+      message: "API tokens cannot create API tokens."
+    });
+    return null;
+  }
+
+  return auth.user;
 }
 
 export function buildApp(options: {
@@ -396,12 +452,13 @@ export function buildApp(options: {
       body: createApiTokenBodySchema,
       response: {
         201: createApiTokenResponseSchema,
+        403: errorResponseSchema,
         401: errorResponseSchema
       },
       tags: ["api-tokens"]
     },
     handler: async (request, reply) => {
-      const user = await requireApiUser(app, database.db, request, reply);
+      const user = await requireSessionApiUser(app, database.db, request, reply);
       if (!user) {
         return;
       }

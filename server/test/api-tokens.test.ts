@@ -66,6 +66,22 @@ describe("API tokens", () => {
 
     expect(bearerProjectResponse.statusCode).toBe(201);
 
+    const bearerCreateTokenResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/api-tokens",
+      headers: {
+        authorization: `Bearer ${createdToken.token}`
+      },
+      payload: {
+        name: "Nested token"
+      }
+    });
+
+    expect(bearerCreateTokenResponse.statusCode).toBe(403);
+    expect(bearerCreateTokenResponse.json()).toEqual({
+      message: "API tokens cannot create API tokens."
+    });
+
     const listTokensResponse = await app.inject({
       method: "GET",
       url: "/api/v1/api-tokens",
