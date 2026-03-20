@@ -83,7 +83,12 @@ function ProjectCard({
         </div>
       </div>
       <div className="project-card__body">
-        <h2>{project.name}</h2>
+        <div className="project-card__headline">
+          <h2>{project.name}</h2>
+          <time className="project-card__timestamp" dateTime={project.updatedAt}>
+            {formatIsoDate(project.updatedAt)}
+          </time>
+        </div>
         <div aria-label={`Lane counts for ${project.name}`} className="project-card__lane-counts">
           {project.laneSummaries.map((lane) => (
             <div
@@ -96,9 +101,6 @@ function ProjectCard({
             </div>
           ))}
         </div>
-        <time className="project-card__timestamp" dateTime={project.updatedAt}>
-          {formatIsoDate(project.updatedAt)}
-        </time>
       </div>
     </article>
   );
