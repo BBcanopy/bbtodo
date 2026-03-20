@@ -61,17 +61,17 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await expect(firstTaskCard.locator(".task-card__timestamp")).toHaveCount(0);
   await expect(firstTaskCard).toHaveCSS("border-radius", "0px");
   await expect(taskDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(taskDeleteButton).toHaveCSS("color", "rgb(136, 81, 74)");
+  await expect(taskDeleteButton).toHaveCSS("color", "rgb(47, 119, 116)");
 
   await page.getByLabel("Open account menu").click();
   await page.getByRole("button", { name: "Ember" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "ember");
   await expect(taskDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(taskDeleteButton).toHaveCSS("color", "rgb(191, 98, 63)");
+  await expect(taskDeleteButton).toHaveCSS("color", "rgb(184, 94, 63)");
   await page.getByRole("button", { name: "Midnight" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "midnight");
   await expect(taskDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(taskDeleteButton).toHaveCSS("color", "rgb(240, 160, 140)");
+  await expect(taskDeleteButton).toHaveCSS("color", "rgb(142, 229, 224)");
   await page.getByLabel("Open account menu").click();
 
   await firstTaskCard.click();

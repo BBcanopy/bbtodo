@@ -14,7 +14,7 @@
   --accent-soft: rgba(47, 119, 116, 0.12);
   --accent-strong: #235e5b;
   --danger: #9f3d33;
-  --task-delete-icon: #88514a;
+  --task-delete-icon: #2f7774;
   --shadow-soft: 0 20px 44px -30px rgba(18, 34, 36, 0.28);
   --bg-radial-a: rgba(47, 119, 116, 0.16);
   --bg-radial-b: rgba(255, 255, 255, 0.78);
@@ -51,7 +51,7 @@
   --accent-soft: rgba(184, 94, 63, 0.14);
   --accent-strong: #8f462c;
   --danger: #a04235;
-  --task-delete-icon: #bf623f;
+  --task-delete-icon: #b85e3f;
   --shadow-soft: 0 20px 44px -30px rgba(54, 31, 22, 0.26);
   --bg-radial-a: rgba(184, 94, 63, 0.18);
   --bg-radial-b: rgba(255, 245, 235, 0.86);
@@ -82,7 +82,7 @@
   --accent-soft: rgba(88, 198, 192, 0.16);
   --accent-strong: #8ee5e0;
   --danger: #e48778;
-  --task-delete-icon: #f0a08c;
+  --task-delete-icon: #8ee5e0;
   --shadow-soft: 0 24px 52px -32px rgba(4, 10, 12, 0.72);
   --bg-radial-a: rgba(88, 198, 192, 0.22);
   --bg-radial-b: rgba(25, 38, 43, 0.34);
@@ -2097,7 +2097,10 @@ textarea:focus {
   color: var(--task-delete-icon);
 }
 
-.task-card__delete-menu .icon-button.danger-button:hover {
+.task-card__delete-menu .icon-button.danger-button:hover,
+.task-card__delete-menu .icon-button.danger-button:focus-visible,
+.task-card.is-confirm-open .task-card__delete-menu .icon-button.danger-button {
+  color: var(--danger);
   background: transparent;
 }
 
