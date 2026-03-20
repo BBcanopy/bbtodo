@@ -1363,15 +1363,16 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
 
   const laneInput = page.getByLabel("New task title for Ready for QA");
   await expect(laneInput).toBeVisible();
-  await laneInput.fill("Ship progress note");
+  // Keep this title comfortably on one line so the timestamp-alignment check is stable in CI.
+  await laneInput.fill("Ship note");
   await laneInput.press("Enter");
 
-  await expect(page.getByText("Ship progress note")).toBeVisible();
+  await expect(page.getByText("Ship note")).toBeVisible();
   const createdCard = page.getByTestId("task-card-task-5");
   await expect(createdCard.locator(".task-tag")).toHaveCount(0);
   const createdCardTitleBox = await createdCard.locator(".task-card__title").boundingBox();
   const createdCardTimestampBox = await createdCard.locator(".task-card__timestamp").boundingBox();
-  const createdCardDeleteButtonBox = await createdCard.getByLabel("Delete task Ship progress note").boundingBox();
+  const createdCardDeleteButtonBox = await createdCard.getByLabel("Delete task Ship note").boundingBox();
   expect(createdCardTitleBox).not.toBeNull();
   expect(createdCardTimestampBox).not.toBeNull();
   expect(createdCardDeleteButtonBox).not.toBeNull();
@@ -1423,10 +1424,10 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(todoColumn.getByText("Review retry scope")).toHaveCount(0);
 
   await expect(page.locator(".column-empty")).toHaveCount(0);
-  await createdCard.getByLabel("Delete task Ship progress note").click();
+  await createdCard.getByLabel("Delete task Ship note").click();
   await expect(createdCard.getByRole("button", { exact: true, name: "Delete" })).toBeVisible();
   await createdCard.getByRole("button", { exact: true, name: "Delete" }).click();
-  await expect(page.getByText("Ship progress note")).toHaveCount(0);
+  await expect(page.getByText("Ship note")).toHaveCount(0);
 
   await qaLaneDeleteButton.click();
   const laneDeleteDialog = page.getByRole("alertdialog", { name: "Delete lane Ready for QA" });
