@@ -1,0 +1,25 @@
+services:
+  server:
+    image: ghcr.io/jyquery/bbtodo-server:${BBTODO_IMAGE_TAG:-latest}
+    pull_policy: always
+    environment:
+      CLIENT_URL: ${CLIENT_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      OIDC_ISSUER: ${OIDC_ISSUER}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_SCOPES: ${OIDC_SCOPES}
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    ports:
+      - "${SERVER_PORT:-3000}:3000"
+
+  web:
+    image: ghcr.io/jyquery/bbtodo-web:${BBTODO_IMAGE_TAG:-latest}
+    pull_policy: always
+    depends_on:
+      - server
+    ports:
+      - "${CLIENT_PORT:-8080}:80"
+    restart: unless-stopped
