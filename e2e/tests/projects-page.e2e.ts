@@ -5,8 +5,12 @@ import { mockAuthenticated, projectsForGrid } from "./fixtures";
 test("projects page lists boards and opens them from the switcher", async ({ page }) => {
   const projectsWithQaLane = structuredClone(projectsForGrid);
   const billingCleanupProject = projectsWithQaLane.find((project) => project.id === "project-1");
+  const compactProject = projectsWithQaLane.find((project) => project.id === "project-2");
   if (!billingCleanupProject) {
     throw new Error("Expected project-1 test fixture to exist");
+  }
+  if (!compactProject) {
+    throw new Error("Expected project-2 test fixture to exist");
   }
 
   billingCleanupProject.laneSummaries.push({
@@ -18,6 +22,18 @@ test("projects page lists boards and opens them from the switcher", async ({ pag
     taskCount: 0,
     updatedAt: "2026-03-18T08:00:00.000Z"
   });
+  compactProject.name = "idc";
+  compactProject.laneSummaries = [
+    {
+      createdAt: "2026-03-18T08:10:00.000Z",
+      id: "project-2-lane-done-only",
+      name: "Done",
+      position: 0,
+      projectId: "project-2",
+      taskCount: 3,
+      updatedAt: "2026-03-18T08:10:00.000Z"
+    }
+  ];
 
   await mockAuthenticated(page, { projects: projectsWithQaLane });
 
@@ -34,6 +50,21 @@ test("projects page lists boards and opens them from the switcher", async ({ pag
   for (const laneLabel of ["Todo 2", "In Progress 1", "In review 0", "Done 1", "Ready for QA 0"]) {
     await expect(projectCard.getByLabel(laneLabel)).toBeVisible();
   }
+  const compactProjectCard = page.getByTestId("project-card-project-2");
+  const regularLanePill = projectCard.locator(".project-card__lane-pill").first();
+  const compactLanePill = compactProjectCard.locator(".project-card__lane-pill");
+  await expect(compactProjectCard.getByRole("heading", { name: "idc" })).toBeVisible();
+  await expect(compactLanePill).toHaveCount(1);
+  await expect(compactLanePill).toContainText("Done");
+
+  const regularLanePillHeight = await regularLanePill.evaluate((element) =>
+    Math.round(element.getBoundingClientRect().height)
+  );
+  const compactLanePillHeight = await compactLanePill.evaluate((element) =>
+    Math.round(element.getBoundingClientRect().height)
+  );
+
+  expect(compactLanePillHeight).toBe(regularLanePillHeight);
 
   await page.getByLabel("Open account menu").click();
   await page.getByRole("button", { name: "Ember" }).click();
