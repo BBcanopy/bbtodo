@@ -56,9 +56,30 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await expect(page.locator(".board-column")).toHaveCount(4);
 
   const firstTaskCard = page.getByTestId("task-card-task-1");
+  const taskDeleteButton = firstTaskCard.getByLabel("Delete task Review retry settings");
+  const laneDeleteButton = page.getByLabel("Delete lane Todo");
   await expect(firstTaskCard.locator(".task-tag")).toHaveText(["backend", "retry"]);
   await expect(firstTaskCard.locator(".task-card__timestamp")).toHaveCount(0);
   await expect(firstTaskCard).toHaveCSS("border-radius", "0px");
+  await expect(taskDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(taskDeleteButton).toHaveCSS("color", "rgb(47, 119, 116)");
+  await expect(laneDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(laneDeleteButton).toHaveCSS("color", "rgb(47, 119, 116)");
+
+  await page.getByLabel("Open account menu").click();
+  await page.getByRole("button", { name: "Ember" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "ember");
+  await expect(taskDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(taskDeleteButton).toHaveCSS("color", "rgb(184, 94, 63)");
+  await expect(laneDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(laneDeleteButton).toHaveCSS("color", "rgb(184, 94, 63)");
+  await page.getByRole("button", { name: "Midnight" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "midnight");
+  await expect(taskDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(taskDeleteButton).toHaveCSS("color", "rgb(142, 229, 224)");
+  await expect(laneDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(laneDeleteButton).toHaveCSS("color", "rgb(142, 229, 224)");
+  await page.getByLabel("Open account menu").click();
 
   await firstTaskCard.click();
 

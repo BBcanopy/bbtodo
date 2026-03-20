@@ -45,6 +45,7 @@ test("projects page lists boards and opens them from the switcher", async ({ pag
   await expect(page.getByLabel("Search cards")).toHaveCount(0);
 
   const projectCard = page.getByTestId("project-card-project-1");
+  const projectDeleteButton = projectCard.getByLabel("Delete board Billing cleanup");
   await expect(projectCard.getByRole("heading", { name: "Billing cleanup" })).toBeVisible();
   await expect(projectCard.locator(".project-card__lane-pill")).toHaveCount(5);
   for (const laneLabel of ["Todo 2", "In Progress 1", "In review 0", "Done 1", "Ready for QA 0"]) {
@@ -68,11 +69,24 @@ test("projects page lists boards and opens them from the switcher", async ({ pag
   expect(compactLanePillHeight).toBeLessThanOrEqual(67);
   expect(compactLanePillHeight).toBeGreaterThanOrEqual(63);
 
+  await expect(projectDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(projectDeleteButton).toHaveCSS("color", "rgb(47, 119, 116)");
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body, "::after").opacity))
+    .toBe("0.65");
+
   await page.getByLabel("Open account menu").click();
   await page.getByRole("button", { name: "Ember" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "ember");
+  await expect(projectDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(projectDeleteButton).toHaveCSS("color", "rgb(184, 94, 63)");
   await page.getByRole("button", { name: "Midnight" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "midnight");
+  await expect(projectDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(projectDeleteButton).toHaveCSS("color", "rgb(142, 229, 224)");
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body, "::after").opacity))
+    .toBe("0.22");
   await page.getByLabel("Open account menu").click();
 
   const switcherButton = page.getByRole("button", { name: "Open project switcher" });
