@@ -1339,6 +1339,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
 
   const laneInput = page.getByLabel("New task title for Ready for QA");
   await expect(laneInput).toBeVisible();
+  await expect(qaColumn.locator(".lane-composer .field__label")).toHaveCount(0);
   // Keep this title comfortably on one line so the timestamp-alignment check is stable in CI.
   await laneInput.fill("Ship note");
   await laneInput.press("Enter");

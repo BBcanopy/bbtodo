@@ -1792,7 +1792,6 @@ export function BoardPage() {
                         }}
                       >
                         <label className="field">
-                          <span className="field__label">New task</span>
                           <input
                             aria-label={getTaskInputLabel(lane.name)}
                             autoFocus
