@@ -688,7 +688,7 @@ h3 {
   height: 0.72rem;
 }
 
-.subnav__search--tag-filter input {
+.subnav__tag-filter-input {
   min-height: 2.18rem;
   flex: 1 1 6rem;
   width: 0;
@@ -699,8 +699,22 @@ h3 {
   box-shadow: none;
 }
 
-.subnav__search--tag-filter input:focus {
+.subnav__tag-filter-input:focus {
   outline: none;
+}
+
+.subnav__tag-filter-input.is-collapsed {
+  flex-basis: 0;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.subnav__tag-filter-input.is-collapsed:focus {
+  flex-basis: 3.2rem;
+  width: 3.2rem;
+  min-width: 3.2rem;
+  padding: 0.34rem 0.24rem;
 }
 
 .subnav__search-toggle {

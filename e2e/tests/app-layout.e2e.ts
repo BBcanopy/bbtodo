@@ -1256,6 +1256,8 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(releaseTagFilterChip).toBeVisible();
   await expect(tagFilterField.locator(".subnav__tag-filter-chip")).toHaveCount(1);
   await expect(releaseTagFilterChip).toHaveCSS("background-color", "rgb(242, 229, 255)");
+  await expect(tagFilterInput).toHaveClass(/is-collapsed/);
+  await expect(tagFilterInput).toHaveAttribute("placeholder", "");
   await expect(tagFilterInput).toHaveValue("");
   await expect(page.getByText("Review retry scope")).toBeVisible();
   await expect(page.getByText("Tighten callback logging")).toHaveCount(0);
@@ -1269,6 +1271,8 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(backendTagFilterChip).toBeVisible();
   await expect(tagFilterField.locator(".subnav__tag-filter-chip")).toHaveCount(1);
   await expect(backendTagFilterChip).toHaveCSS("background-color", "rgb(255, 241, 217)");
+  await expect(tagFilterInput).toHaveClass(/is-collapsed/);
+  await expect(tagFilterInput).toHaveAttribute("placeholder", "");
   await expect(tagFilterInput).toHaveValue("");
   await expect(page.getByText("Review retry scope")).toBeVisible();
   await expect(page.getByText("Tighten callback logging")).toHaveCount(0);
@@ -1279,6 +1283,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(backendTagFilterChip).toHaveCount(0);
   await expect(opsTagFilterChip).toBeVisible();
   await expect(tagFilterField.locator(".subnav__tag-filter-chip")).toHaveCount(1);
+  await expect(tagFilterInput).toHaveClass(/is-collapsed/);
   await expect(page.getByText("Remove healthcheck loop")).toBeVisible();
   await expect(page.getByText("Review retry scope")).toHaveCount(0);
   await opsTagFilterChip.getByRole("button", { name: "Remove tag filter ops" }).click();

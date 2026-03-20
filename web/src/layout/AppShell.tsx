@@ -356,6 +356,7 @@ export function AppShell({ user }: { user: User }) {
                           aria-controls="tag-filter-dropdown"
                           aria-expanded={isTagFilterOpen}
                           aria-label="Filter by tags"
+                          className={`subnav__tag-filter-input${selectedTagFilterChip && tagFilterInputValue.length === 0 ? " is-collapsed" : ""}`}
                           onChange={(event) => {
                             setIsTagFilterOpen(true);
                             updateTagFilterSearch(event.target.value);
@@ -380,7 +381,7 @@ export function AppShell({ user }: { user: User }) {
                               removeTagFilter();
                             }
                           }}
-                          placeholder="tag"
+                          placeholder={selectedTagFilterChip ? "" : "tag"}
                           ref={tagFilterInputRef}
                           type="search"
                           value={tagFilterInputValue}
