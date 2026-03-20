@@ -168,6 +168,23 @@ function canTaskBecomeSubtask(tasks: Task[], task: Task) {
   return task.parentTaskId === null && !taskHasSubtasks(tasks, task.id);
 }
 
+function canTaskJoinParentGroup(tasks: Task[], task: Task, parentTaskId: string | null) {
+  if (parentTaskId === null) {
+    return true;
+  }
+
+  if (task.id === parentTaskId) {
+    return false;
+  }
+
+  const parentTask = tasks.find((candidate) => candidate.id === parentTaskId);
+  if (!parentTask || parentTask.parentTaskId !== null) {
+    return false;
+  }
+
+  return task.parentTaskId !== null || canTaskBecomeSubtask(tasks, task);
+}
+
 function findTaskLocation(tasks: Task[], taskId: string) {
   const task = tasks.find((candidate) => candidate.id === taskId);
   if (!task || !task.laneId) {
@@ -1703,11 +1720,16 @@ export function BoardPage() {
     let nextDropTarget: TaskMoveTarget | null = null;
 
     if (overData.type === "slot") {
+      const targetParentTaskId =
+        typeof overData.parentTaskId === "string" ? String(overData.parentTaskId) : null;
+      if (!canTaskJoinParentGroup(currentPreviewTasks, activeTask, targetParentTaskId)) {
+        return;
+      }
+
       nextDropTarget = {
         kind: "reorder",
         laneId: String(overData.laneId),
-        parentTaskId:
-          typeof overData.parentTaskId === "string" ? String(overData.parentTaskId) : null,
+        parentTaskId: targetParentTaskId,
         position: Number(overData.position)
       };
     }
@@ -1768,10 +1790,15 @@ export function BoardPage() {
       const targetLaneId = String(overData.laneId);
       const overTaskId = String(overData.taskId);
       const overTask = currentPreviewTasks.find((task) => task.id === overTaskId);
+      const targetParentTaskId = overTask?.parentTaskId ?? null;
+      if (!overTask || !canTaskJoinParentGroup(currentPreviewTasks, activeTask, targetParentTaskId)) {
+        return;
+      }
+
       const siblingTaskIds =
-        overTask?.parentTaskId === null
+        targetParentTaskId === null
           ? currentTopLevelTaskIdsByLane[targetLaneId] ?? []
-          : currentSubtaskIdsByParent.get(overTask?.parentTaskId ?? "") ?? [];
+          : currentSubtaskIdsByParent.get(targetParentTaskId) ?? [];
       const overIndex = siblingTaskIds.indexOf(overTaskId);
       if (overIndex !== -1) {
         const pointerClientY = pointerClientYRef.current;
@@ -1785,7 +1812,7 @@ export function BoardPage() {
         nextDropTarget = {
           kind: "reorder",
           laneId: targetLaneId,
-          parentTaskId: overTask?.parentTaskId ?? null,
+          parentTaskId: targetParentTaskId,
           position: overIndex + (isBelowOverItem ? 1 : 0)
         };
       }

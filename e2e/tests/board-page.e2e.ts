@@ -250,6 +250,12 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(createdCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
   await expect(todoColumn.getByText("Queue copy pass")).toHaveCount(0);
 
+  const copySubtask = createdCard.locator(".task-card__subtasks").getByTestId("task-card-task-4");
+  await dragTaskToTarget(page, createdCard.locator(".task-card__surface").first(), copySubtask);
+  await expect(page.getByText("Subtasks can only be added under top-level tasks.")).toHaveCount(0);
+  await expect(createdCard).toBeVisible();
+  await expect(createdCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
+
   const qaLaneDeleteButton = page.getByLabel("Delete lane Ready for QA");
   await qaLaneDeleteButton.click();
   const laneDeleteDialog = page.getByRole("alertdialog", { name: "Delete lane Ready for QA" });
