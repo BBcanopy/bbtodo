@@ -14,11 +14,13 @@
 # Create .env file and modify as you wish
 wget https://raw.githubusercontent.com/JyQuery/bbtodo/refs/heads/main/.env.example -O .env 
 
-# Download the docker compose file
-wget https://raw.githubusercontent.com/JyQuery/bbtodo/refs/heads/main/docker-compose.prod.yml -O docker-compose.yml
+# Download the all-in-one docker compose file
+wget https://raw.githubusercontent.com/JyQuery/bbtodo/refs/heads/main/docker-compose.all-in-one.yml -O docker-compose.all-in-one.yml
 
 # Create data folder
 mkdir data
 
-docker compose up -d
+docker compose -f docker-compose.all-in-one.yml up -d
 ```
+
+`docker-compose.all-in-one.yml` runs the published `ghcr.io/jyquery/bbtodo-all-in-one` image and starts both the Fastify server and nginx in one container.
