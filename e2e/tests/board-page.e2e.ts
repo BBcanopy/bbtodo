@@ -18,16 +18,22 @@ async function dragTaskToTarget(page: Page, source: Locator, target: Locator, ta
     { steps: 6 }
   );
 
-  await expect(target).toBeVisible();
-  const targetBox = await target.boundingBox();
+  // Drag previews can shift the list while the pointer is in flight, so re-center on
+  // the live target a few times before releasing.
+  for (const steps of [24, 14, 10]) {
+    await expect(target).toBeVisible();
+    const targetBox = await target.boundingBox();
 
-  expect(targetBox).not.toBeNull();
+    expect(targetBox).not.toBeNull();
 
-  await page.mouse.move(
-    (targetBox?.x ?? 0) + (targetBox?.width ?? 0) / 2,
-    (targetBox?.y ?? 0) + (targetBox?.height ?? 0) * targetYRatio,
-    { steps: 24 }
-  );
+    await page.mouse.move(
+      (targetBox?.x ?? 0) + (targetBox?.width ?? 0) / 2,
+      (targetBox?.y ?? 0) + (targetBox?.height ?? 0) * targetYRatio,
+      { steps }
+    );
+    await page.waitForTimeout(40);
+  }
+
   await page.mouse.up();
 }
 
