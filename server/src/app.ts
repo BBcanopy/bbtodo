@@ -26,7 +26,6 @@ import {
   errorResponseSchema,
   laneParamsSchema,
   laneResponseSchema,
-  listTasksQuerySchema,
   meResponseSchema,
   projectParamsSchema,
   projectResponseSchema,
@@ -583,7 +582,7 @@ export function buildApp(options: {
       }
 
       return listProjectsForUser(database.db, user.id).map((project) =>
-        toProjectResponse(project, project.taskCounts, project.laneSummaries)
+        toProjectResponse(project, project.laneSummaries)
       );
     }
   });
@@ -613,7 +612,7 @@ export function buildApp(options: {
 
       return reply
         .status(201)
-        .send(toProjectResponse(project, undefined, laneSummaries ?? []));
+        .send(toProjectResponse(project, laneSummaries ?? []));
     }
   });
 
@@ -652,7 +651,7 @@ export function buildApp(options: {
         projectId: project.id
       });
 
-      return toProjectResponse(project, undefined, laneSummaries ?? []);
+      return toProjectResponse(project, laneSummaries ?? []);
     }
   });
 
@@ -825,9 +824,9 @@ export function buildApp(options: {
         });
       }
 
-      if (deleted.status === "system_lane") {
+      if (deleted.status === "last_lane") {
         return reply.status(400).send({
-          message: "System lanes cannot be deleted."
+          message: "Projects must keep at least one lane."
         });
       }
 
@@ -852,7 +851,6 @@ export function buildApp(options: {
     url: "/api/v1/projects/:projectId/tasks",
     schema: {
       params: projectParamsSchema,
-      querystring: listTasksQuerySchema,
       response: {
         200: z.array(taskResponseSchema),
         401: errorResponseSchema,
@@ -868,8 +866,7 @@ export function buildApp(options: {
 
       const tasks = listTasksForProject(database.db, {
         userId: user.id,
-        projectId: request.params.projectId,
-        status: request.query.status
+        projectId: request.params.projectId
       });
       if (!tasks) {
         return reply.status(404).send({
@@ -945,8 +942,7 @@ export function buildApp(options: {
         body: request.body.body,
         laneId: request.body.laneId,
         tags: request.body.tags,
-        position: request.body.position,
-        status: request.body.status
+        position: request.body.position
       });
       if (!task) {
         return reply.status(404).send({

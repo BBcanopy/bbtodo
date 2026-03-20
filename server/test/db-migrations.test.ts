@@ -119,26 +119,30 @@ describe("database migrations", () => {
         services.database.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>
       ).map((column) => column.name);
       expect(taskColumns).toEqual(expect.arrayContaining(["body", "lane_id", "position"]));
+      expect(taskColumns).not.toContain("status");
 
       const taskTagColumns = (
         services.database.prepare("PRAGMA table_info(task_tags)").all() as Array<{ name: string }>
       ).map((column) => column.name);
       expect(taskTagColumns).toEqual(expect.arrayContaining(["color"]));
 
+      const laneColumns = (
+        services.database.prepare("PRAGMA table_info(lanes)").all() as Array<{ name: string }>
+      ).map((column) => column.name);
+      expect(laneColumns).not.toContain("system_key");
+
       const lanes = services.database
-        .prepare(
-          "SELECT id, name, system_key, position FROM lanes WHERE project_id = ? ORDER BY position ASC"
-        )
+        .prepare("SELECT id, name, position FROM lanes WHERE project_id = ? ORDER BY position ASC")
         .all("project-1") as Array<{
         id: string;
         name: string;
         position: number;
-        system_key: string | null;
       }>;
+      expect(lanes).toHaveLength(3);
       expect(lanes).toEqual([
-        expect.objectContaining({ name: "Todo", position: 0, system_key: "todo" }),
-        expect.objectContaining({ name: "In Progress", position: 1, system_key: "in_progress" }),
-        expect.objectContaining({ name: "Done", position: 2, system_key: "done" })
+        expect.objectContaining({ name: "Todo", position: 0 }),
+        expect.objectContaining({ name: "In Progress", position: 1 }),
+        expect.objectContaining({ name: "Done", position: 2 })
       ]);
 
       const migratedTask = services.database

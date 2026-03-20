@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-type TaskStatus = "todo" | "in_progress" | "done";
+type DefaultLaneKey = "todo" | "in_progress" | "in_review" | "done";
 type UserTheme = "sea" | "ember" | "midnight";
 type TaskTagColor = "moss" | "sky" | "amber" | "coral" | "orchid" | "slate";
 
@@ -15,7 +15,6 @@ interface BoardLane {
   name: string;
   position: number;
   projectId: string;
-  systemKey: TaskStatus | null;
   taskCount: number;
   updatedAt: string;
 }
@@ -25,7 +24,6 @@ interface Project {
   id: string;
   laneSummaries: BoardLane[];
   name: string;
-  taskCounts: Record<TaskStatus, number>;
   updatedAt: string;
 }
 
@@ -36,7 +34,6 @@ interface Task {
   laneId: string | null;
   position: number;
   projectId: string;
-  status: TaskStatus;
   tags: TaskTag[];
   title: string;
   updatedAt: string;
@@ -54,13 +51,13 @@ const user = {
   theme: "sea" as UserTheme
 };
 
-function laneId(projectId: string, suffix: TaskStatus) {
+function laneId(projectId: string, suffix: DefaultLaneKey) {
   return `${projectId}-lane-${suffix}`;
 }
 
 function createDefaultLaneSummaries(
   projectId: string,
-  counts: Record<TaskStatus, number>
+  counts: Record<DefaultLaneKey, number>
 ): BoardLane[] {
   return [
     {
@@ -69,7 +66,6 @@ function createDefaultLaneSummaries(
       name: "Todo",
       position: 0,
       projectId,
-      systemKey: "todo",
       taskCount: counts.todo,
       updatedAt: "2026-03-18T07:30:00.000Z"
     },
@@ -79,17 +75,24 @@ function createDefaultLaneSummaries(
       name: "In Progress",
       position: 1,
       projectId,
-      systemKey: "in_progress",
       taskCount: counts.in_progress,
+      updatedAt: "2026-03-18T07:30:00.000Z"
+    },
+    {
+      createdAt: "2026-03-17T09:00:00.000Z",
+      id: laneId(projectId, "in_review"),
+      name: "In review",
+      position: 2,
+      projectId,
+      taskCount: counts.in_review,
       updatedAt: "2026-03-18T07:30:00.000Z"
     },
     {
       createdAt: "2026-03-17T09:00:00.000Z",
       id: laneId(projectId, "done"),
       name: "Done",
-      position: 2,
+      position: 3,
       projectId,
-      systemKey: "done",
       taskCount: counts.done,
       updatedAt: "2026-03-18T07:30:00.000Z"
     }
@@ -103,14 +106,10 @@ const projects: Project[] = [
     laneSummaries: createDefaultLaneSummaries("project-1", {
       todo: 2,
       in_progress: 1,
+      in_review: 0,
       done: 1
     }),
     name: "Billing cleanup",
-    taskCounts: {
-      todo: 2,
-      in_progress: 1,
-      done: 1
-    },
     updatedAt: "2026-03-18T07:30:00.000Z"
   }
 ];
@@ -123,14 +122,10 @@ const projectsForGrid: Project[] = [
     laneSummaries: createDefaultLaneSummaries("project-2", {
       todo: 0,
       in_progress: 0,
+      in_review: 0,
       done: 0
     }),
     name: "Roadmap review",
-    taskCounts: {
-      todo: 0,
-      in_progress: 0,
-      done: 0
-    },
     updatedAt: "2026-03-18T08:10:00.000Z"
   },
   {
@@ -139,14 +134,10 @@ const projectsForGrid: Project[] = [
     laneSummaries: createDefaultLaneSummaries("project-3", {
       todo: 2,
       in_progress: 1,
+      in_review: 0,
       done: 0
     }),
     name: "Release prep",
-    taskCounts: {
-      todo: 2,
-      in_progress: 1,
-      done: 0
-    },
     updatedAt: "2026-03-18T08:20:00.000Z"
   },
   {
@@ -155,14 +146,10 @@ const projectsForGrid: Project[] = [
     laneSummaries: createDefaultLaneSummaries("project-4", {
       todo: 1,
       in_progress: 0,
+      in_review: 0,
       done: 3
     }),
     name: "Customer follow-up",
-    taskCounts: {
-      todo: 1,
-      in_progress: 0,
-      done: 3
-    },
     updatedAt: "2026-03-18T08:30:00.000Z"
   },
   {
@@ -171,14 +158,10 @@ const projectsForGrid: Project[] = [
     laneSummaries: createDefaultLaneSummaries("project-5", {
       todo: 3,
       in_progress: 1,
+      in_review: 0,
       done: 0
     }),
     name: "Support triage",
-    taskCounts: {
-      todo: 3,
-      in_progress: 1,
-      done: 0
-    },
     updatedAt: "2026-03-18T08:40:00.000Z"
   },
   {
@@ -187,14 +170,10 @@ const projectsForGrid: Project[] = [
     laneSummaries: createDefaultLaneSummaries("project-6", {
       todo: 1,
       in_progress: 2,
+      in_review: 0,
       done: 2
     }),
     name: "Partner audit",
-    taskCounts: {
-      todo: 1,
-      in_progress: 2,
-      done: 2
-    },
     updatedAt: "2026-03-18T08:50:00.000Z"
   }
 ];
@@ -207,7 +186,6 @@ const tasks: Task[] = [
     laneId: laneId("project-1", "todo"),
     position: 0,
     projectId: "project-1",
-    status: "todo",
     tags: [tag("backend", "sky"), tag("retry", "coral")],
     title: "Review retry settings",
     updatedAt: "2026-03-18T07:10:00.000Z"
@@ -219,7 +197,6 @@ const tasks: Task[] = [
     laneId: laneId("project-1", "in_progress"),
     position: 0,
     projectId: "project-1",
-    status: "in_progress",
     tags: [tag("observability", "slate"), tag("oidc", "orchid")],
     title: "Tighten callback logging",
     updatedAt: "2026-03-18T07:45:00.000Z"
@@ -231,7 +208,6 @@ const tasks: Task[] = [
     laneId: laneId("project-1", "done"),
     position: 0,
     projectId: "project-1",
-    status: "done",
     tags: [tag("ops", "amber")],
     title: "Remove healthcheck loop",
     updatedAt: "2026-03-18T07:50:00.000Z"
@@ -243,7 +219,6 @@ const tasks: Task[] = [
     laneId: laneId("project-1", "todo"),
     position: 1,
     projectId: "project-1",
-    status: "todo",
     tags: [tag("copy", "moss")],
     title: "Queue copy pass",
     updatedAt: "2026-03-18T07:15:00.000Z"
@@ -298,17 +273,6 @@ async function mockAuthenticated(
         ...lane,
         taskCount: taskState.filter((task) => task.projectId === projectId && task.laneId === lane.id).length
       }));
-    project.taskCounts = {
-      todo: 0,
-      in_progress: 0,
-      done: 0
-    };
-
-    for (const lane of project.laneSummaries) {
-      if (lane.systemKey) {
-        project.taskCounts[lane.systemKey] = lane.taskCount;
-      }
-    }
   }
 
   function sortTasksForProject(projectId: string, laneIdValue?: string) {
@@ -448,13 +412,13 @@ async function mockAuthenticated(
       return { status: "lane_not_found" as const };
     }
 
-    if (lane.systemKey) {
-      return { status: "system_lane" as const };
-    }
-
     const remainingLanes = project.laneSummaries
       .filter((candidate) => candidate.id !== laneIdValue)
       .sort((left, right) => left.position - right.position);
+    if (remainingLanes.length === 0) {
+      return { status: "last_lane" as const };
+    }
+
     const destinationLane =
       destinationLaneId === undefined
         ? null
@@ -478,7 +442,6 @@ async function mockAuthenticated(
         task.laneId = destinationLane.id;
         task.position = index;
         if (movedTaskIds.has(task.id)) {
-          task.status = destinationLane.systemKey ?? task.status;
           task.updatedAt = "2026-03-18T08:16:00.000Z";
         }
       });
@@ -512,7 +475,6 @@ async function mockAuthenticated(
           laneId?: string;
           name?: string;
           position?: number;
-          status?: TaskStatus;
           tags?: TaskTag[];
           theme?: UserTheme;
           title?: string;
@@ -547,14 +509,10 @@ async function mockAuthenticated(
           laneSummaries: createDefaultLaneSummaries(createdProjectId, {
             todo: 0,
             in_progress: 0,
+            in_review: 0,
             done: 0
           }),
           name: body?.title ?? body?.name ?? "Untitled board",
-          taskCounts: {
-            todo: 0,
-            in_progress: 0,
-            done: 0
-          },
           updatedAt: "2026-03-18T08:00:00.000Z"
         };
         projectState.unshift(createdProject);
@@ -598,7 +556,6 @@ async function mockAuthenticated(
         name: body?.name ?? "New Lane",
         position: project.laneSummaries.length,
         projectId,
-        systemKey: null,
         taskCount: 0,
         updatedAt: "2026-03-18T08:15:00.000Z"
       };
@@ -632,8 +589,8 @@ async function mockAuthenticated(
         return;
       }
 
-      if (deleted.status === "system_lane") {
-        await fulfillJson(route, 400, { message: "System lanes cannot be deleted." });
+      if (deleted.status === "last_lane") {
+        await fulfillJson(route, 400, { message: "Projects must keep at least one lane." });
         return;
       }
 
@@ -679,15 +636,7 @@ async function mockAuthenticated(
         return;
       }
 
-      const status = url.searchParams.get("status") as TaskStatus | null;
-      let visibleTasks = sortTasksForProject(projectId);
-
-      if (status) {
-        const lane = project.laneSummaries.find((candidate) => candidate.systemKey === status);
-        visibleTasks = lane ? visibleTasks.filter((task) => task.laneId === lane.id) : [];
-      }
-
-      await fulfillJson(route, 200, visibleTasks);
+      await fulfillJson(route, 200, sortTasksForProject(projectId));
       return;
     }
 
@@ -714,7 +663,6 @@ async function mockAuthenticated(
         laneId: targetLane.id,
         position: sortTasksForProject(projectId, targetLane.id).length,
         projectId,
-        status: targetLane.systemKey ?? "todo",
         tags: body?.tags ?? [],
         title: body?.title ?? "Untitled task",
         updatedAt: "2026-03-18T08:00:00.000Z"
@@ -777,7 +725,6 @@ async function mockAuthenticated(
 
       const nextLane =
         (body?.laneId ? project.laneSummaries.find((lane) => lane.id === body.laneId) : undefined) ??
-        (body?.status ? project.laneSummaries.find((lane) => lane.systemKey === body.status) : undefined) ??
         project.laneSummaries.find((lane) => lane.id === task.laneId);
       if (!nextLane) {
         await fulfillJson(route, 404, { message: `Task or lane not found.` });
@@ -785,7 +732,7 @@ async function mockAuthenticated(
       }
 
       const isTaskMoveRequest =
-        body?.laneId !== undefined || body?.position !== undefined || body?.status !== undefined;
+        body?.laneId !== undefined || body?.position !== undefined;
 
       if (isTaskMoveRequest) {
         moveTask(task, nextLane.id, body?.position ?? sortTasksForProject(projectId, nextLane.id).length);
@@ -797,7 +744,6 @@ async function mockAuthenticated(
         syncReusableTagColors(task.tags);
       }
       task.title = body?.title ?? task.title;
-      task.status = body?.status ?? nextLane.systemKey ?? task.status;
       task.updatedAt = "2026-03-18T08:05:00.000Z";
       syncProject(projectId);
       if (isTaskMoveRequest && taskMoveDelayMs > 0) {
@@ -862,9 +808,8 @@ test("projects page uses the project switcher and removes extra board chrome", a
     createdAt: "2026-03-18T08:00:00.000Z",
     id: "project-1-lane-custom-qa",
     name: "Ready for QA",
-    position: 3,
+    position: 4,
     projectId: "project-1",
-    systemKey: null,
     taskCount: 0,
     updatedAt: "2026-03-18T08:00:00.000Z"
   });
@@ -893,10 +838,26 @@ test("projects page uses the project switcher and removes extra board chrome", a
   await expect(page.getByRole("button", { exact: true, name: "Delete" })).toHaveCount(0);
   await expect(page.getByTestId("project-card-project-1").getByLabel("Todo 2")).toBeVisible();
   await expect(page.getByTestId("project-card-project-1").getByLabel("In Progress 1")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-1").getByLabel("In review 0")).toBeVisible();
   await expect(page.getByTestId("project-card-project-1").getByLabel("Done 1")).toBeVisible();
   await expect(page.getByTestId("project-card-project-1").getByLabel("Ready for QA 0")).toBeVisible();
-  await expect(page.getByTestId("project-card-project-1").locator(".project-card__lane-pill")).toHaveCount(4);
+  const projectLanePills = page.getByTestId("project-card-project-1").locator(".project-card__lane-pill");
+  await expect(projectLanePills).toHaveCount(5);
+  const initialLanePillWidths = await projectLanePills.evaluateAll((nodes) =>
+    nodes.map((node) => node.getBoundingClientRect().width)
+  );
+  expect(Math.max(...initialLanePillWidths) - Math.min(...initialLanePillWidths)).toBeLessThan(1);
   await expect(page.getByTestId("project-card-project-1").getByText("More")).toHaveCount(0);
+  const originalViewport = page.viewportSize();
+  await page.setViewportSize({ width: 700, height: 960 });
+  const resizedLanePillWidths = await projectLanePills.evaluateAll((nodes) =>
+    nodes.map((node) => node.getBoundingClientRect().width)
+  );
+  expect(Math.max(...resizedLanePillWidths) - Math.min(...resizedLanePillWidths)).toBeLessThan(1);
+  expect(Math.abs(initialLanePillWidths[0] - resizedLanePillWidths[0])).toBeLessThan(1);
+  if (originalViewport) {
+    await page.setViewportSize(originalViewport);
+  }
   const rootSwitcherButton = page.getByRole("button", { name: "Open project switcher" });
   await expect(page.locator(".subnav__current")).toHaveCount(1);
   await expect(rootSwitcherButton).toBeVisible();
@@ -1108,7 +1069,6 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
     laneId: laneId("project-2", "todo"),
     position: 0,
     projectId: "project-2",
-    status: "todo",
     tags: [tag("global-brand", "amber")],
     title: "Refresh homepage copy",
     updatedAt: "2026-03-18T08:22:00.000Z"
@@ -1150,10 +1110,23 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   const viewportWidth = page.viewportSize()?.width ?? 0;
   expect(boardBox?.width ?? 0).toBeGreaterThan(viewportWidth - 80);
 
-  await expect(page.locator(".board-column")).toHaveCount(3);
+  await expect(page.locator(".board-column")).toHaveCount(4);
   await expect(page.locator(".board-column__note")).toHaveCount(0);
   await expect(page.locator(".lane-drag-handle")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Move to / })).toHaveCount(0);
+  for (const laneName of ["Todo", "In Progress", "In review", "Done"]) {
+    await expect(page.getByLabel(`Delete lane ${laneName}`)).toBeVisible();
+  }
+  const todoLaneHeader = page.getByTestId(`lane-header-${laneId("project-1", "todo")}`);
+  const todoLaneDeleteButton = page.getByLabel("Delete lane Todo");
+  const todoLaneHeaderBox = await todoLaneHeader.boundingBox();
+  const todoLaneDeleteButtonBox = await todoLaneDeleteButton.boundingBox();
+  expect(todoLaneHeaderBox).not.toBeNull();
+  expect(todoLaneDeleteButtonBox).not.toBeNull();
+  expect((todoLaneHeaderBox?.x ?? 0) + (todoLaneHeaderBox?.width ?? 0) - (todoLaneDeleteButtonBox?.x ?? 0)).toBeLessThan(
+    40
+  );
+  expect(Math.abs((todoLaneDeleteButtonBox?.y ?? 0) - (todoLaneHeaderBox?.y ?? 0))).toBeLessThan(12);
   await expect(page.getByTestId("task-card-task-1").locator(".label-chip")).toHaveCount(0);
   const initialTaskTags = page.getByTestId("task-card-task-1").locator(".task-tag");
   await expect(initialTaskTags).toHaveText(["backend", "retry"]);
@@ -1265,6 +1238,21 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await page.getByLabel("Search cards").fill("");
   const tagFilterInput = page.getByLabel("Filter by tags");
   const tagFilterField = page.locator(".subnav__search--tag-filter");
+  const searchInputPaddingLeft = await page
+    .getByLabel("Search cards")
+    .evaluate((node) => Number.parseFloat(getComputedStyle(node).paddingLeft));
+  const tagComboPaddingLeft = await tagFilterField
+    .locator(".subnav__search-combo")
+    .evaluate((node) => Number.parseFloat(getComputedStyle(node).paddingLeft));
+  const tagFieldPaddingLeft = await tagFilterField
+    .locator(".subnav__tag-filter-field")
+    .evaluate((node) => Number.parseFloat(getComputedStyle(node).paddingLeft));
+  const tagInputPaddingLeft = await tagFilterInput.evaluate((node) =>
+    Number.parseFloat(getComputedStyle(node).paddingLeft)
+  );
+  expect(Math.abs(searchInputPaddingLeft - (tagComboPaddingLeft + tagFieldPaddingLeft + tagInputPaddingLeft))).toBeLessThan(
+    1
+  );
   await page.getByRole("button", { name: "Show tag filter suggestions" }).click();
   const tagFilterDropdown = page.getByRole("list", { name: "Available tag filters" });
   await expect(tagFilterDropdown).toBeVisible();
@@ -1335,7 +1323,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await page.goto("/projects/project-1");
   await expect(page.getByTestId("task-card-task-4")).toBeVisible();
 
-  const todoColumn = page.getByTestId("board-column-todo");
+  const todoColumn = page.getByTestId(`board-column-${laneId("project-1", "todo")}`);
   const todoColumnBox = await todoColumn.boundingBox();
   const todoCardBox = await page.getByTestId("task-card-task-1").boundingBox();
   expect(todoColumnBox).not.toBeNull();
@@ -1377,23 +1365,24 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
 
   await expect(page.getByRole("heading", { name: "Ready for QA" })).toBeVisible();
   const laneHeadings = page.locator(".board-column__header h2");
-  await expect(laneHeadings).toHaveText(["Todo", "In Progress", "Done", "Ready for QA"]);
+  await expect(laneHeadings).toHaveText(["Todo", "In Progress", "In review", "Done", "Ready for QA"]);
 
   const qaLaneHeader = page.getByTestId("lane-header-project-1-lane-custom-1");
   const qaLaneDeleteButton = page.getByLabel("Delete lane Ready for QA");
   await expect(qaLaneDeleteButton).toBeVisible();
   await expect(qaLaneDeleteButton).toHaveCSS("border-top-width", "0px");
 
-  await qaLaneHeader.dragTo(page.getByTestId("board-column-in_progress"), {
+  await qaLaneHeader.dragTo(page.getByTestId(`board-column-${laneId("project-1", "in_progress")}`), {
     targetPosition: { x: 16, y: 40 }
   });
-  await expect(laneHeadings).toHaveText(["Todo", "Ready for QA", "In Progress", "Done"]);
+  await expect(laneHeadings).toHaveText(["Todo", "Ready for QA", "In Progress", "In review", "Done"]);
 
   const qaColumn = page.getByTestId("board-column-project-1-lane-custom-1");
   await qaColumn.dblclick();
 
   const laneInput = page.getByLabel("New task title for Ready for QA");
   await expect(laneInput).toBeVisible();
+  await expect(qaColumn.locator(".lane-composer .field__label")).toHaveCount(0);
   // Keep this title comfortably on one line so the timestamp-alignment check is stable in CI.
   await laneInput.fill("Ship note");
   await laneInput.press("Enter");
@@ -1464,6 +1453,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await qaLaneDeleteButton.click();
   const laneDeleteDialog = page.getByRole("alertdialog", { name: "Delete lane Ready for QA" });
   await expect(laneDeleteDialog).toBeVisible();
+  await expect(laneDeleteDialog.getByText("Delete this lane?")).toBeVisible();
   await expect(laneDeleteDialog.getByLabel("Move tasks from Ready for QA to")).toBeVisible();
   await laneDeleteDialog.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("heading", { name: "Ready for QA" })).toBeVisible();
@@ -1472,7 +1462,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await laneDeleteDialog.getByLabel("Move tasks from Ready for QA to").selectOption(laneId("project-1", "done"));
   await laneDeleteDialog.getByRole("button", { exact: true, name: "Delete" }).click();
   await expect(page.getByRole("heading", { name: "Ready for QA" })).toHaveCount(0);
-  await expect(page.getByTestId("board-column-done").getByText("Review retry scope")).toBeVisible();
+  await expect(page.getByTestId(`board-column-${laneId("project-1", "done")}`).getByText("Review retry scope")).toBeVisible();
   await expect(qaColumn).toHaveCount(0);
 });
 
@@ -1509,4 +1499,25 @@ test("board nav switcher changes, renames, and creates projects", async ({ page 
 
   await expect(page).toHaveURL(/\/projects\/project-7$/);
   await expect(page.locator(".subnav__current-value")).toHaveText("Program rollout");
+  await expect(page.locator(".board-column__header h2")).toHaveText([
+    "Todo",
+    "In Progress",
+    "In review",
+    "Done"
+  ]);
+
+  for (const laneName of ["Todo", "In Progress", "In review"]) {
+    await page.getByLabel(`Delete lane ${laneName}`).click();
+    const deleteDialog = page.getByRole("alertdialog", { name: `Delete lane ${laneName}` });
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog.getByRole("button", { exact: true, name: "Delete" }).click();
+    await expect(page.getByRole("heading", { name: laneName })).toHaveCount(0);
+  }
+
+  await page.getByLabel("Delete lane Done").click();
+  const lastLaneDialog = page.getByRole("alertdialog", { name: "Delete lane Done" });
+  await expect(lastLaneDialog).toBeVisible();
+  await lastLaneDialog.getByRole("button", { exact: true, name: "Delete" }).click();
+  await expect(page.getByRole("heading", { name: "Done" })).toBeVisible();
+  await expect(page.getByText("Projects must keep at least one lane.")).toBeVisible();
 });

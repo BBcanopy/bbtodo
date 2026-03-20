@@ -1,7 +1,5 @@
-export type TaskStatus = "todo" | "in_progress" | "done";
 export type UserTheme = "sea" | "ember" | "midnight";
 export type TaskTagColor = "moss" | "sky" | "amber" | "coral" | "orchid" | "slate";
-export type TaskCounts = Record<TaskStatus, number>;
 
 export interface TaskTag {
   color: TaskTagColor;
@@ -21,7 +19,6 @@ export interface BoardLane {
   name: string;
   position: number;
   projectId: string;
-  systemKey: TaskStatus | null;
   taskCount: number;
   updatedAt: string;
 }
@@ -31,7 +28,6 @@ export interface Project {
   id: string;
   laneSummaries: BoardLane[];
   name: string;
-  taskCounts: TaskCounts;
   updatedAt: string;
 }
 
@@ -42,7 +38,6 @@ export interface Task {
   laneId: string | null;
   position: number;
   projectId: string;
-  status: TaskStatus;
   tags: TaskTag[];
   title: string;
   updatedAt: string;
@@ -187,7 +182,7 @@ export const api = {
   updateTask(
     projectId: string,
     taskId: string,
-    input: Partial<Pick<Task, "body" | "laneId" | "position" | "status" | "tags" | "title">>
+    input: Partial<Pick<Task, "body" | "laneId" | "position" | "tags" | "title">>
   ) {
     return request<Task>(`/api/v1/projects/${projectId}/tasks/${taskId}`, {
       body: JSON.stringify(input),

@@ -132,7 +132,7 @@ export function ProjectsPage() {
 
       {!projectsQuery.isPending && projects.length === 0 ? (
         <EmptyState
-          copy="Create the first project to open a board with Todo, In Progress, and Done ready to go."
+          copy="Create the first project to open a board with Todo, In Progress, In review, and Done ready to go."
           eyebrow="Empty workspace"
           title="No boards yet."
         />

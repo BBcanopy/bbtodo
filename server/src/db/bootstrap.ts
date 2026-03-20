@@ -4,22 +4,18 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import Database from "better-sqlite3";
-import { and, desc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-import { ensureDefaultLanes } from "./board.js";
 import {
   apiTokens,
   type DatabaseClient,
   type DatabaseServices,
+  legacyDefaultLaneTemplates,
   lanes,
   projects,
   sessions,
-  taskStatusValues,
   tasks,
-  type TaskRecord,
-  type TaskStatus,
   taskTags,
   users
 } from "./schema.js";
@@ -216,6 +212,174 @@ function ensureLegacyCompatIndexes(database: Database.Database) {
   `);
 }
 
+const legacyTaskLaneTemplates = [
+  { name: legacyDefaultLaneTemplates[0], status: "todo" },
+  { name: legacyDefaultLaneTemplates[1], status: "in_progress" },
+  { name: legacyDefaultLaneTemplates[2], status: "done" }
+] as const;
+
+function ensureLaneOnlyIndexes(database: Database.Database) {
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_issuer_subject_idx
+      ON users (issuer, subject);
+
+    CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions (user_id);
+    CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions (expires_at);
+
+    CREATE INDEX IF NOT EXISTS projects_user_updated_at_idx
+      ON projects (user_id, updated_at);
+
+    CREATE INDEX IF NOT EXISTS lanes_project_position_idx
+      ON lanes (project_id, position);
+
+    CREATE INDEX IF NOT EXISTS tasks_project_lane_position_idx
+      ON tasks (project_id, lane_id, position);
+
+    CREATE INDEX IF NOT EXISTS task_tags_task_position_idx
+      ON task_tags (task_id, position);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS task_tags_task_tag_idx
+      ON task_tags (task_id, tag);
+
+    CREATE INDEX IF NOT EXISTS api_tokens_user_updated_at_idx
+      ON api_tokens (user_id, updated_at);
+  `);
+}
+
+function backfillLegacyLaneData(database: Database.Database) {
+  const projectRows = database
+    .prepare("SELECT id, updated_at FROM projects ORDER BY created_at ASC, id ASC")
+    .all() as Array<{ id: string; updated_at: string }>;
+  const selectProjectLanes = database.prepare(
+    "SELECT id, system_key FROM lanes WHERE project_id = ? ORDER BY position ASC, created_at ASC"
+  );
+  const countLaneTasks = database.prepare(
+    "SELECT COUNT(*) AS count FROM tasks WHERE project_id = ? AND lane_id = ?"
+  );
+  const selectLegacyTasksByStatus = database.prepare(
+    "SELECT id FROM tasks WHERE project_id = ? AND lane_id IS NULL AND status = ? ORDER BY updated_at DESC"
+  );
+  const insertLane = database.prepare(`
+    INSERT INTO lanes (id, project_id, name, system_key, position, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const updateTaskPosition = database.prepare(
+    "UPDATE tasks SET lane_id = ?, position = ? WHERE id = ?"
+  );
+
+  projectRows.forEach((project) => {
+    const existingLanes = selectProjectLanes.all(project.id) as Array<{
+      id: string;
+      system_key: string | null;
+    }>;
+    const lanesByStatus = new Map(
+      existingLanes.flatMap((lane) => (lane.system_key ? [[lane.system_key, lane.id] as const] : []))
+    );
+
+    if (existingLanes.length === 0) {
+      legacyTaskLaneTemplates.forEach((template, index) => {
+        const laneId = crypto.randomUUID();
+        insertLane.run(
+          laneId,
+          project.id,
+          template.name,
+          template.status,
+          index,
+          project.updated_at,
+          project.updated_at
+        );
+        lanesByStatus.set(template.status, laneId);
+      });
+    }
+
+    legacyTaskLaneTemplates.forEach((template) => {
+      const laneId = lanesByStatus.get(template.status);
+      if (!laneId) {
+        return;
+      }
+
+      let nextPosition =
+        Number(
+          (
+            countLaneTasks.get(project.id, laneId) as {
+              count: number;
+            } | undefined
+          )?.count ?? 0
+        ) || 0;
+      const legacyTasks = selectLegacyTasksByStatus.all(project.id, template.status) as Array<{
+        id: string;
+      }>;
+
+      legacyTasks.forEach((task) => {
+        updateTaskPosition.run(laneId, nextPosition, task.id);
+        nextPosition += 1;
+      });
+    });
+  });
+}
+
+function rewriteLaneOnlySchema(database: Database.Database) {
+  const laneColumns = getTableColumns(database, "lanes");
+  const taskColumns = getTableColumns(database, "tasks");
+  if (!laneColumns.has("system_key") && !taskColumns.has("status")) {
+    ensureLaneOnlyIndexes(database);
+    return;
+  }
+
+  const foreignKeysEnabled = database.pragma("foreign_keys", { simple: true }) === 1;
+  if (foreignKeysEnabled) {
+    database.pragma("foreign_keys = OFF");
+  }
+
+  try {
+    const rewrite = database.transaction(() => {
+      database.exec(`
+        CREATE TABLE lanes__new (
+          id TEXT PRIMARY KEY NOT NULL,
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          position INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        INSERT INTO lanes__new (id, project_id, name, position, created_at, updated_at)
+        SELECT id, project_id, name, position, created_at, updated_at
+        FROM lanes;
+
+        CREATE TABLE tasks__new (
+          id TEXT PRIMARY KEY NOT NULL,
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          lane_id TEXT REFERENCES lanes(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          body TEXT NOT NULL DEFAULT '',
+          position INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        INSERT INTO tasks__new (id, project_id, lane_id, title, body, position, created_at, updated_at)
+        SELECT id, project_id, lane_id, title, body, position, created_at, updated_at
+        FROM tasks;
+
+        DROP TABLE tasks;
+        DROP TABLE lanes;
+
+        ALTER TABLE lanes__new RENAME TO lanes;
+        ALTER TABLE tasks__new RENAME TO tasks;
+      `);
+
+      ensureLaneOnlyIndexes(database);
+    });
+
+    rewrite();
+  } finally {
+    if (foreignKeysEnabled) {
+      database.pragma("foreign_keys = ON");
+    }
+  }
+}
+
 function markLatestDrizzleMigrationApplied(database: Database.Database) {
   const latestMigration = getLatestMigrationEntry();
 
@@ -244,57 +408,12 @@ function bootstrapLegacyDatabase(database: Database.Database) {
     return;
   }
 
-  const bootstrap = database.transaction(() => {
-    createLegacyCompatTables(database);
-    ensureLegacyCompatColumns(database);
-    ensureLegacyCompatIndexes(database);
-    markLatestDrizzleMigrationApplied(database);
-  });
-
-  bootstrap();
-}
-
-function migrateLegacyBoardData(db: DatabaseClient) {
-  const allProjects = db.select().from(projects).all();
-
-  for (const project of allProjects) {
-    const projectLanes = ensureDefaultLanes(db, project.id, project.updatedAt);
-    const lanesBySystemKey = new Map<TaskStatus, (typeof projectLanes)[number]>(
-      projectLanes.flatMap((lane) => (lane.systemKey ? [[lane.systemKey, lane] as const] : []))
-    );
-    const legacyTasks = db
-      .select()
-      .from(tasks)
-      .where(and(eq(tasks.projectId, project.id), isNull(tasks.laneId)))
-      .orderBy(desc(tasks.updatedAt))
-      .all();
-
-    const tasksByStatus = new Map<TaskStatus, TaskRecord[]>(
-      taskStatusValues.map((status) => [status, []])
-    );
-
-    legacyTasks.forEach((task) => {
-      tasksByStatus.get(task.status)?.push(task);
-    });
-
-    taskStatusValues.forEach((status) => {
-      const lane = lanesBySystemKey.get(status);
-      if (!lane) {
-        return;
-      }
-
-      (tasksByStatus.get(status) ?? []).forEach((task, index) => {
-        db
-          .update(tasks)
-          .set({
-            laneId: lane.id,
-            position: index
-          })
-          .where(eq(tasks.id, task.id))
-          .run();
-      });
-    });
-  }
+  createLegacyCompatTables(database);
+  ensureLegacyCompatColumns(database);
+  ensureLegacyCompatIndexes(database);
+  backfillLegacyLaneData(database);
+  rewriteLaneOnlySchema(database);
+  markLatestDrizzleMigrationApplied(database);
 }
 
 export function createDatabase(sqlitePath: string): DatabaseServices {
@@ -324,7 +443,6 @@ export function createDatabase(sqlitePath: string): DatabaseServices {
   migrate(services.db, {
     migrationsFolder: DRIZZLE_MIGRATIONS_PATH
   });
-  migrateLegacyBoardData(services.db);
 
   return services;
 }

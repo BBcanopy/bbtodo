@@ -152,7 +152,6 @@ function applyTaskMove(tasks: Task[], lanes: BoardLane[], taskId: string, target
   const currentTaskIdsByLane = buildTaskIdsByLane(lanes, tasks);
   const nextTaskIdsByLane = moveTaskId(currentTaskIdsByLane, taskId, targetLaneId, targetIndex);
   const nextTaskPositions = new Map<string, { laneId: string; position: number }>();
-  const lanesById = new Map(lanes.map((lane) => [lane.id, lane]));
 
   Object.entries(nextTaskIdsByLane).forEach(([laneId, taskIds]) => {
     taskIds.forEach((currentTaskId, position) => {
@@ -167,12 +166,9 @@ function applyTaskMove(tasks: Task[], lanes: BoardLane[], taskId: string, target
       return task;
     }
 
-    const nextLane = lanesById.get(nextLocation.laneId);
-    const nextStatus = task.id === taskId ? nextLane?.systemKey ?? task.status : task.status;
     if (
       task.laneId === nextLocation.laneId &&
-      task.position === nextLocation.position &&
-      task.status === nextStatus
+      task.position === nextLocation.position
     ) {
       return task;
     }
@@ -181,8 +177,7 @@ function applyTaskMove(tasks: Task[], lanes: BoardLane[], taskId: string, target
     return {
       ...task,
       laneId: nextLocation.laneId,
-      position: nextLocation.position,
-      status: nextStatus
+      position: nextLocation.position
     };
   });
 
@@ -254,7 +249,7 @@ function createNativeDragPreview(node: HTMLElement) {
 
 function getPreferredLaneDeleteDestination(laneId: string, lanes: BoardLane[]) {
   return (
-    lanes.find((candidate) => candidate.id !== laneId && candidate.systemKey === "todo") ??
+    lanes.find((candidate) => candidate.id !== laneId && normalizeTagKey(candidate.name) === "todo") ??
     lanes.find((candidate) => candidate.id !== laneId) ??
     null
   );
@@ -305,82 +300,79 @@ function LaneHeader({
       <div className="board-column__header-copy">
         <h2>{lane.name}</h2>
       </div>
-      {lane.systemKey === null ? (
-        <div className="lane-header__actions" ref={confirmRef}>
-          <button
-            aria-expanded={isConfirmOpen}
+      <div className="lane-header__actions" ref={confirmRef}>
+        <button
+          aria-haspopup="dialog"
+          aria-expanded={isConfirmOpen}
+          aria-label={`Delete lane ${lane.name}`}
+          className="icon-button danger-button lane-delete-button"
+          draggable={false}
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsConfirmOpen((current) => !current);
+          }}
+          onDragStart={(event) => event.preventDefault()}
+          onPointerDown={(event) => event.stopPropagation()}
+          type="button"
+        >
+          <TrashIcon />
+        </button>
+        {isConfirmOpen ? (
+          <div
             aria-label={`Delete lane ${lane.name}`}
-            className="icon-button danger-button lane-delete-button"
+            className="task-delete-popover lane-delete-popover"
             draggable={false}
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsConfirmOpen((current) => !current);
-            }}
-            onDragStart={(event) => event.preventDefault()}
+            onClick={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
-            type="button"
+            role="alertdialog"
           >
-            <TrashIcon />
-          </button>
-          {isConfirmOpen ? (
-            <div
-              aria-label={`Delete lane ${lane.name}`}
-              className="task-delete-popover lane-delete-popover"
-              draggable={false}
-              onClick={(event) => event.stopPropagation()}
-              onPointerDown={(event) => event.stopPropagation()}
-              role="alertdialog"
-            >
-              <p>{requiresDestination ? "Delete this lane and move its tasks?" : "Delete this lane?"}</p>
-              {requiresDestination ? (
-                <label className="lane-delete-popover__field">
-                  <span>Move tasks to</span>
-                  <select
-                    aria-label={`Move tasks from ${lane.name} to`}
-                    onChange={(event) => setDestinationLaneId(event.target.value)}
-                    value={destinationLaneId}
-                  >
-                    {destinationLanes.map((destinationLane) => (
-                      <option key={destinationLane.id} value={destinationLane.id}>
-                        {destinationLane.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              <div className="task-delete-popover__actions">
-                <button
-                  className="text-button"
-                  disabled={isDeletePending}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsConfirmOpen(false);
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  type="button"
+            <p>Delete this lane?</p>
+            {requiresDestination ? (
+              <label className="lane-delete-popover__field">
+                <span>Move tasks to</span>
+                <select
+                  aria-label={`Move tasks from ${lane.name} to`}
+                  onChange={(event) => setDestinationLaneId(event.target.value)}
+                  value={destinationLaneId}
                 >
-                  Cancel
-                </button>
-                <button
-                  className="ghost-button danger-button"
-                  disabled={isDeletePending || (requiresDestination && destinationLaneId.length === 0)}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsConfirmOpen(false);
-                    onDelete(requiresDestination ? destinationLaneId : undefined);
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  type="button"
-                >
-                  {isDeletePending ? "Deleting..." : "Delete"}
-                </button>
-              </div>
+                  {destinationLanes.map((destinationLane) => (
+                    <option key={destinationLane.id} value={destinationLane.id}>
+                      {destinationLane.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <div className="task-delete-popover__actions">
+              <button
+                className="text-button"
+                disabled={isDeletePending}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsConfirmOpen(false);
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="ghost-button danger-button"
+                disabled={isDeletePending || (requiresDestination && destinationLaneId.length === 0)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsConfirmOpen(false);
+                  onDelete(requiresDestination ? destinationLaneId : undefined);
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                type="button"
+              >
+                {isDeletePending ? "Deleting..." : "Delete"}
+              </button>
             </div>
-          ) : null}
-        </div>
-      ) : (
-        <span aria-hidden="true" className="lane-header__action-spacer" />
-      )}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1744,7 +1736,7 @@ export function BoardPage() {
             {groupedTasks.map((lane, laneIndex) => (
               <div
                 className={`board-column${dropTarget?.laneId === lane.id ? " is-drop-target" : ""}${draggedLaneId === lane.id ? " is-lane-dragging" : ""}${laneDropTarget?.laneId === lane.id ? " is-lane-drop-target" : ""}${laneDropTarget?.laneId === lane.id && laneDropTarget.insertAfter ? " is-lane-drop-after" : ""}${laneDropTarget?.laneId === lane.id && !laneDropTarget.insertAfter ? " is-lane-drop-before" : ""}`}
-                data-testid={`board-column-${lane.systemKey ?? lane.id}`}
+                data-testid={`board-column-${lane.id}`}
                 key={lane.id}
                 onDoubleClick={(event) => {
                   const target = event.target as HTMLElement;
@@ -1801,7 +1793,6 @@ export function BoardPage() {
                         }}
                       >
                         <label className="field">
-                          <span className="field__label">New task</span>
                           <input
                             aria-label={getTaskInputLabel(lane.name)}
                             autoFocus

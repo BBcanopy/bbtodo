@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, max, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max, ne } from "drizzle-orm";
 
 import {
   type DatabaseClient,
@@ -6,27 +6,16 @@ import {
   defaultTaskTagColor,
   type LaneRecord,
   lanes,
-  type ProjectTaskCounts,
   projects,
-  taskStatusValues,
   type TaskRecord,
   type TaskRecordWithTags,
   tasks,
-  type TaskStatus,
   taskTagColorValues,
   type TaskTagColor,
   type TaskTagData,
   type TaskTagInput,
   taskTags
 } from "./schema.js";
-
-function createEmptyTaskCounts(): ProjectTaskCounts {
-  return {
-    todo: 0,
-    in_progress: 0,
-    done: 0
-  };
-}
 
 function normalizeTaskTagLabel(tag: string) {
   const normalized = tag.trim().replace(/\s+/g, " ");
@@ -185,20 +174,11 @@ function getProjectLaneById(db: DatabaseClient, projectId: string, laneId: strin
     .get();
 }
 
-function getProjectLaneBySystemKey(db: DatabaseClient, projectId: string, systemKey: TaskStatus) {
-  return db
-    .select()
-    .from(lanes)
-    .where(and(eq(lanes.projectId, projectId), eq(lanes.systemKey, systemKey)))
-    .get();
-}
-
 function resolveTaskLane(
   db: DatabaseClient,
   input: {
     laneId?: string;
     projectId: string;
-    status?: TaskStatus;
   },
   currentTask?: TaskRecord
 ) {
@@ -206,19 +186,11 @@ function resolveTaskLane(
     return getProjectLaneById(db, input.projectId, input.laneId);
   }
 
-  if (input.status) {
-    return getProjectLaneBySystemKey(db, input.projectId, input.status);
-  }
-
   if (currentTask?.laneId) {
     return getProjectLaneById(db, input.projectId, currentTask.laneId);
   }
 
-  return (
-    getProjectLaneBySystemKey(db, input.projectId, "todo") ??
-    listProjectLanesByProjectId(db, input.projectId)[0] ??
-    null
-  );
+  return listProjectLanesByProjectId(db, input.projectId)[0] ?? null;
 }
 
 function getLaneTaskIds(db: DatabaseClient, projectId: string, laneId: string, excludedTaskId?: string) {
@@ -291,15 +263,19 @@ function reorderLaneTasks(
     });
 }
 
-function createDefaultLanesForProject(db: DatabaseClient, projectId: string, now: string) {
+function createProjectLanesFromTemplates(
+  db: DatabaseClient,
+  projectId: string,
+  now: string,
+  laneTemplates: readonly string[]
+) {
   const createdLanes: LaneRecord[] = [];
 
-  defaultLaneTemplates.forEach((template, index) => {
+  laneTemplates.forEach((name, index) => {
     const lane = {
       id: crypto.randomUUID(),
       projectId,
-      name: template.name,
-      systemKey: template.systemKey,
+      name,
       position: index,
       createdAt: now,
       updatedAt: now
@@ -319,36 +295,6 @@ function listProjectLanesByProjectId(db: DatabaseClient, projectId: string) {
     .where(eq(lanes.projectId, projectId))
     .orderBy(asc(lanes.position), asc(lanes.createdAt))
     .all();
-}
-
-export function ensureDefaultLanes(db: DatabaseClient, projectId: string, now: string) {
-  const existingLanes = listProjectLanesByProjectId(db, projectId);
-  let nextPosition =
-    existingLanes.length > 0
-      ? Math.max(...existingLanes.map((lane) => lane.position)) + 1
-      : 0;
-
-  defaultLaneTemplates.forEach((template) => {
-    if (existingLanes.some((lane) => lane.systemKey === template.systemKey)) {
-      return;
-    }
-
-    const lane = {
-      id: crypto.randomUUID(),
-      projectId,
-      name: template.name,
-      systemKey: template.systemKey,
-      position: nextPosition,
-      createdAt: now,
-      updatedAt: now
-    };
-
-    db.insert(lanes).values(lane).run();
-    existingLanes.push(lane);
-    nextPosition += 1;
-  });
-
-  return listProjectLanesByProjectId(db, projectId);
 }
 
 export function listTaskTagsForUser(db: DatabaseClient, userId: string) {
@@ -407,11 +353,7 @@ export function listProjectsForUser(db: DatabaseClient, userId: string) {
     .where(inArray(lanes.projectId, projectIds))
     .orderBy(asc(lanes.position), asc(lanes.createdAt))
     .all();
-  const lanesById = new Map(laneRows.map((lane) => [lane.id, lane]));
   const laneCounts = new Map<string, number>(laneRows.map((lane) => [lane.id, 0]));
-  const countsByProject = new Map<string, ProjectTaskCounts>(
-    projectIds.map((projectId) => [projectId, createEmptyTaskCounts()])
-  );
 
   const taskRows = db
     .select({
@@ -425,11 +367,6 @@ export function listProjectsForUser(db: DatabaseClient, userId: string) {
   taskRows.forEach((task) => {
     if (task.laneId) {
       laneCounts.set(task.laneId, (laneCounts.get(task.laneId) ?? 0) + 1);
-      const lane = lanesById.get(task.laneId);
-      const projectCounts = countsByProject.get(task.projectId);
-      if (lane?.systemKey && projectCounts) {
-        projectCounts[lane.systemKey] += 1;
-      }
     }
   });
 
@@ -440,8 +377,7 @@ export function listProjectsForUser(db: DatabaseClient, userId: string) {
       .map((lane) => ({
         ...lane,
         taskCount: laneCounts.get(lane.id) ?? 0
-      })),
-    taskCounts: countsByProject.get(project.id) ?? createEmptyTaskCounts()
+      }))
   }));
 }
 
@@ -456,7 +392,7 @@ export function createProject(db: DatabaseClient, userId: string, name: string) 
   };
 
   db.insert(projects).values(project).run();
-  createDefaultLanesForProject(db, project.id, now);
+  createProjectLanesFromTemplates(db, project.id, now, defaultLaneTemplates);
 
   return project;
 }
@@ -566,7 +502,6 @@ export function createLane(
     id: crypto.randomUUID(),
     projectId: input.projectId,
     name: input.name,
-    systemKey: null,
     position: (lastPosition?.value ?? -1) + 1,
     createdAt: now,
     updatedAt: now
@@ -657,15 +592,15 @@ export function deleteOwnedLane(
     };
   }
 
-  if (lane.systemKey) {
-    return {
-      status: "system_lane" as const
-    };
-  }
-
   const remainingLanes = listProjectLanesByProjectId(db, input.projectId).filter(
     (candidate) => candidate.id !== lane.id
   );
+  if (remainingLanes.length === 0) {
+    return {
+      status: "last_lane" as const
+    };
+  }
+
   const destinationLane =
     input.destinationLaneId === undefined
       ? null
@@ -709,7 +644,6 @@ export function deleteOwnedLane(
           .update(tasks)
           .set({
             laneId: destinationLane.id,
-            status: destinationLane.systemKey ?? task.status,
             updatedAt
           })
           .where(eq(tasks.id, task.id))
@@ -764,7 +698,6 @@ export function listTasksForProject(
   input: {
     userId: string;
     projectId: string;
-    status?: TaskStatus;
   }
 ) {
   const project = getOwnedProject(db, input.userId, input.projectId);
@@ -772,20 +705,10 @@ export function listTasksForProject(
     return null;
   }
 
-  const filters = [eq(tasks.projectId, input.projectId)];
-  if (input.status) {
-    const lane = getProjectLaneBySystemKey(db, input.projectId, input.status);
-    if (!lane) {
-      return [];
-    }
-
-    filters.push(eq(tasks.laneId, lane.id));
-  }
-
   const taskRows = db
     .select()
     .from(tasks)
-    .where(and(...filters))
+    .where(eq(tasks.projectId, input.projectId))
     .orderBy(asc(tasks.position), desc(tasks.updatedAt))
     .all();
 
@@ -832,7 +755,6 @@ export function createTask(
     title: input.title,
     body: input.body ?? "",
     position: (lastPosition?.value ?? -1) + 1,
-    status: lane.systemKey ?? "todo",
     createdAt: now,
     updatedAt: now
   };
@@ -876,7 +798,6 @@ export function updateOwnedTask(
     laneId?: string;
     position?: number;
     projectId: string;
-    status?: TaskStatus;
     taskId: string;
     tags?: TaskTagInput[];
     title?: string;
@@ -892,8 +813,7 @@ export function updateOwnedTask(
     db,
     {
       laneId: input.laneId,
-      projectId: input.projectId,
-      status: input.status
+      projectId: input.projectId
     },
     task
   );
@@ -923,14 +843,12 @@ export function updateOwnedTask(
   }
 
   const updatedAt = new Date().toISOString();
-  const nextStatus = input.status ?? nextLane.systemKey ?? task.status;
 
   db
     .update(tasks)
     .set({
       body: input.body ?? task.body,
       laneId: nextLane.id,
-      status: nextStatus,
       title: input.title ?? task.title,
       updatedAt
     })

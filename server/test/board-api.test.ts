@@ -51,14 +51,10 @@ describe("projects and tasks API", () => {
 
     expect(createProjectResponse.statusCode).toBe(201);
     const project = createProjectResponse.json();
-    expect(project.taskCounts).toEqual({
-      todo: 0,
-      in_progress: 0,
-      done: 0
-    });
     expect(project.laneSummaries.map((lane: { name: string }) => lane.name)).toEqual([
       "Todo",
       "In Progress",
+      "In review",
       "Done"
     ]);
 
@@ -108,12 +104,12 @@ describe("projects and tasks API", () => {
       laneId: project.laneSummaries[0].id,
       projectId: project.id,
       position: 0,
-      status: "todo",
       tags: [tag("launch", "sky"), tag("api", "amber")],
       title: "Write the first task"
     });
 
     const task = createTaskResponse.json();
+    const inProgressLane = project.laneSummaries[1];
 
     const updateTaskResponse = await app.inject({
       method: "PATCH",
@@ -122,7 +118,7 @@ describe("projects and tasks API", () => {
         bbtodo_session: session.sessionCookie
       },
       payload: {
-        status: "in_progress",
+        laneId: inProgressLane.id,
         tags: [tag("backend", "coral"), tag("launch", "sky")]
       }
     });
@@ -130,7 +126,7 @@ describe("projects and tasks API", () => {
     expect(updateTaskResponse.statusCode).toBe(200);
     expect(updateTaskResponse.json()).toMatchObject({
       id: task.id,
-      status: "in_progress",
+      laneId: inProgressLane.id,
       tags: [tag("backend", "coral"), tag("launch", "sky")]
     });
 
@@ -146,27 +142,30 @@ describe("projects and tasks API", () => {
     expect(updatedProjectsResponse.json()).toHaveLength(1);
     expect(updatedProjectsResponse.json()[0]).toMatchObject({
       id: project.id,
-      name: "Launch board v2",
-      taskCounts: {
-        todo: 0,
-        in_progress: 1,
-        done: 0
-      }
+      name: "Launch board v2"
     });
+    expect(updatedProjectsResponse.json()[0].laneSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: inProgressLane.id,
+          taskCount: 1
+        })
+      ])
+    );
 
-    const filteredTasksResponse = await app.inject({
+    const listedTasksResponse = await app.inject({
       method: "GET",
-      url: `/api/v1/projects/${project.id}/tasks?status=in_progress`,
+      url: `/api/v1/projects/${project.id}/tasks`,
       cookies: {
         bbtodo_session: session.sessionCookie
       }
     });
 
-    expect(filteredTasksResponse.statusCode).toBe(200);
-    expect(filteredTasksResponse.json()).toHaveLength(1);
-    expect(filteredTasksResponse.json()[0]).toMatchObject({
+    expect(listedTasksResponse.statusCode).toBe(200);
+    expect(listedTasksResponse.json()).toHaveLength(1);
+    expect(listedTasksResponse.json()[0]).toMatchObject({
       id: task.id,
-      status: "in_progress",
+      laneId: inProgressLane.id,
       tags: [tag("backend", "coral"), tag("launch", "sky")]
     });
 
@@ -530,8 +529,7 @@ describe("projects and tasks API", () => {
     expect(createLaneResponse.statusCode).toBe(201);
     expect(createLaneResponse.json()).toMatchObject({
       name: "Ready for QA",
-      position: 3,
-      systemKey: null,
+      position: 4,
       taskCount: 0
     });
     const qaLane = createLaneResponse.json();
@@ -625,11 +623,12 @@ describe("projects and tasks API", () => {
     });
 
     expect(lanesResponse.statusCode).toBe(200);
-    expect(lanesResponse.json()).toHaveLength(4);
+    expect(lanesResponse.json()).toHaveLength(5);
     expect(lanesResponse.json().map((lane: { name: string }) => lane.name)).toEqual([
       "Todo",
       "Ready for QA",
       "In Progress",
+      "In review",
       "Done"
     ]);
     expect(lanesResponse.json()[1]).toMatchObject({
@@ -687,8 +686,7 @@ describe("projects and tasks API", () => {
       }
     });
     const project = createProjectResponse.json();
-    const todoLane = project.laneSummaries[0];
-    const doneLane = project.laneSummaries[2];
+    const doneLane = project.laneSummaries[3];
 
     const createLaneResponse = await app.inject({
       method: "POST",
@@ -737,19 +735,6 @@ describe("projects and tasks API", () => {
       }
     });
 
-    const deleteSystemLaneResponse = await app.inject({
-      method: "DELETE",
-      url: `/api/v1/projects/${project.id}/lanes/${todoLane.id}`,
-      cookies: {
-        bbtodo_session: session.sessionCookie
-      }
-    });
-
-    expect(deleteSystemLaneResponse.statusCode).toBe(400);
-    expect(deleteSystemLaneResponse.json()).toEqual({
-      message: "System lanes cannot be deleted."
-    });
-
     const deleteWithoutDestinationResponse = await app.inject({
       method: "DELETE",
       url: `/api/v1/projects/${project.id}/lanes/${qaLane.id}`,
@@ -788,6 +773,7 @@ describe("projects and tasks API", () => {
     expect(lanesResponse.json().map((lane: { name: string }) => lane.name)).toEqual([
       "Todo",
       "In Progress",
+      "In review",
       "Done"
     ]);
     expect(
@@ -812,22 +798,75 @@ describe("projects and tasks API", () => {
       expect.objectContaining({
         id: doneTaskResponse.json().id,
         laneId: doneLane.id,
-        position: 0,
-        status: "done"
+        position: 0
       }),
       expect.objectContaining({
         id: firstQaTaskResponse.json().id,
         laneId: doneLane.id,
         position: 1,
-        status: "done",
         tags: [tag("qa", "orchid")]
       }),
       expect.objectContaining({
         id: secondQaTaskResponse.json().id,
         laneId: doneLane.id,
-        position: 2,
-        status: "done"
+        position: 2
       })
     ]);
+  });
+
+  it("rejects deleting the final remaining lane", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const createProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Minimal board"
+      }
+    });
+    const project = createProjectResponse.json();
+
+    for (const lane of project.laneSummaries.slice(0, -1)) {
+      const deleteLaneResponse = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/projects/${project.id}/lanes/${lane.id}`,
+        cookies: {
+          bbtodo_session: session.sessionCookie
+        }
+      });
+
+      expect(deleteLaneResponse.statusCode).toBe(204);
+    }
+
+    const finalLane = project.laneSummaries.at(-1);
+    expect(finalLane).toBeDefined();
+
+    const deleteFinalLaneResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}/lanes/${finalLane?.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(deleteFinalLaneResponse.statusCode).toBe(400);
+    expect(deleteFinalLaneResponse.json()).toEqual({
+      message: "Projects must keep at least one lane."
+    });
   });
 });

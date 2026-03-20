@@ -4,7 +4,6 @@ import type {
   LaneRecord,
   LaneWithTaskCount,
   ProjectRecord,
-  ProjectTaskCounts,
   TaskTagColor,
   TaskTagData,
   TaskRecord,
@@ -12,9 +11,8 @@ import type {
   UserTheme,
   UserRecord
 } from "./db.js";
-import { taskStatusValues, taskTagColorValues, userThemeValues } from "./db.js";
+import { taskTagColorValues, userThemeValues } from "./db.js";
 
-export const taskStatusSchema = z.enum(taskStatusValues);
 export const userThemeSchema = z.enum(userThemeValues);
 export const taskTagColorSchema = z.enum(taskTagColorValues);
 export const taskTagLabelSchema = z.string().trim().min(1).max(32);
@@ -41,17 +39,10 @@ export const updateThemeBodySchema = z.object({
   theme: userThemeSchema
 });
 
-export const taskCountsResponseSchema = z.object({
-  todo: z.number().int().nonnegative(),
-  in_progress: z.number().int().nonnegative(),
-  done: z.number().int().nonnegative()
-});
-
 export const laneResponseSchema = z.object({
   id: z.string(),
   projectId: z.string(),
   name: z.string(),
-  systemKey: taskStatusSchema.nullable(),
   position: z.number().int().nonnegative(),
   taskCount: z.number().int().nonnegative(),
   createdAt: z.string(),
@@ -63,7 +54,6 @@ export const projectResponseSchema = z.object({
   name: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  taskCounts: taskCountsResponseSchema,
   laneSummaries: z.array(laneResponseSchema)
 });
 
@@ -75,7 +65,6 @@ export const taskResponseSchema = z.object({
   body: z.string(),
   tags: taskTagsResponseSchema,
   position: z.number().int().nonnegative(),
-  status: taskStatusSchema,
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -141,18 +130,13 @@ export const taskParamsSchema = z.object({
   taskId: z.string().uuid()
 });
 
-export const listTasksQuerySchema = z.object({
-  status: taskStatusSchema.optional()
-});
-
 export const updateTaskBodySchema = z
   .object({
     title: z.string().trim().min(1).max(240).optional(),
     body: z.string().max(40_000).optional(),
     laneId: z.string().uuid().optional(),
     tags: taskTagsInputSchema.optional(),
-    position: z.number().int().nonnegative().optional(),
-    status: taskStatusSchema.optional()
+    position: z.number().int().nonnegative().optional()
   })
   .refine(
     (value) =>
@@ -160,8 +144,7 @@ export const updateTaskBodySchema = z
       value.body !== undefined ||
       value.laneId !== undefined ||
       value.tags !== undefined ||
-      value.position !== undefined ||
-      value.status !== undefined,
+      value.position !== undefined,
     {
       message: "Provide at least one field to update."
     }
@@ -174,14 +157,6 @@ z.globalRegistry.add(taskResponseSchema, { id: "Task" });
 z.globalRegistry.add(taskTagSchema, { id: "TaskTag" });
 z.globalRegistry.add(apiTokenSummarySchema, { id: "ApiTokenSummary" });
 z.globalRegistry.add(errorResponseSchema, { id: "ErrorResponse" });
-
-function createEmptyTaskCounts(): ProjectTaskCounts {
-  return {
-    todo: 0,
-    in_progress: 0,
-    done: 0
-  };
-}
 
 export function toMeResponse(user: UserRecord) {
   return meResponseSchema.parse({
@@ -197,7 +172,6 @@ export function toLaneResponse(lane: LaneRecord | LaneWithTaskCount, taskCount =
     id: lane.id,
     projectId: lane.projectId,
     name: lane.name,
-    systemKey: lane.systemKey ?? null,
     position: lane.position,
     taskCount: "taskCount" in lane ? lane.taskCount : taskCount,
     createdAt: lane.createdAt,
@@ -207,7 +181,6 @@ export function toLaneResponse(lane: LaneRecord | LaneWithTaskCount, taskCount =
 
 export function toProjectResponse(
   project: ProjectRecord,
-  taskCounts: ProjectTaskCounts = createEmptyTaskCounts(),
   laneSummaries: Array<LaneRecord | LaneWithTaskCount> = []
 ) {
   return projectResponseSchema.parse({
@@ -215,7 +188,6 @@ export function toProjectResponse(
     name: project.name,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
-    taskCounts,
     laneSummaries: laneSummaries.map((lane) => toLaneResponse(lane))
   });
 }
@@ -232,7 +204,6 @@ export function toTaskResponse(task: TaskRecord | TaskRecordWithTags) {
         ? task.tags
         : ([] satisfies TaskTagData[]),
     position: task.position,
-    status: task.status,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt
   });

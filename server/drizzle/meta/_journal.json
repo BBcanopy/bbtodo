@@ -22,6 +22,13 @@
       "when": 1773956474058,
       "tag": "0002_minor_tattoo",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1774011503815,
+      "tag": "0003_lane_only_defaults",
+      "breakpoints": true
     }
   ]
 }

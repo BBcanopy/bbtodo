@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { columns } from "../app/constants";
+import { defaultLaneLabels } from "../app/constants";
 import { getErrorMessage, itemStyle } from "../app/utils";
 
 function SvgIcon({
@@ -161,9 +161,9 @@ export function ProjectGridSkeleton() {
 
 export function BoardSkeleton() {
   return (
-    <section aria-hidden="true" className="board-grid" data-testid="board-grid">
-      {columns.map((column, index) => (
-        <article className="board-column skeleton-column" key={column.key} style={itemStyle(index)}>
+      <section aria-hidden="true" className="board-grid" data-testid="board-grid">
+      {defaultLaneLabels.map((laneLabel, index) => (
+        <article className="board-column skeleton-column" key={laneLabel} style={itemStyle(index)}>
           <div className="board-column__header">
             <div>
               <div className="skeleton-line skeleton-line--small" />

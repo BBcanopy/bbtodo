@@ -7,19 +7,14 @@ const timestamps = {
   updatedAt: text("updated_at").notNull()
 };
 
-export const taskStatusValues = ["todo", "in_progress", "done"] as const;
-export type TaskStatus = (typeof taskStatusValues)[number];
 export const userThemeValues = ["sea", "ember", "midnight"] as const;
 export type UserTheme = (typeof userThemeValues)[number];
 export const taskTagColorValues = ["moss", "sky", "amber", "coral", "orchid", "slate"] as const;
 export type TaskTagColor = (typeof taskTagColorValues)[number];
 export const defaultTaskTagColor: TaskTagColor = "moss";
 
-export const defaultLaneTemplates = [
-  { name: "Todo", systemKey: "todo" },
-  { name: "In Progress", systemKey: "in_progress" },
-  { name: "Done", systemKey: "done" }
-] as const satisfies ReadonlyArray<{ name: string; systemKey: TaskStatus }>;
+export const defaultLaneTemplates = ["Todo", "In Progress", "In review", "Done"] as const;
+export const legacyDefaultLaneTemplates = ["Todo", "In Progress", "Done"] as const;
 
 export const users = sqliteTable(
   "users",
@@ -72,14 +67,10 @@ export const lanes = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    systemKey: text("system_key", { enum: taskStatusValues }),
     position: integer("position").notNull(),
     ...timestamps
   },
-  (table) => [
-    index("lanes_project_position_idx").on(table.projectId, table.position),
-    uniqueIndex("lanes_project_system_key_idx").on(table.projectId, table.systemKey)
-  ]
+  (table) => [index("lanes_project_position_idx").on(table.projectId, table.position)]
 );
 
 export const tasks = sqliteTable(
@@ -93,12 +84,9 @@ export const tasks = sqliteTable(
     title: text("title").notNull(),
     body: text("body").notNull().default(""),
     position: integer("position").notNull().default(0),
-    // Legacy compatibility for the pre-lane API and migration path.
-    status: text("status", { enum: taskStatusValues }).notNull(),
     ...timestamps
   },
   (table) => [
-    index("tasks_project_status_updated_at_idx").on(table.projectId, table.status, table.updatedAt),
     index("tasks_project_lane_position_idx").on(table.projectId, table.laneId, table.position)
   ]
 );
@@ -153,7 +141,6 @@ export type LaneRecord = typeof lanes.$inferSelect;
 export type TaskRecord = typeof tasks.$inferSelect;
 export type TaskTagRecord = typeof taskTags.$inferSelect;
 export type ApiTokenRecord = typeof apiTokens.$inferSelect;
-export type ProjectTaskCounts = Record<TaskStatus, number>;
 
 export interface TaskTagData {
   color: TaskTagColor;
@@ -170,9 +157,8 @@ export interface LaneWithTaskCount extends LaneRecord {
   taskCount: number;
 }
 
-export interface ProjectWithTaskCounts extends ProjectRecord {
+export interface ProjectWithLanes extends ProjectRecord {
   laneSummaries: LaneWithTaskCount[];
-  taskCounts: ProjectTaskCounts;
 }
 
 export interface DatabaseServices {
