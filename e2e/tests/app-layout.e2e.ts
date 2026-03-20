@@ -269,12 +269,14 @@ async function mockAuthenticated(
   options?: {
     nextProjectId?: number;
     projects?: Project[];
+    taskMoveDelayMs?: number;
     tasks?: Task[];
   }
 ) {
   let nextProjectId = options?.nextProjectId ?? 2;
   let nextLaneId = 1;
   let nextTaskId = 5;
+  const taskMoveDelayMs = options?.taskMoveDelayMs ?? 0;
   let isAuthenticated = true;
   const currentUser = structuredClone(user);
   const projectState = (options?.projects ?? projects).map((project) => structuredClone(project));
@@ -782,7 +784,10 @@ async function mockAuthenticated(
         return;
       }
 
-      if (body?.laneId !== undefined || body?.position !== undefined || body?.status !== undefined) {
+      const isTaskMoveRequest =
+        body?.laneId !== undefined || body?.position !== undefined || body?.status !== undefined;
+
+      if (isTaskMoveRequest) {
         moveTask(task, nextLane.id, body?.position ?? sortTasksForProject(projectId, nextLane.id).length);
       }
 
@@ -795,6 +800,11 @@ async function mockAuthenticated(
       task.status = body?.status ?? nextLane.systemKey ?? task.status;
       task.updatedAt = "2026-03-18T08:05:00.000Z";
       syncProject(projectId);
+      if (isTaskMoveRequest && taskMoveDelayMs > 0) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, taskMoveDelayMs);
+        });
+      }
       await fulfillJson(route, 200, task);
       return;
     }
@@ -1106,6 +1116,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
 
   await mockAuthenticated(page, {
     projects: projectsForGrid,
+    taskMoveDelayMs: 700,
     tasks: tasksWithReusableGlobalTag
   });
 
@@ -1440,6 +1451,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   );
   await expect(qaColumn).toHaveClass(/is-drop-target/);
   await page.mouse.up();
+  await page.waitForTimeout(200);
   await expect(qaColumn.getByText("Review retry scope")).toBeVisible();
   await expect(todoColumn.getByText("Review retry scope")).toHaveCount(0);
 
