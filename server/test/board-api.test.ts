@@ -477,15 +477,72 @@ describe("projects and tasks API", () => {
       method: "GET",
       url: "/docs/openapi.json"
     });
+    const swaggerUiJsonResponse = await app.inject({
+      method: "GET",
+      url: "/docs/json"
+    });
 
     expect(openApiResponse.statusCode).toBe(200);
+    expect(openApiResponse.headers["cache-control"]).toBe("no-store");
+    expect(swaggerUiJsonResponse.statusCode).toBe(200);
+    expect(swaggerUiJsonResponse.headers["cache-control"]).toBe("no-store");
     const openApi = openApiResponse.json();
+    const swaggerUiJson = swaggerUiJsonResponse.json();
     expect(openApi.openapi).toBe("3.1.0");
+    expect(openApi.components?.securitySchemes).toEqual(
+      expect.objectContaining({
+        apiToken: expect.objectContaining({
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "API token"
+        }),
+        sessionCookie: expect.objectContaining({
+          type: "apiKey",
+          in: "cookie",
+          name: "bbtodo_session"
+        })
+      })
+    );
+    expect(openApi.components?.schemas).toEqual(
+      expect.objectContaining({
+        ErrorResponse: expect.any(Object),
+        Task: expect.any(Object),
+        TaskTagInput: expect.any(Object)
+      })
+    );
     expect(openApi.paths["/api/v1/task-tags"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/lanes"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/lanes/{laneId}"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/tasks"]).toBeDefined();
+    expect(openApi.paths["/api/v1/projects"].get.security).toEqual([
+      { apiToken: [] },
+      { sessionCookie: [] }
+    ]);
+    expect(openApi.paths["/api/v1/api-tokens"].post.security).toEqual([
+      { sessionCookie: [] }
+    ]);
+    expect(swaggerUiJson.components.schemas.TaskTag.$id).toBeUndefined();
+    expect(swaggerUiJson.components.schemas.TaskTag.$schema).toBeUndefined();
+    expect(swaggerUiJson.paths["/api/v1/task-tags"].get.responses["200"].content["application/json"].schema.items).toEqual({
+      $ref: "#/components/schemas/TaskTag"
+    });
+    expect(
+      openApi.paths["/api/v1/projects/{projectId}/tasks"].post.requestBody.content["application/json"].schema.properties
+        .tags.items.anyOf[1]
+    ).toEqual({
+      $ref: "#/components/schemas/TaskTagInput"
+    });
+    expect(openApi.paths["/api/v1/projects/{projectId}/tasks"].post.responses["201"]).toEqual({
+      content: {
+        "application/json": {
+          schema: {
+            $ref: "#/components/schemas/Task"
+          }
+        }
+      },
+      description: "Default Response"
+    });
   });
 
   it("supports custom lanes plus task body and ordering updates", async () => {

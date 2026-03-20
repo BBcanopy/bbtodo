@@ -8,6 +8,7 @@ import swaggerUi from "@fastify/swagger-ui";
 import Fastify from "fastify";
 import {
   jsonSchemaTransform,
+  jsonSchemaTransformObject,
   serializerCompiler,
   type ZodTypeProvider,
   validatorCompiler
@@ -76,6 +77,11 @@ import { authFlowStateSchema, createOidcProvider, type OidcProvider } from "./oi
 const AUTH_FLOW_COOKIE = "bbtodo_oidc";
 const SESSION_COOKIE = "bbtodo_session";
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const apiDocsSecurity: Array<Record<string, string[]>> = [
+  { apiToken: [] },
+  { sessionCookie: [] }
+];
+const sessionDocsSecurity: Array<Record<string, string[]>> = [{ sessionCookie: [] }];
 const callbackQuerySchema = z.object({
   code: z.string().min(1),
   state: z.string().min(1),
@@ -95,6 +101,22 @@ function isReservedAppPath(pathname: string) {
     pathname.startsWith("/auth/") ||
     pathname === "/docs" ||
     pathname.startsWith("/docs/")
+  );
+}
+
+function sanitizeOpenApiForDocs(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeOpenApiForDocs(entry));
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "$id" && key !== "$schema")
+      .map(([key, entry]) => [key, sanitizeOpenApiForDocs(entry)])
   );
 }
 
@@ -290,12 +312,30 @@ export function buildApp(options: {
         {
           url: options.config.clientUrl
         }
-      ]
+      ],
+      components: {
+        securitySchemes: {
+          apiToken: {
+            type: "http",
+            scheme: "bearer",
+            bearerFormat: "API token",
+            description: "Paste a personal API token. Swagger UI will send it as `Authorization: Bearer <token>`."
+          },
+          sessionCookie: {
+            type: "apiKey",
+            in: "cookie",
+            name: SESSION_COOKIE,
+            description: "Browser session cookie set after OIDC login."
+          }
+        }
+      }
     },
-    transform: jsonSchemaTransform
+    transform: jsonSchemaTransform,
+    transformObject: jsonSchemaTransformObject
   });
   app.register(swaggerUi, {
-    routePrefix: "/docs"
+    routePrefix: "/docs",
+    transformSpecification: (swaggerObject) => sanitizeOpenApiForDocs(swaggerObject) as Record<string, unknown>
   });
   if (clientDistPath) {
     app.register(staticFiles, {
@@ -303,6 +343,14 @@ export function buildApp(options: {
       serve: false
     });
   }
+  app.addHook("onSend", async (request, reply, payload) => {
+    const pathname = new URL(request.raw.url ?? request.url, options.config.clientUrl).pathname;
+    if (pathname === "/docs" || pathname.startsWith("/docs/")) {
+      reply.header("Cache-Control", "no-store");
+    }
+
+    return payload;
+  });
 
   app.after(() => {
     const typedApp = app.withTypeProvider<ZodTypeProvider>();
@@ -428,6 +476,7 @@ export function buildApp(options: {
     method: "GET",
     url: "/api/v1/me",
     schema: {
+      security: apiDocsSecurity,
       response: {
         200: meResponseSchema,
         401: errorResponseSchema
@@ -449,6 +498,7 @@ export function buildApp(options: {
     url: "/api/v1/me/theme",
     schema: {
       body: updateThemeBodySchema,
+      security: apiDocsSecurity,
       response: {
         200: meResponseSchema,
         401: errorResponseSchema
@@ -474,6 +524,7 @@ export function buildApp(options: {
     method: "GET",
     url: "/api/v1/api-tokens",
     schema: {
+      security: apiDocsSecurity,
       response: {
         200: z.array(apiTokenSummarySchema),
         401: errorResponseSchema
@@ -495,6 +546,7 @@ export function buildApp(options: {
     url: "/api/v1/api-tokens",
     schema: {
       body: createApiTokenBodySchema,
+      security: sessionDocsSecurity,
       response: {
         201: createApiTokenResponseSchema,
         403: errorResponseSchema,
@@ -521,6 +573,7 @@ export function buildApp(options: {
     url: "/api/v1/api-tokens/:tokenId",
     schema: {
       params: apiTokenParamsSchema,
+      security: apiDocsSecurity,
       response: {
         204: z.null(),
         401: errorResponseSchema,
@@ -549,6 +602,7 @@ export function buildApp(options: {
     method: "GET",
     url: "/api/v1/task-tags",
     schema: {
+      security: apiDocsSecurity,
       response: {
         200: taskTagsResponseSchema,
         401: errorResponseSchema
@@ -569,6 +623,7 @@ export function buildApp(options: {
     method: "GET",
     url: "/api/v1/projects",
     schema: {
+      security: apiDocsSecurity,
       response: {
         200: z.array(projectResponseSchema),
         401: errorResponseSchema
@@ -592,6 +647,7 @@ export function buildApp(options: {
     url: "/api/v1/projects",
     schema: {
       body: createProjectBodySchema,
+      security: apiDocsSecurity,
       response: {
         201: projectResponseSchema,
         401: errorResponseSchema
@@ -622,6 +678,7 @@ export function buildApp(options: {
     schema: {
       body: updateProjectBodySchema,
       params: projectParamsSchema,
+      security: apiDocsSecurity,
       response: {
         200: projectResponseSchema,
         401: errorResponseSchema,
@@ -660,6 +717,7 @@ export function buildApp(options: {
     url: "/api/v1/projects/:projectId",
     schema: {
       params: projectParamsSchema,
+      security: apiDocsSecurity,
       response: {
         204: z.null(),
         401: errorResponseSchema,
@@ -689,6 +747,7 @@ export function buildApp(options: {
     url: "/api/v1/projects/:projectId/lanes",
     schema: {
       params: projectParamsSchema,
+      security: apiDocsSecurity,
       response: {
         200: z.array(laneResponseSchema),
         401: errorResponseSchema,
@@ -722,6 +781,7 @@ export function buildApp(options: {
     schema: {
       body: createLaneBodySchema,
       params: projectParamsSchema,
+      security: apiDocsSecurity,
       response: {
         201: laneResponseSchema,
         401: errorResponseSchema,
@@ -756,6 +816,7 @@ export function buildApp(options: {
     schema: {
       body: updateLaneBodySchema,
       params: laneParamsSchema,
+      security: apiDocsSecurity,
       response: {
         200: laneResponseSchema,
         401: errorResponseSchema,
@@ -797,6 +858,7 @@ export function buildApp(options: {
     schema: {
       body: deleteLaneBodySchema.nullish(),
       params: laneParamsSchema,
+      security: apiDocsSecurity,
       response: {
         204: z.null(),
         400: errorResponseSchema,
@@ -851,6 +913,7 @@ export function buildApp(options: {
     url: "/api/v1/projects/:projectId/tasks",
     schema: {
       params: projectParamsSchema,
+      security: apiDocsSecurity,
       response: {
         200: z.array(taskResponseSchema),
         401: errorResponseSchema,
@@ -884,6 +947,7 @@ export function buildApp(options: {
     schema: {
       body: createTaskBodySchema,
       params: projectParamsSchema,
+      security: apiDocsSecurity,
       response: {
         201: taskResponseSchema,
         401: errorResponseSchema,
@@ -921,6 +985,7 @@ export function buildApp(options: {
     schema: {
       body: updateTaskBodySchema,
       params: taskParamsSchema,
+      security: apiDocsSecurity,
       response: {
         200: taskResponseSchema,
         401: errorResponseSchema,
@@ -959,6 +1024,7 @@ export function buildApp(options: {
     url: "/api/v1/projects/:projectId/tasks/:taskId",
     schema: {
       params: taskParamsSchema,
+      security: apiDocsSecurity,
       response: {
         204: z.null(),
         401: errorResponseSchema,
@@ -993,7 +1059,10 @@ export function buildApp(options: {
     schema: {
       hide: true
     },
-    handler: async () => app.swagger()
+    handler: async (_request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return sanitizeOpenApiForDocs(app.swagger());
+    }
   });
 
   if (clientDistPath) {
