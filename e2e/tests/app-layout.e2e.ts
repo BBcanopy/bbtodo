@@ -1257,6 +1257,9 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(tagFilterField.locator(".subnav__tag-filter-chip")).toHaveCount(1);
   await expect(releaseTagFilterChip).toHaveCSS("background-color", "rgb(242, 229, 255)");
   await expect(tagFilterInput).toHaveClass(/is-collapsed/);
+  await expect
+    .poll(async () => tagFilterInput.evaluate((node) => getComputedStyle(node).appearance))
+    .toBe("none");
   await expect(tagFilterInput).toHaveAttribute("placeholder", "");
   await expect(tagFilterInput).toHaveValue("");
   await expect(page.getByText("Review retry scope")).toBeVisible();
