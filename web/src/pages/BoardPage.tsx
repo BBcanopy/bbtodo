@@ -302,6 +302,7 @@ function LaneHeader({
       </div>
       <div className="lane-header__actions" ref={confirmRef}>
         <button
+          aria-haspopup="dialog"
           aria-expanded={isConfirmOpen}
           aria-label={`Delete lane ${lane.name}`}
           className="icon-button danger-button lane-delete-button"

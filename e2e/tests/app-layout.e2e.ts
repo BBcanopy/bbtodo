@@ -1099,6 +1099,19 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await expect(page.locator(".board-column__note")).toHaveCount(0);
   await expect(page.locator(".lane-drag-handle")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Move to / })).toHaveCount(0);
+  for (const laneName of ["Todo", "In Progress", "In review", "Done"]) {
+    await expect(page.getByLabel(`Delete lane ${laneName}`)).toBeVisible();
+  }
+  const todoLaneHeader = page.getByTestId(`lane-header-${laneId("project-1", "todo")}`);
+  const todoLaneDeleteButton = page.getByLabel("Delete lane Todo");
+  const todoLaneHeaderBox = await todoLaneHeader.boundingBox();
+  const todoLaneDeleteButtonBox = await todoLaneDeleteButton.boundingBox();
+  expect(todoLaneHeaderBox).not.toBeNull();
+  expect(todoLaneDeleteButtonBox).not.toBeNull();
+  expect((todoLaneHeaderBox?.x ?? 0) + (todoLaneHeaderBox?.width ?? 0) - (todoLaneDeleteButtonBox?.x ?? 0)).toBeLessThan(
+    40
+  );
+  expect(Math.abs((todoLaneDeleteButtonBox?.y ?? 0) - (todoLaneHeaderBox?.y ?? 0))).toBeLessThan(12);
   await expect(page.getByTestId("task-card-task-1").locator(".label-chip")).toHaveCount(0);
   const initialTaskTags = page.getByTestId("task-card-task-1").locator(".task-tag");
   await expect(initialTaskTags).toHaveText(["backend", "retry"]);

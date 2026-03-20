@@ -1726,6 +1726,9 @@ textarea:focus {
 
 .board-column__header {
   align-items: flex-start;
+  position: relative;
+  min-height: 2rem;
+  padding-right: 2.6rem;
 }
 
 .board-column__header.is-draggable {
@@ -1740,10 +1743,13 @@ textarea:focus {
 .board-column__header-copy {
   flex: 1 1 auto;
   min-width: 0;
+  padding-right: 0.2rem;
 }
 
 .lane-header__actions {
-  position: relative;
+  position: absolute;
+  top: 0;
+  right: 0;
   z-index: 5;
   flex: 0 0 auto;
 }
