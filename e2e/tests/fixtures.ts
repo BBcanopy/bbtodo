@@ -1,0 +1,764 @@
+import { type Page, type Route } from "@playwright/test";
+
+import {
+  type ApiTokenSummary,
+  type BoardLane,
+  type Project,
+  type Task,
+  type TaskTag,
+  type TaskTagColor,
+  type UserTheme
+} from "../../web/src/api";
+
+type DefaultLaneKey = "todo" | "in_progress" | "in_review" | "done";
+
+const user = {
+  email: "operator@example.com",
+  id: "user-1",
+  name: "Nadia Vale",
+  theme: "sea" as UserTheme
+};
+
+export const tag = (label: string, color: TaskTagColor = "moss"): TaskTag => ({
+  color,
+  label
+});
+
+export function laneId(projectId: string, suffix: DefaultLaneKey) {
+  return `${projectId}-lane-${suffix}`;
+}
+
+function createDefaultLaneSummaries(
+  projectId: string,
+  counts: Record<DefaultLaneKey, number>
+): BoardLane[] {
+  return [
+    {
+      createdAt: "2026-03-17T09:00:00.000Z",
+      id: laneId(projectId, "todo"),
+      name: "Todo",
+      position: 0,
+      projectId,
+      taskCount: counts.todo,
+      updatedAt: "2026-03-18T07:30:00.000Z"
+    },
+    {
+      createdAt: "2026-03-17T09:00:00.000Z",
+      id: laneId(projectId, "in_progress"),
+      name: "In Progress",
+      position: 1,
+      projectId,
+      taskCount: counts.in_progress,
+      updatedAt: "2026-03-18T07:30:00.000Z"
+    },
+    {
+      createdAt: "2026-03-17T09:00:00.000Z",
+      id: laneId(projectId, "in_review"),
+      name: "In review",
+      position: 2,
+      projectId,
+      taskCount: counts.in_review,
+      updatedAt: "2026-03-18T07:30:00.000Z"
+    },
+    {
+      createdAt: "2026-03-17T09:00:00.000Z",
+      id: laneId(projectId, "done"),
+      name: "Done",
+      position: 3,
+      projectId,
+      taskCount: counts.done,
+      updatedAt: "2026-03-18T07:30:00.000Z"
+    }
+  ];
+}
+
+export const projects: Project[] = [
+  {
+    createdAt: "2026-03-17T09:00:00.000Z",
+    id: "project-1",
+    laneSummaries: createDefaultLaneSummaries("project-1", {
+      todo: 2,
+      in_progress: 1,
+      in_review: 0,
+      done: 1
+    }),
+    name: "Billing cleanup",
+    updatedAt: "2026-03-18T07:30:00.000Z"
+  }
+];
+
+export const projectsForGrid: Project[] = [
+  ...projects,
+  {
+    createdAt: "2026-03-17T10:00:00.000Z",
+    id: "project-2",
+    laneSummaries: createDefaultLaneSummaries("project-2", {
+      todo: 0,
+      in_progress: 0,
+      in_review: 0,
+      done: 0
+    }),
+    name: "Roadmap review",
+    updatedAt: "2026-03-18T08:10:00.000Z"
+  },
+  {
+    createdAt: "2026-03-17T11:00:00.000Z",
+    id: "project-3",
+    laneSummaries: createDefaultLaneSummaries("project-3", {
+      todo: 2,
+      in_progress: 1,
+      in_review: 0,
+      done: 0
+    }),
+    name: "Release prep",
+    updatedAt: "2026-03-18T08:20:00.000Z"
+  },
+  {
+    createdAt: "2026-03-17T12:00:00.000Z",
+    id: "project-4",
+    laneSummaries: createDefaultLaneSummaries("project-4", {
+      todo: 1,
+      in_progress: 0,
+      in_review: 0,
+      done: 3
+    }),
+    name: "Customer follow-up",
+    updatedAt: "2026-03-18T08:30:00.000Z"
+  },
+  {
+    createdAt: "2026-03-17T12:30:00.000Z",
+    id: "project-5",
+    laneSummaries: createDefaultLaneSummaries("project-5", {
+      todo: 3,
+      in_progress: 1,
+      in_review: 0,
+      done: 0
+    }),
+    name: "Support triage",
+    updatedAt: "2026-03-18T08:40:00.000Z"
+  },
+  {
+    createdAt: "2026-03-17T13:00:00.000Z",
+    id: "project-6",
+    laneSummaries: createDefaultLaneSummaries("project-6", {
+      todo: 1,
+      in_progress: 2,
+      in_review: 0,
+      done: 2
+    }),
+    name: "Partner audit",
+    updatedAt: "2026-03-18T08:50:00.000Z"
+  }
+];
+
+export const tasks: Task[] = [
+  {
+    body: "Callback logs mention **retry** scope.",
+    createdAt: "2026-03-18T07:00:00.000Z",
+    id: "task-1",
+    laneId: laneId("project-1", "todo"),
+    position: 0,
+    projectId: "project-1",
+    tags: [tag("backend", "sky"), tag("retry", "coral")],
+    title: "Review retry settings",
+    updatedAt: "2026-03-18T07:10:00.000Z"
+  },
+  {
+    body: "Capture OIDC callback details for the new deployment.",
+    createdAt: "2026-03-18T07:20:00.000Z",
+    id: "task-2",
+    laneId: laneId("project-1", "in_progress"),
+    position: 0,
+    projectId: "project-1",
+    tags: [tag("observability", "slate"), tag("oidc", "orchid")],
+    title: "Tighten callback logging",
+    updatedAt: "2026-03-18T07:45:00.000Z"
+  },
+  {
+    body: "Docker compose no longer pings health forever.",
+    createdAt: "2026-03-18T06:50:00.000Z",
+    id: "task-3",
+    laneId: laneId("project-1", "done"),
+    position: 0,
+    projectId: "project-1",
+    tags: [tag("ops", "amber")],
+    title: "Remove healthcheck loop",
+    updatedAt: "2026-03-18T07:50:00.000Z"
+  },
+  {
+    body: "Queue the copy pass after retry scope lands.",
+    createdAt: "2026-03-18T07:05:00.000Z",
+    id: "task-4",
+    laneId: laneId("project-1", "todo"),
+    position: 1,
+    projectId: "project-1",
+    tags: [tag("copy", "moss")],
+    title: "Queue copy pass",
+    updatedAt: "2026-03-18T07:15:00.000Z"
+  }
+];
+
+async function fulfillJson(route: Route, status: number, body: unknown) {
+  await route.fulfill({
+    body: JSON.stringify(body),
+    contentType: "application/json",
+    status
+  });
+}
+
+export async function mockUnauthenticated(page: Page) {
+  await page.route("**/api/v1/me", async (route) => {
+    await fulfillJson(route, 401, { message: "Unauthorized" });
+  });
+}
+
+export async function mockAuthenticated(
+  page: Page,
+  options?: {
+    apiTokens?: ApiTokenSummary[];
+    nextApiTokenId?: number;
+    nextProjectId?: number;
+    projects?: Project[];
+    taskMoveDelayMs?: number;
+    tasks?: Task[];
+  }
+) {
+  let nextApiTokenId = options?.nextApiTokenId ?? 1;
+  let nextProjectId = options?.nextProjectId ?? 2;
+  let nextLaneId = 1;
+  let nextTaskId = 5;
+  const taskMoveDelayMs = options?.taskMoveDelayMs ?? 0;
+  let isAuthenticated = true;
+  const currentUser = structuredClone(user);
+  const apiTokenState = (options?.apiTokens ?? []).map((token) => structuredClone(token));
+  const projectState = (options?.projects ?? projects).map((project) => structuredClone(project));
+  const taskState = (options?.tasks ?? tasks).map((task) => structuredClone(task));
+
+  function getProject(projectId: string) {
+    return projectState.find((project) => project.id === projectId) ?? null;
+  }
+
+  function syncProject(projectId: string) {
+    const project = getProject(projectId);
+    if (!project) {
+      return;
+    }
+
+    project.laneSummaries = [...project.laneSummaries]
+      .sort((left, right) => left.position - right.position)
+      .map((lane) => ({
+        ...lane,
+        taskCount: taskState.filter((task) => task.projectId === projectId && task.laneId === lane.id).length
+      }));
+  }
+
+  function sortTasksForProject(projectId: string, laneIdValue?: string) {
+    return taskState
+      .filter(
+        (task) =>
+          task.projectId === projectId &&
+          (laneIdValue === undefined || task.laneId === laneIdValue)
+      )
+      .sort((left, right) => {
+        if (left.position !== right.position) {
+          return left.position - right.position;
+        }
+
+        return left.updatedAt < right.updatedAt ? 1 : -1;
+      });
+  }
+
+  function syncAllProjects() {
+    projectState.forEach((project) => syncProject(project.id));
+  }
+
+  function listReusableTags() {
+    const tagsByKey = new Map<string, TaskTag>();
+
+    [...taskState]
+      .sort((left, right) => (left.updatedAt < right.updatedAt ? 1 : -1))
+      .forEach((task) => {
+        task.tags.forEach((taskTag) => {
+          const key = taskTag.label.trim().toLowerCase();
+          if (!key || tagsByKey.has(key)) {
+            return;
+          }
+
+          tagsByKey.set(key, taskTag);
+        });
+      });
+
+    return Array.from(tagsByKey.values()).sort((left, right) =>
+      left.label.localeCompare(right.label, undefined, { sensitivity: "base" })
+    );
+  }
+
+  function syncReusableTagColors(nextTags: TaskTag[]) {
+    const colorsByKey = new Map(
+      nextTags
+        .map((taskTag) => [taskTag.label.trim().toLowerCase(), taskTag.color] as const)
+        .filter(([key]) => key.length > 0)
+    );
+    if (colorsByKey.size === 0) {
+      return;
+    }
+
+    taskState.forEach((task) => {
+      task.tags = task.tags.map((taskTag) => {
+        const nextColor = colorsByKey.get(taskTag.label.trim().toLowerCase());
+        if (!nextColor || nextColor === taskTag.color) {
+          return taskTag;
+        }
+
+        return {
+          ...taskTag,
+          color: nextColor
+        };
+      });
+    });
+  }
+
+  function reindexLane(projectId: string, laneIdValue: string) {
+    sortTasksForProject(projectId, laneIdValue).forEach((task, index) => {
+      task.position = index;
+    });
+  }
+
+  function moveTask(task: Task, targetLaneId: string, targetPosition: number) {
+    const sourceLaneId = task.laneId;
+
+    if (sourceLaneId && sourceLaneId !== targetLaneId) {
+      taskState
+        .filter(
+          (candidate) =>
+            candidate.projectId === task.projectId &&
+            candidate.laneId === sourceLaneId &&
+            candidate.id !== task.id
+        )
+        .sort((left, right) => left.position - right.position)
+        .forEach((candidate, index) => {
+          candidate.position = index;
+        });
+    }
+
+    const targetTasks = sortTasksForProject(task.projectId, targetLaneId).filter(
+      (candidate) => candidate.id !== task.id
+    );
+    const clampedPosition = Math.max(0, Math.min(targetPosition, targetTasks.length));
+
+    targetTasks.splice(clampedPosition, 0, task);
+    targetTasks.forEach((candidate, index) => {
+      candidate.laneId = targetLaneId;
+      candidate.position = index;
+    });
+  }
+
+  function moveLane(projectId: string, laneIdValue: string, targetPosition: number) {
+    const project = getProject(projectId);
+    if (!project) {
+      return null;
+    }
+
+    const lane = project.laneSummaries.find((candidate) => candidate.id === laneIdValue);
+    if (!lane) {
+      return null;
+    }
+
+    const orderedLanes = [...project.laneSummaries].sort((left, right) => left.position - right.position);
+    const reorderedLanes = orderedLanes.filter((candidate) => candidate.id !== laneIdValue);
+    const clampedPosition = Math.max(0, Math.min(targetPosition, reorderedLanes.length));
+    reorderedLanes.splice(clampedPosition, 0, lane);
+    reorderedLanes.forEach((candidate, index) => {
+      candidate.position = index;
+      candidate.updatedAt = "2026-03-18T08:12:00.000Z";
+    });
+
+    project.laneSummaries = reorderedLanes;
+    syncProject(projectId);
+    return project.laneSummaries.find((candidate) => candidate.id === laneIdValue) ?? null;
+  }
+
+  function deleteLane(projectId: string, laneIdValue: string, destinationLaneId?: string) {
+    const project = getProject(projectId);
+    if (!project) {
+      return { status: "project_not_found" as const };
+    }
+
+    const lane = project.laneSummaries.find((candidate) => candidate.id === laneIdValue);
+    if (!lane) {
+      return { status: "lane_not_found" as const };
+    }
+
+    const remainingLanes = project.laneSummaries
+      .filter((candidate) => candidate.id !== laneIdValue)
+      .sort((left, right) => left.position - right.position);
+    if (remainingLanes.length === 0) {
+      return { status: "last_lane" as const };
+    }
+
+    const destinationLane =
+      destinationLaneId === undefined
+        ? null
+        : remainingLanes.find((candidate) => candidate.id === destinationLaneId) ?? null;
+
+    if (destinationLaneId !== undefined && !destinationLane) {
+      return { status: "destination_not_found" as const };
+    }
+
+    const laneTasks = sortTasksForProject(projectId, laneIdValue);
+    if (laneTasks.length > 0 && !destinationLane) {
+      return { status: "destination_required" as const };
+    }
+
+    if (destinationLane) {
+      const destinationTasks = sortTasksForProject(projectId, destinationLane.id);
+      const movedTaskIds = new Set(laneTasks.map((task) => task.id));
+      const orderedTasks = [...destinationTasks, ...laneTasks];
+
+      orderedTasks.forEach((task, index) => {
+        task.laneId = destinationLane.id;
+        task.position = index;
+        if (movedTaskIds.has(task.id)) {
+          task.updatedAt = "2026-03-18T08:16:00.000Z";
+        }
+      });
+    }
+
+    project.laneSummaries = remainingLanes.map((candidate, index) => ({
+      ...candidate,
+      position: index,
+      updatedAt: "2026-03-18T08:16:00.000Z"
+    }));
+    syncProject(projectId);
+
+    return { status: "deleted" as const };
+  }
+
+  syncAllProjects();
+
+  await page.route("**/auth/logout", async (route) => {
+    isAuthenticated = false;
+    await fulfillJson(route, 200, null);
+  });
+
+  await page.route("**/api/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const key = `${request.method()} ${url.pathname}`;
+    const body = request.postDataJSON() as
+      | {
+          body?: string;
+          destinationLaneId?: string;
+          laneId?: string;
+          name?: string;
+          position?: number;
+          tags?: TaskTag[];
+          theme?: UserTheme;
+          title?: string;
+        }
+      | null;
+
+    switch (key) {
+      case "GET /api/v1/me":
+        if (!isAuthenticated) {
+          await fulfillJson(route, 401, { message: "Unauthorized" });
+          return;
+        }
+
+        await fulfillJson(route, 200, currentUser);
+        return;
+      case "PATCH /api/v1/me/theme":
+        currentUser.theme = body?.theme ?? currentUser.theme;
+        await fulfillJson(route, 200, currentUser);
+        return;
+      case "GET /api/v1/projects":
+        syncAllProjects();
+        await fulfillJson(route, 200, projectState);
+        return;
+      case "GET /api/v1/task-tags":
+        await fulfillJson(route, 200, listReusableTags());
+        return;
+      case "GET /api/v1/api-tokens":
+        await fulfillJson(route, 200, apiTokenState);
+        return;
+      case "POST /api/v1/api-tokens": {
+        const createdToken: ApiTokenSummary = {
+          createdAt: "2026-03-18T08:28:00.000Z",
+          id: `token-${nextApiTokenId++}`,
+          lastUsedAt: null,
+          name: body?.name ?? "Untitled token"
+        };
+        apiTokenState.unshift(createdToken);
+        await fulfillJson(route, 201, {
+          token: `bbtodo_${createdToken.id}`,
+          tokenInfo: createdToken
+        });
+        return;
+      }
+      case "POST /api/v1/projects": {
+        const createdProjectId = `project-${nextProjectId++}`;
+        const createdProject: Project = {
+          createdAt: "2026-03-18T08:00:00.000Z",
+          id: createdProjectId,
+          laneSummaries: createDefaultLaneSummaries(createdProjectId, {
+            todo: 0,
+            in_progress: 0,
+            in_review: 0,
+            done: 0
+          }),
+          name: body?.title ?? body?.name ?? "Untitled board",
+          updatedAt: "2026-03-18T08:00:00.000Z"
+        };
+        projectState.unshift(createdProject);
+        await fulfillJson(route, 201, createdProject);
+        return;
+      }
+      case "PATCH /api/v1/projects":
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      default:
+        break;
+    }
+
+    if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/api-tokens/")) {
+      const tokenId = url.pathname.split("/").pop() ?? "";
+      const tokenIndex = apiTokenState.findIndex((candidate) => candidate.id === tokenId);
+
+      if (tokenIndex === -1) {
+        await fulfillJson(route, 404, { message: "Token not found." });
+        return;
+      }
+
+      apiTokenState.splice(tokenIndex, 1);
+      await fulfillJson(route, 204, null);
+      return;
+    }
+
+    if (request.method() === "GET" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/lanes")) {
+      const projectId = url.pathname.split("/")[4];
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      }
+
+      syncProject(projectId);
+      await fulfillJson(route, 200, project.laneSummaries);
+      return;
+    }
+
+    if (request.method() === "POST" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/lanes")) {
+      const projectId = url.pathname.split("/")[4];
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      }
+
+      const createdLane: BoardLane = {
+        createdAt: "2026-03-18T08:15:00.000Z",
+        id: `${projectId}-lane-custom-${nextLaneId++}`,
+        name: body?.name ?? "New Lane",
+        position: project.laneSummaries.length,
+        projectId,
+        taskCount: 0,
+        updatedAt: "2026-03-18T08:15:00.000Z"
+      };
+      project.laneSummaries.push(createdLane);
+      syncProject(projectId);
+      await fulfillJson(route, 201, createdLane);
+      return;
+    }
+
+    if (request.method() === "PATCH" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.includes("/lanes/")) {
+      const [projectId, laneIdValue] = [url.pathname.split("/")[4], url.pathname.split("/").pop() ?? ""];
+      const lane = moveLane(projectId, laneIdValue, body?.position ?? 0);
+
+      if (!lane) {
+        await fulfillJson(route, 404, { message: "Lane not found." });
+        return;
+      }
+
+      await fulfillJson(route, 200, lane);
+      return;
+    }
+
+    if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.includes("/lanes/")) {
+      const [projectId, laneIdValue] = [url.pathname.split("/")[4], url.pathname.split("/").pop() ?? ""];
+      const deleted = deleteLane(projectId, laneIdValue, body?.destinationLaneId);
+
+      if (deleted.status === "project_not_found" || deleted.status === "lane_not_found") {
+        await fulfillJson(route, 404, {
+          message: deleted.status === "project_not_found" ? "Project not found." : "Lane not found."
+        });
+        return;
+      }
+
+      if (deleted.status === "last_lane") {
+        await fulfillJson(route, 400, { message: "Projects must keep at least one lane." });
+        return;
+      }
+
+      if (deleted.status === "destination_required") {
+        await fulfillJson(route, 400, { message: "Select a destination lane before deleting this lane." });
+        return;
+      }
+
+      if (deleted.status === "destination_not_found") {
+        await fulfillJson(route, 400, { message: "Destination lane not found." });
+        return;
+      }
+
+      await fulfillJson(route, 204, null);
+      return;
+    }
+
+    if (
+      request.method() === "PATCH" &&
+      url.pathname.startsWith("/api/v1/projects/") &&
+      !url.pathname.includes("/lanes/") &&
+      !url.pathname.includes("/tasks/")
+    ) {
+      const projectId = url.pathname.split("/").pop() ?? "";
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      }
+
+      project.name = body?.name ?? project.name;
+      project.updatedAt = "2026-03-18T08:12:00.000Z";
+      syncProject(projectId);
+      await fulfillJson(route, 200, project);
+      return;
+    }
+
+    if (request.method() === "GET" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/tasks")) {
+      const projectId = url.pathname.split("/")[4];
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      }
+
+      await fulfillJson(route, 200, sortTasksForProject(projectId));
+      return;
+    }
+
+    if (request.method() === "POST" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/tasks")) {
+      const projectId = url.pathname.split("/")[4];
+      const project = getProject(projectId);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project or lane not found." });
+        return;
+      }
+
+      const targetLane = project.laneSummaries.find((lane) => lane.id === body?.laneId) ?? project.laneSummaries[0];
+      if (!targetLane) {
+        await fulfillJson(route, 404, { message: "Project or lane not found." });
+        return;
+      }
+
+      const createdTask: Task = {
+        body: body?.body ?? "",
+        createdAt: "2026-03-18T08:00:00.000Z",
+        id: `task-${nextTaskId++}`,
+        laneId: targetLane.id,
+        position: sortTasksForProject(projectId, targetLane.id).length,
+        projectId,
+        tags: body?.tags ?? [],
+        title: body?.title ?? "Untitled task",
+        updatedAt: "2026-03-18T08:00:00.000Z"
+      };
+      taskState.push(createdTask);
+      syncReusableTagColors(createdTask.tags);
+      syncProject(projectId);
+      await fulfillJson(route, 201, createdTask);
+      return;
+    }
+
+    if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/") && !url.pathname.includes("/tasks/")) {
+      const projectId = url.pathname.split("/").pop() ?? "";
+      const projectIndex = projectState.findIndex((candidate) => candidate.id === projectId);
+
+      if (projectIndex === -1) {
+        await fulfillJson(route, 404, { message: `Project not found: ${projectId}` });
+        return;
+      }
+
+      projectState.splice(projectIndex, 1);
+      for (let index = taskState.length - 1; index >= 0; index -= 1) {
+        if (taskState[index].projectId === projectId) {
+          taskState.splice(index, 1);
+        }
+      }
+      await fulfillJson(route, 204, null);
+      return;
+    }
+
+    if (request.method() === "DELETE" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.includes("/tasks/")) {
+      const [projectId, taskId] = [url.pathname.split("/")[4], url.pathname.split("/").pop() ?? ""];
+      const taskIndex = taskState.findIndex(
+        (candidate) => candidate.projectId === projectId && candidate.id === taskId
+      );
+
+      if (taskIndex === -1) {
+        await fulfillJson(route, 404, { message: `Task not found: ${taskId}` });
+        return;
+      }
+
+      const [removedTask] = taskState.splice(taskIndex, 1);
+      if (removedTask.laneId) {
+        reindexLane(projectId, removedTask.laneId);
+      }
+      syncProject(projectId);
+      await fulfillJson(route, 204, null);
+      return;
+    }
+
+    if (request.method() === "PATCH" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.includes("/tasks/")) {
+      const [projectId, taskId] = [url.pathname.split("/")[4], url.pathname.split("/").pop() ?? ""];
+      const task = taskState.find((candidate) => candidate.projectId === projectId && candidate.id === taskId);
+      const project = getProject(projectId);
+
+      if (!task || !project) {
+        await fulfillJson(route, 404, { message: "Task or lane not found." });
+        return;
+      }
+
+      const nextLane =
+        (body?.laneId ? project.laneSummaries.find((lane) => lane.id === body.laneId) : undefined) ??
+        project.laneSummaries.find((lane) => lane.id === task.laneId);
+      if (!nextLane) {
+        await fulfillJson(route, 404, { message: "Task or lane not found." });
+        return;
+      }
+
+      const isTaskMoveRequest = body?.laneId !== undefined || body?.position !== undefined;
+
+      if (isTaskMoveRequest) {
+        moveTask(task, nextLane.id, body?.position ?? sortTasksForProject(projectId, nextLane.id).length);
+      }
+
+      task.body = body?.body ?? task.body;
+      if (body?.tags !== undefined) {
+        task.tags = body.tags;
+        syncReusableTagColors(task.tags);
+      }
+      task.title = body?.title ?? task.title;
+      task.updatedAt = "2026-03-18T08:05:00.000Z";
+      syncProject(projectId);
+
+      if (isTaskMoveRequest && taskMoveDelayMs > 0) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, taskMoveDelayMs);
+        });
+      }
+
+      await fulfillJson(route, 200, task);
+      return;
+    }
+
+    await fulfillJson(route, 404, { message: `Unhandled route: ${key}` });
+  });
+}
