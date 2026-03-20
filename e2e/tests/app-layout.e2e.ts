@@ -817,13 +817,26 @@ test("login screen uses the updated cool accent palette", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Sign in with OIDC" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Read API docs" })).toBeVisible();
   const loginPanelBox = await page.locator(".hero-panel--simple").boundingBox();
+  const loginHeadingBox = await page.getByRole("heading", { name: "BBTodo" }).boundingBox();
+  const ctaRowBox = await page.locator(".hero-panel--simple .cta-row").boundingBox();
   const viewport = page.viewportSize();
   expect(loginPanelBox).not.toBeNull();
+  expect(loginHeadingBox).not.toBeNull();
+  expect(ctaRowBox).not.toBeNull();
   expect(viewport).not.toBeNull();
   const panelCenterX = (loginPanelBox?.x ?? 0) + (loginPanelBox?.width ?? 0) / 2;
   const viewportCenterX = (viewport?.width ?? 0) / 2;
   expect(Math.abs(panelCenterX - viewportCenterX)).toBeLessThan(20);
-  expect((loginPanelBox?.width ?? 0) / (viewport?.width ?? 1)).toBeGreaterThan(0.45);
+  expect((loginPanelBox?.width ?? 0) / (viewport?.width ?? 1)).toBeGreaterThan(0.55);
+  expect((ctaRowBox?.y ?? 0) - ((loginHeadingBox?.y ?? 0) + (loginHeadingBox?.height ?? 0))).toBeGreaterThan(20);
+  const loginPanelPadding = await page
+    .locator(".hero-panel--simple")
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingLeft));
+  const loginCtaGap = await page
+    .locator(".hero-panel--simple .cta-row")
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).columnGap));
+  expect(loginPanelPadding).toBeGreaterThanOrEqual(32);
+  expect(loginCtaGap).toBeGreaterThanOrEqual(16);
 
   const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
   expect(accent).toBe("#2f7774");

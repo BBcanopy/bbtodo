@@ -245,6 +245,7 @@ h3 {
   grid-template-columns: minmax(0, 1fr);
   place-items: center;
   max-width: none;
+  padding: clamp(0.8rem, 3vw, 2.5rem);
 }
 
 .centered-state {
@@ -977,9 +978,11 @@ h3 {
 .hero-panel--simple {
   justify-items: center;
   align-content: center;
-  min-height: min(60dvh, 34rem);
-  width: min(50vw, 44rem);
+  gap: clamp(1.35rem, 3vw, 2.4rem);
+  min-height: min(68dvh, 40rem);
+  width: min(62vw, 52rem);
   margin: auto;
+  padding: clamp(2.2rem, 5vw, 4.2rem) clamp(2rem, 6vw, 5rem);
   text-align: center;
 }
 
@@ -1078,6 +1081,8 @@ h3 {
 
 .hero-panel--simple .cta-row {
   width: 100%;
+  margin-top: 0.65rem;
+  gap: 1rem;
   justify-content: center;
 }
 
@@ -2814,6 +2819,7 @@ textarea:focus {
 
   .hero-panel--simple {
     width: 100%;
+    min-height: min(72dvh, 40rem);
   }
 
   .project-grid {
