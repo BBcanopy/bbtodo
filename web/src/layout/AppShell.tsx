@@ -443,22 +443,6 @@ export function AppShell({ user }: { user: User }) {
                       ) : null}
                     </div>
                   ) : null}
-                  {boardMatch ? (
-                    <button
-                      className="subnav__action"
-                      onClick={() =>
-                        updateRouteParams((params) => {
-                          params.set("createLane", "1");
-                        })
-                      }
-                      type="button"
-                    >
-                      <span aria-hidden="true" className="subnav__action-mark">
-                        +
-                      </span>
-                      <span>Create Lane</span>
-                    </button>
-                  ) : null}
                 </div>
               ) : null}
             </nav>

@@ -50,18 +50,15 @@ test("board page edits cards and filters tasks", async ({ page }) => {
 
   await expect(page).toHaveTitle("Billing cleanup | BBTodo");
   await expect(page.locator(".subnav__current-value")).toHaveText("Billing cleanup");
-  await expect(page.getByRole("button", { name: "Create Lane" })).toBeVisible();
+  await expect(page.getByRole("button", { exact: true, name: "Create Lane" })).toHaveCount(0);
   await expect(page.getByLabel("Search cards")).toBeVisible();
   await expect(page.getByLabel("Filter by tags")).toHaveAttribute("placeholder", "tag");
   await expect(page.locator(".board-column")).toHaveCount(4);
 
   const firstTaskCard = page.getByTestId("task-card-task-1");
   await expect(firstTaskCard.locator(".task-tag")).toHaveText(["backend", "retry"]);
-  await expect(firstTaskCard.locator(".task-card__timestamp")).toHaveText("2026-03-18");
-  await expect(firstTaskCard.locator(".task-card__timestamp")).toHaveAttribute(
-    "datetime",
-    "2026-03-18T07:10:00.000Z"
-  );
+  await expect(firstTaskCard.locator(".task-card__timestamp")).toHaveCount(0);
+  await expect(firstTaskCard).toHaveCSS("border-radius", "0px");
 
   await firstTaskCard.click();
 
@@ -69,8 +66,16 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   const sourceTab = editDialog.getByRole("tab", { name: "Markdown source" });
   const previewTab = editDialog.getByRole("tab", { name: "Rendered preview" });
   const tagInput = editDialog.getByLabel("Task tags");
+  const createdMeta = editDialog.locator(".task-editor__meta-item", { hasText: "Created" });
+  const updatedMeta = editDialog.locator(".task-editor__meta-item", { hasText: "Updated" });
 
   await expect(editDialog).toBeVisible();
+  await expect(createdMeta).toContainText("Created");
+  await expect(createdMeta.locator("time")).toHaveAttribute("datetime", "2026-03-18T07:00:00.000Z");
+  await expect(createdMeta.locator("time")).toHaveText("2026-03-18T07:00:00.000Z");
+  await expect(updatedMeta).toContainText("Updated");
+  await expect(updatedMeta.locator("time")).toHaveAttribute("datetime", "2026-03-18T07:10:00.000Z");
+  await expect(updatedMeta.locator("time")).toHaveText("2026-03-18T07:10:00.000Z");
   await expect(editDialog.getByLabel("Title")).toHaveValue("Review retry settings");
   await expect(editDialog.getByRole("button", { name: "Remove tag backend" })).toBeVisible();
   await expect(editDialog.getByRole("button", { name: "Remove tag retry" })).toBeVisible();
@@ -154,19 +159,29 @@ test("board page edits cards and filters tasks", async ({ page }) => {
 });
 
 test("board page reorders tasks and manages lanes", async ({ page }) => {
-  await mockAuthenticated(page, { projects: projectsForGrid });
+  const projectsWithQaLane = structuredClone(projectsForGrid);
+  const billingCleanupProject = projectsWithQaLane.find((project) => project.id === "project-1");
+  if (!billingCleanupProject) {
+    throw new Error("Expected project-1 test fixture to exist");
+  }
+
+  billingCleanupProject.laneSummaries.push({
+    createdAt: "2026-03-18T08:00:00.000Z",
+    id: "project-1-lane-custom-1",
+    name: "Ready for QA",
+    position: 4,
+    projectId: "project-1",
+    taskCount: 0,
+    updatedAt: "2026-03-18T08:00:00.000Z"
+  });
+
+  await mockAuthenticated(page, { projects: projectsWithQaLane });
 
   await page.goto("/projects/project-1");
 
   const todoColumn = page.getByTestId(`board-column-${laneId("project-1", "todo")}`);
   const retryCard = page.getByTestId("task-card-task-1");
   await expect(todoColumn.getByText("Review retry settings")).toBeVisible();
-
-  await page.getByRole("button", { name: "Create Lane" }).click();
-  const laneDialog = page.getByRole("dialog", { name: "Create Lane" });
-  await expect(laneDialog).toBeVisible();
-  await laneDialog.getByLabel("Lane name").fill("Ready for QA");
-  await laneDialog.getByRole("button", { exact: true, name: "Create Lane" }).click();
 
   const laneHeadings = page.locator(".board-column__header h2");
   await expect(laneHeadings).toHaveText(["Todo", "In Progress", "In review", "Done", "Ready for QA"]);
@@ -211,6 +226,36 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(
     page.getByTestId(`board-column-${laneId("project-1", "done")}`).getByText("Review retry settings")
   ).toBeVisible();
+});
+
+test("board page creates lanes from the gap between columns", async ({ page }) => {
+  await mockAuthenticated(page, { projects: projectsForGrid });
+
+  await page.goto("/projects/project-1");
+
+  await expect(page.getByRole("button", { exact: true, name: "Create Lane" })).toHaveCount(0);
+
+  const createLaneGap = page.getByTestId(`create-lane-gap-after-${laneId("project-1", "todo")}`);
+  await expect(createLaneGap).toBeVisible();
+  const gapDividerContent = await createLaneGap.evaluate((element) =>
+    window.getComputedStyle(element, "::before").content.replaceAll('"', "")
+  );
+  expect(["none", "normal"]).toContain(gapDividerContent);
+  await createLaneGap.dblclick();
+
+  const laneDialog = page.getByRole("dialog", { name: "Create Lane" });
+  await expect(laneDialog).toBeVisible();
+  await expect(laneDialog.locator(".field__label", { hasText: "Lane name" })).toHaveCount(0);
+  await laneDialog.getByLabel("Lane name").fill("Ready for QA");
+  await laneDialog.getByRole("button", { exact: true, name: "Create Lane" }).click();
+
+  await expect(page.locator(".board-column__header h2")).toHaveText([
+    "Todo",
+    "In Progress",
+    "In review",
+    "Done",
+    "Ready for QA"
+  ]);
 });
 
 test("board page switcher renames and creates projects while guarding the last lane", async ({ page }) => {
