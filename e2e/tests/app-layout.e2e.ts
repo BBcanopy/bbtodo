@@ -1423,6 +1423,7 @@ test("board workspace adds lanes and filters cards front-end only", async ({ pag
   await qaLaneDeleteButton.click();
   const laneDeleteDialog = page.getByRole("alertdialog", { name: "Delete lane Ready for QA" });
   await expect(laneDeleteDialog).toBeVisible();
+  await expect(laneDeleteDialog.getByText("Delete this lane?")).toBeVisible();
   await expect(laneDeleteDialog.getByLabel("Move tasks from Ready for QA to")).toBeVisible();
   await laneDeleteDialog.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("heading", { name: "Ready for QA" })).toBeVisible();

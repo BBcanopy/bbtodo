@@ -326,7 +326,7 @@ function LaneHeader({
             onPointerDown={(event) => event.stopPropagation()}
             role="alertdialog"
           >
-            <p>{requiresDestination ? "Delete this lane and move its tasks?" : "Delete this lane?"}</p>
+            <p>Delete this lane?</p>
             {requiresDestination ? (
               <label className="lane-delete-popover__field">
                 <span>Move tasks to</span>
