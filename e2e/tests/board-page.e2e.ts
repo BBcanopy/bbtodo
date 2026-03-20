@@ -245,6 +245,7 @@ test("board page creates lanes from the gap between columns", async ({ page }) =
 
   const laneDialog = page.getByRole("dialog", { name: "Create Lane" });
   await expect(laneDialog).toBeVisible();
+  await expect(laneDialog.locator(".field__label", { hasText: "Lane name" })).toHaveCount(0);
   await laneDialog.getByLabel("Lane name").fill("Ready for QA");
   await laneDialog.getByRole("button", { exact: true, name: "Create Lane" }).click();
 

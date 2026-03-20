@@ -1650,8 +1650,8 @@ export function BoardPage() {
               }}
             >
               <label className="field">
-                <span className="field__label">Lane name</span>
                 <input
+                  aria-label="Lane name"
                   autoFocus
                   maxLength={80}
                   onChange={(event) => setLaneName(event.target.value)}
