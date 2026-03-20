@@ -1,10 +1,10 @@
-import { startTransition, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 import { api, type Project } from "../api";
 import { formatIsoDate, itemStyle } from "../app/utils";
-import { CloseIcon, EmptyState, ErrorBanner, ProjectGridSkeleton, TrashIcon } from "../components/ui";
+import { EmptyState, ErrorBanner, ProjectGridSkeleton, TrashIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
 function ProjectCard({
@@ -106,29 +106,12 @@ function ProjectCard({
 
 export function ProjectsPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const isCreateDialogOpen = searchParams.get("createProject") === "1";
-  const projectSearch = searchParams.get("q")?.trim().toLowerCase() ?? "";
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects()
   });
-  const visibleProjects = (projectsQuery.data ?? []).filter((project) =>
-    project.name.toLowerCase().includes(projectSearch)
-  );
-
-  const createProjectMutation = useMutation({
-    mutationFn: (projectName: string) => api.createProject(projectName),
-    onSuccess: async (project) => {
-      setName("");
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      startTransition(() => {
-        navigate(`/projects/${project.id}`);
-      });
-    }
-  });
+  const projects = projectsQuery.data ?? [];
 
   const deleteProjectMutation = useMutation({
     mutationFn: (projectId: string) => api.deleteProject(projectId),
@@ -137,97 +120,15 @@ export function ProjectsPage() {
     }
   });
 
-  function closeCreateDialog() {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete("createProject");
-    setSearchParams(nextParams, { replace: true });
-    setName("");
-    createProjectMutation.reset();
-  }
-
-  useEffect(() => {
-    if (!isCreateDialogOpen) {
-      return;
-    }
-
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        closeCreateDialog();
-      }
-    }
-
-    document.addEventListener("keydown", handleEscape);
-
-    return () => {
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [isCreateDialogOpen]);
-
   return (
     <main className="page-shell page-shell--projects">
       <title>Projects | BBTodo</title>
-      {isCreateDialogOpen ? (
-        <div className="dialog-scrim" onClick={() => closeCreateDialog()}>
-          <section
-            aria-labelledby="create-project-title"
-            aria-modal="true"
-            className="dialog-panel"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-          >
-            <div className="dialog-header">
-              <h2 id="create-project-title">Create Project</h2>
-              <button
-                aria-label="Close create project dialog"
-                className="icon-button"
-                onClick={() => closeCreateDialog()}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-            <form
-              className="dialog-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                createProjectMutation.mutate(name.trim());
-              }}
-            >
-              <label className="field">
-                <span className="field__label">Project name</span>
-                <input
-                  autoFocus
-                  maxLength={120}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Billing cleanup"
-                  required
-                  value={name}
-                />
-              </label>
-              {createProjectMutation.error ? <ErrorBanner error={createProjectMutation.error} /> : null}
-              <div className="dialog-actions">
-                <button className="text-button" onClick={() => closeCreateDialog()} type="button">
-                  Cancel
-                </button>
-                <button
-                  className="primary-button"
-                  disabled={createProjectMutation.isPending || name.trim().length === 0}
-                  type="submit"
-                >
-                  {createProjectMutation.isPending ? "Creating project..." : "Create Project"}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
-
       {projectsQuery.error ? <ErrorBanner error={projectsQuery.error} /> : null}
       {deleteProjectMutation.error ? <ErrorBanner error={deleteProjectMutation.error} /> : null}
 
       {projectsQuery.isPending ? <ProjectGridSkeleton /> : null}
 
-      {!projectsQuery.isPending && projectsQuery.data && projectsQuery.data.length === 0 ? (
+      {!projectsQuery.isPending && projects.length === 0 ? (
         <EmptyState
           copy="Create the first project to open a board with Todo, In Progress, and Done ready to go."
           eyebrow="Empty workspace"
@@ -235,20 +136,9 @@ export function ProjectsPage() {
         />
       ) : null}
 
-      {!projectsQuery.isPending &&
-      projectsQuery.data &&
-      projectsQuery.data.length > 0 &&
-      visibleProjects.length === 0 ? (
-        <EmptyState
-          copy="Try another project name or clear the search to bring the full list back."
-          eyebrow="No matches"
-          title="No boards match that search."
-        />
-      ) : null}
-
-      {!projectsQuery.isPending && projectsQuery.data && visibleProjects.length > 0 ? (
+      {!projectsQuery.isPending && projects.length > 0 ? (
         <section className="project-grid">
-          {visibleProjects.map((project, index) => (
+          {projects.map((project, index) => (
             <ProjectCard
               key={project.id}
               index={index}

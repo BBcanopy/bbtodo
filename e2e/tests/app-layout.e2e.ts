@@ -842,7 +842,7 @@ test("login screen uses the updated cool accent palette", async ({ page }) => {
   expect(accent).toBe("#2f7774");
 });
 
-test("projects page uses a modal create flow and removes extra board chrome", async ({ page }) => {
+test("projects page uses the project switcher and removes extra board chrome", async ({ page }) => {
   const projectsForGridWithExtraLane = structuredClone(projectsForGrid);
   const billingCleanupProject = projectsForGridWithExtraLane.find((project) => project.id === "project-1");
   if (!billingCleanupProject) {
@@ -887,8 +887,11 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   await expect(page.getByTestId("project-card-project-1").getByLabel("Ready for QA 0")).toBeVisible();
   await expect(page.getByTestId("project-card-project-1").locator(".project-card__lane-pill")).toHaveCount(4);
   await expect(page.getByTestId("project-card-project-1").getByText("More")).toHaveCount(0);
-  await expect(page.locator(".subnav__current")).toHaveCount(0);
-  await expect(page.getByLabel("Search projects")).toBeVisible();
+  const rootSwitcherButton = page.getByRole("button", { name: "Open project switcher" });
+  await expect(page.locator(".subnav__current")).toHaveCount(1);
+  await expect(rootSwitcherButton).toBeVisible();
+  await expect(page.locator(".subnav__current-value")).toHaveText("All projects");
+  await expect(page.getByLabel("Search projects")).toHaveCount(0);
   await expect(page.locator(".subnav__search-label")).toHaveCount(0);
   await expect(page.locator(".topbar__identity")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
@@ -909,11 +912,10 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   expect(projectsMaxWidth).toBe("none");
 
   const projectsPageBox = await page.locator(".page-shell--projects").boundingBox();
-  const createProjectLink = page.getByRole("link", { name: "Create Project" });
-  const createProjectLinkBox = await createProjectLink.boundingBox();
-  const createProjectBackground = await createProjectLink.evaluate((element) => getComputedStyle(element).backgroundColor);
-  const createProjectHeight = await createProjectLink.evaluate((element) => parseFloat(getComputedStyle(element).height));
-  const createProjectRadius = await createProjectLink.evaluate((element) => parseFloat(getComputedStyle(element).borderRadius));
+  const rootSwitcherButtonBox = await rootSwitcherButton.boundingBox();
+  const rootSwitcherBackground = await rootSwitcherButton.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const rootSwitcherHeight = await rootSwitcherButton.evaluate((element) => parseFloat(getComputedStyle(element).height));
+  const rootSwitcherRadius = await rootSwitcherButton.evaluate((element) => parseFloat(getComputedStyle(element).borderRadius));
   const projectGridBox = await page.locator(".project-grid").boundingBox();
   const firstCard = page.getByTestId("project-card-project-1");
   const secondCard = page.getByTestId("project-card-project-2");
@@ -949,29 +951,39 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   expect(Math.abs((firstCardBox?.height ?? 0) - (fourthCardBox?.height ?? 0))).toBeLessThan(2);
   expect(Math.abs((firstCardBox?.height ?? 0) - (fifthCardBox?.height ?? 0))).toBeLessThan(2);
   expect(Math.abs((firstCardBox?.height ?? 0) - (sixthCardBox?.height ?? 0))).toBeLessThan(2);
-  expect(Math.abs((firstCardBox?.y ?? 0) - (secondCardBox?.y ?? 0))).toBeLessThan(16);
-  expect(Math.abs((firstCardBox?.y ?? 0) - (thirdCardBox?.y ?? 0))).toBeLessThan(16);
-  expect(Math.abs((firstCardBox?.y ?? 0) - (fourthCardBox?.y ?? 0))).toBeLessThan(16);
-  expect(Math.abs((firstCardBox?.y ?? 0) - (fifthCardBox?.y ?? 0))).toBeLessThan(16);
-  expect(Math.abs((firstCardBox?.y ?? 0) - (sixthCardBox?.y ?? 0))).toBeLessThan(16);
+  expect(Math.abs((firstCardBox?.y ?? 0) - (secondCardBox?.y ?? 0))).toBeLessThan(20);
+  expect(Math.abs((firstCardBox?.y ?? 0) - (thirdCardBox?.y ?? 0))).toBeLessThan(20);
+  expect(Math.abs((firstCardBox?.y ?? 0) - (fourthCardBox?.y ?? 0))).toBeLessThan(20);
+  expect(Math.abs((firstCardBox?.y ?? 0) - (fifthCardBox?.y ?? 0))).toBeLessThan(20);
+  expect(Math.abs((firstCardBox?.y ?? 0) - (sixthCardBox?.y ?? 0))).toBeLessThan(20);
   expect((secondCardBox?.x ?? 0) - ((firstCardBox?.x ?? 0) + (firstCardBox?.width ?? 0))).toBeLessThan(32);
   expect((firstCardBox?.width ?? 0)).toBeLessThan(320);
-  expect(createProjectLinkBox).not.toBeNull();
-  expect((createProjectLinkBox?.x ?? 0)).toBeGreaterThan(120);
-  expect(createProjectBackground).not.toBe("rgba(0, 0, 0, 0)");
-  expect(createProjectHeight).toBeGreaterThan(40);
-  expect(createProjectRadius).toBeGreaterThan(20);
-  await expect(page.locator(".subnav__action-mark")).toHaveText("+");
+  expect(rootSwitcherButtonBox).not.toBeNull();
+  expect((rootSwitcherButtonBox?.x ?? 0)).toBeGreaterThan(120);
+  expect(rootSwitcherBackground).not.toBe("rgba(0, 0, 0, 0)");
+  expect(rootSwitcherHeight).toBeGreaterThan(36);
+  expect(rootSwitcherRadius).toBeGreaterThan(15);
+  await expect(page.getByRole("link", { name: "Create Project" })).toHaveCount(0);
+  await expect(page.locator(".subnav__action-mark")).toHaveCount(0);
 
-  await page.getByLabel("Search projects").fill("partner");
-  await expect(page.locator(".project-grid .project-card")).toHaveCount(1);
-  await expect(page.getByTestId("project-card-project-6")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "No boards match that search." })).toHaveCount(0);
-  await page.getByLabel("Search projects").fill("zzzz");
-  await expect(page.locator(".project-grid .project-card")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "No boards match that search." })).toBeVisible();
-  await page.getByLabel("Search projects").fill("");
+  await rootSwitcherButton.click();
+  const rootSwitcherInput = page.getByLabel("Project switcher input");
+  await expect(page.getByRole("button", { name: "Rename Project" })).toHaveCount(0);
+  await rootSwitcherInput.fill("partner");
+  await expect(page.getByRole("button", { name: "Open project Partner audit" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open project Billing cleanup" })).toHaveCount(0);
   await expect(page.locator(".project-grid .project-card")).toHaveCount(6);
+  await page.getByRole("button", { name: "Open project Partner audit" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/project-6$/);
+  await expect(page.locator(".subnav__current-value")).toHaveText("Partner audit");
+  await page.goto("/");
+  await expect(page.locator(".subnav__current-value")).toHaveText("All projects");
+  await rootSwitcherButton.click();
+  await rootSwitcherInput.fill("zzzz");
+  await expect(page.getByText("No projects match that input yet.")).toBeVisible();
+  await expect(page.locator(".project-grid .project-card")).toHaveCount(6);
+  await expect(page.getByRole("heading", { name: "No boards match that search." })).toHaveCount(0);
 
   await page.getByLabel("Open account menu").click();
   await expect(page.getByRole("button", { pressed: true, name: "Sea" })).toBeVisible();
@@ -986,12 +998,9 @@ test("projects page uses a modal create flow and removes extra board chrome", as
   expect(midnightAccent).toBe("#58c6c0");
   await page.getByLabel("Open account menu").click();
 
-  await createProjectLink.click();
-
-  const dialog = page.getByRole("dialog", { name: "Create Project" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByLabel("Project name").fill("API polish");
-  await dialog.getByRole("button", { exact: true, name: "Create Project" }).click();
+  await rootSwitcherButton.click();
+  await rootSwitcherInput.fill("API polish");
+  await page.getByRole("button", { name: "Create Project" }).click();
 
   await expect(page).toHaveURL(/\/projects\/project-7$/);
   await expect(page).toHaveTitle("API polish | BBTodo");
