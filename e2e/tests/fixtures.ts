@@ -9,6 +9,7 @@ import {
   type TaskTagColor,
   type UserTheme
 } from "../../web/src/api";
+import { resolveProjectTicketPrefix as resolveProjectTicketPrefixFromService } from "../../server/src/services/ticket-prefix";
 
 type DefaultLaneKey = "todo" | "in_progress" | "in_review" | "done";
 
@@ -109,121 +110,9 @@ function createDefaultLaneSummaries(
   ];
 }
 
-function normalizeProjectTicketPrefixSource(name: string) {
-  return name.normalize("NFKD").replace(/[^A-Za-z]/g, "").toUpperCase();
-}
-
-const fallbackTicketPrefixLetters = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
-const fallbackTicketPrefixLength = 4;
-
-function createRandomTicketPrefix(length = fallbackTicketPrefixLength) {
-  let prefix = "";
-
-  for (let index = 0; index < length; index += 1) {
-    prefix += fallbackTicketPrefixLetters[Math.floor(Math.random() * fallbackTicketPrefixLetters.length)];
-  }
-
-  return prefix;
-}
-
-function findAvailableFallbackTicketPrefix(usedPrefixes: Set<string>) {
-  const totalPrefixCount = fallbackTicketPrefixLetters.length ** fallbackTicketPrefixLength;
-  if (usedPrefixes.size >= totalPrefixCount) {
-    return null;
-  }
-
-  for (let attempt = 0; attempt < 256; attempt += 1) {
-    const candidate = createRandomTicketPrefix();
-    if (!usedPrefixes.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  for (const firstLetter of fallbackTicketPrefixLetters) {
-    for (const secondLetter of fallbackTicketPrefixLetters) {
-      for (const thirdLetter of fallbackTicketPrefixLetters) {
-        for (const fourthLetter of fallbackTicketPrefixLetters) {
-          const candidate = `${firstLetter}${secondLetter}${thirdLetter}${fourthLetter}`;
-          if (!usedPrefixes.has(candidate)) {
-            return candidate;
-          }
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-function listProjectTicketPrefixCandidates(name: string) {
-  const normalized = normalizeProjectTicketPrefixSource(name);
-  const candidates: string[] = [];
-  const seenCandidates = new Set<string>();
-
-  function addCandidate(candidate: string) {
-    if (candidate.length < 2 || candidate.length > 4 || seenCandidates.has(candidate)) {
-      return;
-    }
-
-    seenCandidates.add(candidate);
-    candidates.push(candidate);
-  }
-
-  function addCombinations(targetLength: number) {
-    if (targetLength > normalized.length) {
-      return;
-    }
-
-    const letters = [...normalized];
-
-    function visit(nextIndex: number, current: string) {
-      if (current.length === targetLength) {
-        addCandidate(current);
-        return;
-      }
-
-      for (let index = nextIndex; index < letters.length; index += 1) {
-        if (current.length === 0 && index !== 0) {
-          continue;
-        }
-
-        visit(index + 1, current + letters[index]);
-      }
-    }
-
-    visit(0, "");
-  }
-
-  if (normalized.length === 1) {
-    addCandidate(`${normalized}X`);
-  } else {
-    if (normalized.length <= 4) {
-      addCandidate(normalized);
-    }
-
-    if (normalized.length >= 4) {
-      addCombinations(4);
-    }
-    if (normalized.length >= 3) {
-      addCombinations(3);
-    }
-    addCombinations(2);
-  }
-
-  return candidates;
-}
-
 function resolveProjectTicketPrefix(name: string, usedPrefixes: Set<string>) {
-  const prefix = listProjectTicketPrefixCandidates(name).find((candidate) => !usedPrefixes.has(candidate));
-  if (prefix) {
-    return prefix;
-  }
-
-  if (normalizeProjectTicketPrefixSource(name).length === 0) {
-    return findAvailableFallbackTicketPrefix(usedPrefixes);
-  }
-
-  return null;
+  const result = resolveProjectTicketPrefixFromService(name, usedPrefixes);
+  return result.status === "ok" ? result.prefix : null;
 }
 
 function parseTicketNumber(ticketId: string) {
