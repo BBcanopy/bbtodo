@@ -127,21 +127,6 @@ function taskCardNestTarget(card: Locator) {
   return card.locator(":scope > .task-card__surface-wrap > .task-card__nest-target");
 }
 
-async function expectTicketIdAboveTitle(card: Locator) {
-  const ticketId = card.locator(".task-card__ticket-id");
-  const title = card.locator(".task-card__title");
-
-  await expect(ticketId).toBeVisible();
-  await expect(title).toBeVisible();
-  await expect
-    .poll(async () => {
-      const [ticketIdBox, titleBox] = await Promise.all([ticketId.boundingBox(), title.boundingBox()]);
-
-      return Boolean(ticketIdBox && titleBox && ticketIdBox.y + ticketIdBox.height <= titleBox.y + 1);
-    })
-    .toBe(true);
-}
-
 test("board page edits cards and filters tasks", async ({ page }) => {
   const tasksWithReusableGlobalTag = structuredClone(tasks);
   tasksWithReusableGlobalTag.push({
@@ -174,8 +159,7 @@ test("board page edits cards and filters tasks", async ({ page }) => {
 
   const firstTaskCard = page.getByTestId("task-card-task-1");
   const laneDeleteButton = page.getByLabel("Delete lane In Progress");
-  await expect(firstTaskCard.locator(".task-card__ticket-id")).toHaveText("BILL-1");
-  await expectTicketIdAboveTitle(firstTaskCard);
+  await expect(firstTaskCard.locator(".task-card__title")).toHaveText("[BILL-1] Review retry settings");
   await expect(firstTaskCard.locator(".task-tag")).toHaveText(["backend", "retry"]);
   await expect(firstTaskCard.locator(".task-card__timestamp")).toHaveCount(0);
   await expect(firstTaskCard.getByLabel("Delete task Review retry settings")).toHaveCount(0);
@@ -248,9 +232,7 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await editDialog.getByRole("button", { name: "Save card" }).click();
 
   await expect(editDialog).toHaveCount(0);
-  await expect(firstTaskCard.locator(".task-card__ticket-id")).toHaveText("BILL-1");
-  await expectTicketIdAboveTitle(firstTaskCard);
-  await expect(firstTaskCard.getByText("Review retry scope")).toBeVisible();
+  await expect(firstTaskCard.locator(".task-card__title")).toHaveText("[BILL-1] Review retry scope");
   const updatedTaskTags = firstTaskCard.locator(".task-tag");
   await expect(updatedTaskTags).toHaveText(["backend", "release"]);
   await expect(updatedTaskTags.nth(0)).toHaveCSS("background-color", "rgb(255, 241, 217)");
@@ -315,8 +297,9 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(doneLaneTrashTarget).toBeHidden();
 
   await beginTaskDrag(page, taskCardSurface(firstTaskCard));
-  await expect(page.locator(".task-drag-overlay .task-card__ticket-id")).toHaveText("BILL-1");
-  await expectTicketIdAboveTitle(page.locator(".task-drag-overlay .task-card--drag-overlay"));
+  await expect(page.locator(".task-drag-overlay .task-card__title")).toHaveText(
+    "[BILL-1] Review retry settings"
+  );
   await dropDraggedTaskOnTrashTarget(page, todoLaneTrashTarget);
 
   const deleteDialog = page.getByRole("alertdialog", { name: "Delete task Review retry settings" });
@@ -494,17 +477,17 @@ test("board page keeps Done ordered by newest update time and ignores drag reord
   const shippedDocsCard = page.getByTestId("task-card-task-6");
 
   await expect(doneColumn.locator(".task-card__title")).toHaveText([
-    "Ship docs",
-    "Remove healthcheck loop",
-    "Archive roadmap"
+    "[BILL-6] Ship docs",
+    "[BILL-3] Remove healthcheck loop",
+    "[BILL-5] Archive roadmap"
   ]);
 
   await dragTaskToTarget(page, taskCardSurface(shippedDocsCard), taskCardSurface(archivedRoadmapCard), 0.2);
 
   await expect(doneColumn.locator(".task-card__title")).toHaveText([
-    "Ship docs",
-    "Remove healthcheck loop",
-    "Archive roadmap"
+    "[BILL-6] Ship docs",
+    "[BILL-3] Remove healthcheck loop",
+    "[BILL-5] Archive roadmap"
   ]);
 });
 

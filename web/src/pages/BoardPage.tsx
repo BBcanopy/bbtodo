@@ -725,10 +725,9 @@ function TaskCardPreview({
 }) {
   return (
     <article className="task-card task-card--drag-overlay">
-      <div className="task-card__title-row">
-        <span className="task-card__ticket-id">{task.ticketId}</span>
-        <p className="task-card__title">{task.title}</p>
-      </div>
+      <p className="task-card__title">
+        <span className="task-card__ticket-id">[{task.ticketId}]</span> {task.title}
+      </p>
       {task.tags.length > 0 ? (
         <div className="task-card__tags">
           {task.tags.map((tag) => (
@@ -851,10 +850,9 @@ function TaskCard({
           role="button"
           tabIndex={0}
         >
-          <div className="task-card__title-row">
-            <span className="task-card__ticket-id">{task.ticketId}</span>
-            <p className="task-card__title">{task.title}</p>
-          </div>
+          <p className="task-card__title">
+            <span className="task-card__ticket-id">[{task.ticketId}]</span> {task.title}
+          </p>
           {task.tags.length > 0 ? (
             <div className="task-card__tags">
               {task.tags.map((tag) => (

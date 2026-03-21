@@ -2090,35 +2090,17 @@ textarea:focus {
     0 18px 38px -30px rgba(18, 34, 36, 0.34);
 }
 
-.task-card__title-row {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.4rem;
-}
-
 .task-card__ticket-id {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  max-width: 100%;
-  padding: 0.24rem 0.52rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface-strong));
-  color: color-mix(in srgb, var(--accent-strong) 68%, var(--ink-soft));
+  color: var(--ink-soft);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.66rem;
+  font-size: 0.78em;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
 .task-card__title {
   margin: 0;
-  align-self: stretch;
   min-width: 0;
   font-weight: 600;
   line-height: 1.32;
