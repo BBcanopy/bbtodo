@@ -39,6 +39,7 @@ export interface Task {
   parentTaskId: string | null;
   position: number;
   projectId: string;
+  ticketId: string;
   tags: TaskTag[];
   title: string;
   updatedAt: string;

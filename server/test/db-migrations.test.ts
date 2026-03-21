@@ -119,9 +119,16 @@ describe("database migrations", () => {
         services.database.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>
       ).map((column) => column.name);
       expect(taskColumns).toEqual(
-        expect.arrayContaining(["body", "lane_id", "parent_task_id", "position"])
+        expect.arrayContaining(["body", "lane_id", "parent_task_id", "position", "ticket_number"])
       );
       expect(taskColumns).not.toContain("status");
+
+      const projectColumns = (
+        services.database.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>
+      ).map((column) => column.name);
+      expect(projectColumns).toEqual(
+        expect.arrayContaining(["ticket_prefix", "next_ticket_number"])
+      );
 
       const taskTagColumns = (
         services.database.prepare("PRAGMA table_info(task_tags)").all() as Array<{ name: string }>
@@ -148,18 +155,31 @@ describe("database migrations", () => {
       ]);
 
       const migratedTask = services.database
-        .prepare("SELECT body, lane_id, parent_task_id, position FROM tasks WHERE id = ?")
+        .prepare("SELECT body, lane_id, parent_task_id, position, ticket_number FROM tasks WHERE id = ?")
         .get("task-1") as {
         body: string;
         lane_id: string | null;
         parent_task_id: string | null;
         position: number;
+        ticket_number: number | null;
       };
       expect(migratedTask).toEqual({
         body: "",
         lane_id: lanes[0]?.id ?? null,
         parent_task_id: null,
-        position: 0
+        position: 0,
+        ticket_number: 1
+      });
+
+      const migratedProject = services.database
+        .prepare("SELECT ticket_prefix, next_ticket_number FROM projects WHERE id = ?")
+        .get("project-1") as {
+        next_ticket_number: number | null;
+        ticket_prefix: string | null;
+      };
+      expect(migratedProject).toEqual({
+        next_ticket_number: 2,
+        ticket_prefix: "LEGA"
       });
 
       const migratedTaskTags = services.database

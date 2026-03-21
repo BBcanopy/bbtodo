@@ -137,6 +137,7 @@ test("board page edits cards and filters tasks", async ({ page }) => {
     parentTaskId: null,
     position: 0,
     projectId: "project-2",
+    ticketId: "ROAD-1",
     tags: [tag("global-brand", "amber")],
     title: "Refresh homepage copy",
     updatedAt: "2026-03-18T08:22:00.000Z"
@@ -158,6 +159,7 @@ test("board page edits cards and filters tasks", async ({ page }) => {
 
   const firstTaskCard = page.getByTestId("task-card-task-1");
   const laneDeleteButton = page.getByLabel("Delete lane In Progress");
+  await expect(firstTaskCard.locator(".task-card__ticket-id")).toHaveText("BILL-1");
   await expect(firstTaskCard.locator(".task-tag")).toHaveText(["backend", "retry"]);
   await expect(firstTaskCard.locator(".task-card__timestamp")).toHaveCount(0);
   await expect(firstTaskCard.getByLabel("Delete task Review retry settings")).toHaveCount(0);
@@ -230,6 +232,7 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await editDialog.getByRole("button", { name: "Save card" }).click();
 
   await expect(editDialog).toHaveCount(0);
+  await expect(firstTaskCard.locator(".task-card__ticket-id")).toHaveText("BILL-1");
   await expect(firstTaskCard.getByText("Review retry scope")).toBeVisible();
   const updatedTaskTags = firstTaskCard.locator(".task-tag");
   await expect(updatedTaskTags).toHaveText(["backend", "release"]);
@@ -295,6 +298,7 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(doneLaneTrashTarget).toBeHidden();
 
   await beginTaskDrag(page, taskCardSurface(firstTaskCard));
+  await expect(page.locator(".task-drag-overlay .task-card__ticket-id")).toHaveText("BILL-1");
   await dropDraggedTaskOnTrashTarget(page, todoLaneTrashTarget);
 
   const deleteDialog = page.getByRole("alertdialog", { name: "Delete task Review retry settings" });
@@ -339,6 +343,7 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
     parentTaskId: null,
     position: 0,
     projectId: "project-1",
+    ticketId: "BILL-5",
     tags: [],
     title: "Ship note",
     updatedAt: "2026-03-18T08:00:00.000Z"
@@ -351,6 +356,7 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
     parentTaskId: null,
     position: 1,
     projectId: "project-1",
+    ticketId: "BILL-6",
     tags: [],
     title: "Release checklist",
     updatedAt: "2026-03-18T08:05:00.000Z"
@@ -438,6 +444,7 @@ test("board page keeps Done ordered by newest update time and ignores drag reord
       parentTaskId: null,
       position: 2,
       projectId: "project-1",
+      ticketId: "BILL-5",
       tags: [],
       title: "Archive roadmap",
       updatedAt: "2026-03-18T07:40:00.000Z"
@@ -450,6 +457,7 @@ test("board page keeps Done ordered by newest update time and ignores drag reord
       parentTaskId: null,
       position: 1,
       projectId: "project-1",
+      ticketId: "BILL-6",
       tags: [],
       title: "Ship docs",
       updatedAt: "2026-03-18T08:10:00.000Z"
@@ -509,6 +517,7 @@ test("board page moves a dragged subtask under another empty parent", async ({ p
       parentTaskId: null,
       position: 0,
       projectId: "project-1",
+      ticketId: "BILL-5",
       tags: [],
       title: "Ship note",
       updatedAt: "2026-03-18T08:00:00.000Z"
@@ -521,6 +530,7 @@ test("board page moves a dragged subtask under another empty parent", async ({ p
       parentTaskId: null,
       position: 1,
       projectId: "project-1",
+      ticketId: "BILL-6",
       tags: [],
       title: "Release checklist",
       updatedAt: "2026-03-18T08:05:00.000Z"
@@ -591,6 +601,7 @@ test("board page keeps subtask drags inside the parent group", async ({ page }) 
     parentTaskId: null,
     position: 0,
     projectId: "project-1",
+    ticketId: "BILL-5",
     tags: [],
     title: "Ship note",
     updatedAt: "2026-03-18T08:00:00.000Z"
@@ -649,6 +660,7 @@ test("board page resets a subtask preview when dragged back over its current par
       parentTaskId: null,
       position: 0,
       projectId: "project-1",
+      ticketId: "BILL-5",
       tags: [],
       title: "Ship note",
       updatedAt: "2026-03-18T08:00:00.000Z"
@@ -661,6 +673,7 @@ test("board page resets a subtask preview when dragged back over its current par
       parentTaskId: null,
       position: 1,
       projectId: "project-1",
+      ticketId: "BILL-6",
       tags: [],
       title: "Release checklist",
       updatedAt: "2026-03-18T08:05:00.000Z"

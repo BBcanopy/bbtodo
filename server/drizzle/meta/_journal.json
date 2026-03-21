@@ -36,6 +36,13 @@
       "when": 1774042976964,
       "tag": "0004_round_silver_centurion",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1774097154073,
+      "tag": "0005_mean_guardsmen",
+      "breakpoints": true
     }
   ]
 }

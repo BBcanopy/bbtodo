@@ -726,6 +726,7 @@ function TaskCardPreview({
   return (
     <article className="task-card task-card--drag-overlay">
       <div className="task-card__title-row">
+        <span className="task-card__ticket-id">{task.ticketId}</span>
         <p className="task-card__title">{task.title}</p>
       </div>
       {task.tags.length > 0 ? (
@@ -851,6 +852,7 @@ function TaskCard({
           tabIndex={0}
         >
           <div className="task-card__title-row">
+            <span className="task-card__ticket-id">{task.ticketId}</span>
             <p className="task-card__title">{task.title}</p>
           </div>
           {task.tags.length > 0 ? (

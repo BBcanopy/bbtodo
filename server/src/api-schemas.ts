@@ -64,6 +64,7 @@ export const taskResponseSchema = z.object({
   parentTaskId: z.string().nullable(),
   title: z.string(),
   body: z.string(),
+  ticketId: z.string(),
   tags: taskTagsResponseSchema,
   position: z.number().int().nonnegative(),
   createdAt: z.string(),
@@ -196,7 +197,19 @@ export function toProjectResponse(
   });
 }
 
-export function toTaskResponse(task: TaskRecord | TaskRecordWithTags) {
+export function toTaskResponse(
+  task: TaskRecord | TaskRecordWithTags,
+  options: {
+    ticketPrefix: string | null;
+  }
+) {
+  if (!options.ticketPrefix) {
+    throw new Error(`Project ${task.projectId} is missing a ticket prefix.`);
+  }
+  if (task.ticketNumber === null) {
+    throw new Error(`Task ${task.id} is missing a ticket number.`);
+  }
+
   return taskResponseSchema.parse({
     id: task.id,
     projectId: task.projectId,
@@ -204,6 +217,7 @@ export function toTaskResponse(task: TaskRecord | TaskRecordWithTags) {
     parentTaskId: task.parentTaskId ?? null,
     title: task.title,
     body: task.body,
+    ticketId: `${options.ticketPrefix}-${task.ticketNumber}`,
     tags:
       "tags" in task
         ? task.tags

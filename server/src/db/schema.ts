@@ -54,9 +54,14 @@ export const projects = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    ticketPrefix: text("ticket_prefix"),
+    nextTicketNumber: integer("next_ticket_number"),
     ...timestamps
   },
-  (table) => [index("projects_user_updated_at_idx").on(table.userId, table.updatedAt)]
+  (table) => [
+    index("projects_user_updated_at_idx").on(table.userId, table.updatedAt),
+    uniqueIndex("projects_user_ticket_prefix_idx").on(table.userId, table.ticketPrefix)
+  ]
 );
 
 export const lanes = sqliteTable(
@@ -86,6 +91,7 @@ export const tasks = sqliteTable(
     }),
     title: text("title").notNull(),
     body: text("body").notNull().default(""),
+    ticketNumber: integer("ticket_number"),
     position: integer("position").notNull().default(0),
     ...timestamps
   },
@@ -95,7 +101,8 @@ export const tasks = sqliteTable(
       table.laneId,
       table.parentTaskId,
       table.position
-    )
+    ),
+    uniqueIndex("tasks_project_ticket_number_idx").on(table.projectId, table.ticketNumber)
   ]
 );
 

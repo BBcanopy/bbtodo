@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
+import { backfillTicketIds } from "./board.js";
 import {
   apiTokens,
   type DatabaseClient,
@@ -106,6 +107,8 @@ function createLegacyCompatTables(database: Database.Database) {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
+      ticket_prefix TEXT,
+      next_ticket_number INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -127,6 +130,7 @@ function createLegacyCompatTables(database: Database.Database) {
       parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
       title TEXT NOT NULL,
       body TEXT NOT NULL DEFAULT '',
+      ticket_number INTEGER,
       position INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -164,6 +168,9 @@ function ensureLegacyCompatColumns(database: Database.Database) {
   if (!taskColumns.has("body")) {
     database.exec("ALTER TABLE tasks ADD COLUMN body TEXT NOT NULL DEFAULT '';");
   }
+  if (!taskColumns.has("ticket_number")) {
+    database.exec("ALTER TABLE tasks ADD COLUMN ticket_number INTEGER;");
+  }
   if (!taskColumns.has("lane_id")) {
     database.exec(
       "ALTER TABLE tasks ADD COLUMN lane_id TEXT REFERENCES lanes(id) ON DELETE CASCADE;"
@@ -182,6 +189,14 @@ function ensureLegacyCompatColumns(database: Database.Database) {
   if (!taskTagColumns.has("color")) {
     database.exec("ALTER TABLE task_tags ADD COLUMN color TEXT NOT NULL DEFAULT 'moss';");
   }
+
+  const projectColumns = getTableColumns(database, "projects");
+  if (!projectColumns.has("ticket_prefix")) {
+    database.exec("ALTER TABLE projects ADD COLUMN ticket_prefix TEXT;");
+  }
+  if (!projectColumns.has("next_ticket_number")) {
+    database.exec("ALTER TABLE projects ADD COLUMN next_ticket_number INTEGER;");
+  }
 }
 
 function ensureLegacyCompatIndexes(database: Database.Database) {
@@ -195,6 +210,9 @@ function ensureLegacyCompatIndexes(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS projects_user_updated_at_idx
       ON projects (user_id, updated_at);
 
+    CREATE UNIQUE INDEX IF NOT EXISTS projects_user_ticket_prefix_idx
+      ON projects (user_id, ticket_prefix);
+
     CREATE INDEX IF NOT EXISTS lanes_project_position_idx
       ON lanes (project_id, position);
 
@@ -206,6 +224,9 @@ function ensureLegacyCompatIndexes(database: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS tasks_project_lane_parent_position_idx
       ON tasks (project_id, lane_id, parent_task_id, position);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS tasks_project_ticket_number_idx
+      ON tasks (project_id, ticket_number);
 
     CREATE INDEX IF NOT EXISTS task_tags_task_position_idx
       ON task_tags (task_id, position);
@@ -235,11 +256,17 @@ function ensureLaneOnlyIndexes(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS projects_user_updated_at_idx
       ON projects (user_id, updated_at);
 
+    CREATE UNIQUE INDEX IF NOT EXISTS projects_user_ticket_prefix_idx
+      ON projects (user_id, ticket_prefix);
+
     CREATE INDEX IF NOT EXISTS lanes_project_position_idx
       ON lanes (project_id, position);
 
     CREATE INDEX IF NOT EXISTS tasks_project_lane_parent_position_idx
       ON tasks (project_id, lane_id, parent_task_id, position);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS tasks_project_ticket_number_idx
+      ON tasks (project_id, ticket_number);
 
     CREATE INDEX IF NOT EXISTS task_tags_task_position_idx
       ON task_tags (task_id, position);
@@ -360,6 +387,7 @@ function rewriteLaneOnlySchema(database: Database.Database) {
           parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
           title TEXT NOT NULL,
           body TEXT NOT NULL DEFAULT '',
+          ticket_number INTEGER,
           position INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
@@ -372,11 +400,22 @@ function rewriteLaneOnlySchema(database: Database.Database) {
           parent_task_id,
           title,
           body,
+          ticket_number,
           position,
           created_at,
           updated_at
         )
-        SELECT id, project_id, lane_id, parent_task_id, title, body, position, created_at, updated_at
+        SELECT
+          id,
+          project_id,
+          lane_id,
+          parent_task_id,
+          title,
+          body,
+          ticket_number,
+          position,
+          created_at,
+          updated_at
         FROM tasks;
 
         DROP TABLE tasks;
@@ -460,6 +499,7 @@ export function createDatabase(sqlitePath: string): DatabaseServices {
   migrate(services.db, {
     migrationsFolder: DRIZZLE_MIGRATIONS_PATH
   });
+  backfillTicketIds(services.db);
 
   return services;
 }

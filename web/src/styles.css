@@ -2099,6 +2099,15 @@ textarea:focus {
   align-items: flex-start;
 }
 
+.task-card__ticket-id {
+  flex: 0 0 auto;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .task-card__title {
   margin: 0;
   flex: 1 1 auto;
