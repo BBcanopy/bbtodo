@@ -124,6 +124,7 @@ function createLegacyCompatTables(database: Database.Database) {
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       lane_id TEXT REFERENCES lanes(id) ON DELETE CASCADE,
+      parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
       title TEXT NOT NULL,
       body TEXT NOT NULL DEFAULT '',
       position INTEGER NOT NULL DEFAULT 0,
@@ -171,6 +172,11 @@ function ensureLegacyCompatColumns(database: Database.Database) {
   if (!taskColumns.has("position")) {
     database.exec("ALTER TABLE tasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0;");
   }
+  if (!taskColumns.has("parent_task_id")) {
+    database.exec(
+      "ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;"
+    );
+  }
 
   const taskTagColumns = getTableColumns(database, "task_tags");
   if (!taskTagColumns.has("color")) {
@@ -198,8 +204,8 @@ function ensureLegacyCompatIndexes(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS tasks_project_status_updated_at_idx
       ON tasks (project_id, status, updated_at);
 
-    CREATE INDEX IF NOT EXISTS tasks_project_lane_position_idx
-      ON tasks (project_id, lane_id, position);
+    CREATE INDEX IF NOT EXISTS tasks_project_lane_parent_position_idx
+      ON tasks (project_id, lane_id, parent_task_id, position);
 
     CREATE INDEX IF NOT EXISTS task_tags_task_position_idx
       ON task_tags (task_id, position);
@@ -232,8 +238,8 @@ function ensureLaneOnlyIndexes(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS lanes_project_position_idx
       ON lanes (project_id, position);
 
-    CREATE INDEX IF NOT EXISTS tasks_project_lane_position_idx
-      ON tasks (project_id, lane_id, position);
+    CREATE INDEX IF NOT EXISTS tasks_project_lane_parent_position_idx
+      ON tasks (project_id, lane_id, parent_task_id, position);
 
     CREATE INDEX IF NOT EXISTS task_tags_task_position_idx
       ON task_tags (task_id, position);
@@ -351,6 +357,7 @@ function rewriteLaneOnlySchema(database: Database.Database) {
           id TEXT PRIMARY KEY NOT NULL,
           project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
           lane_id TEXT REFERENCES lanes(id) ON DELETE CASCADE,
+          parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
           title TEXT NOT NULL,
           body TEXT NOT NULL DEFAULT '',
           position INTEGER NOT NULL DEFAULT 0,
@@ -358,8 +365,18 @@ function rewriteLaneOnlySchema(database: Database.Database) {
           updated_at TEXT NOT NULL
         );
 
-        INSERT INTO tasks__new (id, project_id, lane_id, title, body, position, created_at, updated_at)
-        SELECT id, project_id, lane_id, title, body, position, created_at, updated_at
+        INSERT INTO tasks__new (
+          id,
+          project_id,
+          lane_id,
+          parent_task_id,
+          title,
+          body,
+          position,
+          created_at,
+          updated_at
+        )
+        SELECT id, project_id, lane_id, parent_task_id, title, body, position, created_at, updated_at
         FROM tasks;
 
         DROP TABLE tasks;

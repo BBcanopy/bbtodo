@@ -61,6 +61,7 @@ export const taskResponseSchema = z.object({
   id: z.string(),
   projectId: z.string(),
   laneId: z.string().nullable(),
+  parentTaskId: z.string().nullable(),
   title: z.string(),
   body: z.string(),
   tags: taskTagsResponseSchema,
@@ -122,6 +123,7 @@ export const createTaskBodySchema = z.object({
   title: z.string().trim().min(1).max(240),
   body: z.string().max(40_000).optional(),
   laneId: z.string().uuid().optional(),
+  parentTaskId: z.string().uuid().optional(),
   tags: taskTagsInputSchema.optional()
 });
 
@@ -135,6 +137,7 @@ export const updateTaskBodySchema = z
     title: z.string().trim().min(1).max(240).optional(),
     body: z.string().max(40_000).optional(),
     laneId: z.string().uuid().optional(),
+    parentTaskId: z.string().uuid().nullable().optional(),
     tags: taskTagsInputSchema.optional(),
     position: z.number().int().nonnegative().optional()
   })
@@ -143,6 +146,7 @@ export const updateTaskBodySchema = z
       value.title !== undefined ||
       value.body !== undefined ||
       value.laneId !== undefined ||
+      value.parentTaskId !== undefined ||
       value.tags !== undefined ||
       value.position !== undefined,
     {
@@ -197,6 +201,7 @@ export function toTaskResponse(task: TaskRecord | TaskRecordWithTags) {
     id: task.id,
     projectId: task.projectId,
     laneId: task.laneId ?? null,
+    parentTaskId: task.parentTaskId ?? null,
     title: task.title,
     body: task.body,
     tags:

@@ -118,7 +118,9 @@ describe("database migrations", () => {
       const taskColumns = (
         services.database.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>
       ).map((column) => column.name);
-      expect(taskColumns).toEqual(expect.arrayContaining(["body", "lane_id", "position"]));
+      expect(taskColumns).toEqual(
+        expect.arrayContaining(["body", "lane_id", "parent_task_id", "position"])
+      );
       expect(taskColumns).not.toContain("status");
 
       const taskTagColumns = (
@@ -146,15 +148,17 @@ describe("database migrations", () => {
       ]);
 
       const migratedTask = services.database
-        .prepare("SELECT body, lane_id, position FROM tasks WHERE id = ?")
+        .prepare("SELECT body, lane_id, parent_task_id, position FROM tasks WHERE id = ?")
         .get("task-1") as {
         body: string;
         lane_id: string | null;
+        parent_task_id: string | null;
         position: number;
       };
       expect(migratedTask).toEqual({
         body: "",
         lane_id: lanes[0]?.id ?? null,
+        parent_task_id: null,
         position: 0
       });
 

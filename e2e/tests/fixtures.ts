@@ -157,6 +157,7 @@ export const tasks: Task[] = [
     createdAt: "2026-03-18T07:00:00.000Z",
     id: "task-1",
     laneId: laneId("project-1", "todo"),
+    parentTaskId: null,
     position: 0,
     projectId: "project-1",
     tags: [tag("backend", "sky"), tag("retry", "coral")],
@@ -168,6 +169,7 @@ export const tasks: Task[] = [
     createdAt: "2026-03-18T07:20:00.000Z",
     id: "task-2",
     laneId: laneId("project-1", "in_progress"),
+    parentTaskId: null,
     position: 0,
     projectId: "project-1",
     tags: [tag("observability", "slate"), tag("oidc", "orchid")],
@@ -179,6 +181,7 @@ export const tasks: Task[] = [
     createdAt: "2026-03-18T06:50:00.000Z",
     id: "task-3",
     laneId: laneId("project-1", "done"),
+    parentTaskId: null,
     position: 0,
     projectId: "project-1",
     tags: [tag("ops", "amber")],
@@ -190,6 +193,7 @@ export const tasks: Task[] = [
     createdAt: "2026-03-18T07:05:00.000Z",
     id: "task-4",
     laneId: laneId("project-1", "todo"),
+    parentTaskId: null,
     position: 1,
     projectId: "project-1",
     tags: [tag("copy", "moss")],
@@ -252,20 +256,59 @@ export async function mockAuthenticated(
       }));
   }
 
-  function sortTasksForProject(projectId: string, laneIdValue?: string) {
+  function compareTasks(left: Task, right: Task) {
+    if (left.position !== right.position) {
+      return left.position - right.position;
+    }
+
+    return left.updatedAt < right.updatedAt ? 1 : -1;
+  }
+
+  function listSiblingTasks(
+    projectId: string,
+    laneIdValue: string,
+    parentTaskId: string | null,
+    excludedTaskId?: string
+  ) {
     return taskState
       .filter(
         (task) =>
           task.projectId === projectId &&
-          (laneIdValue === undefined || task.laneId === laneIdValue)
+          task.id !== excludedTaskId &&
+          task.laneId === laneIdValue &&
+          task.parentTaskId === parentTaskId
       )
-      .sort((left, right) => {
-        if (left.position !== right.position) {
-          return left.position - right.position;
-        }
+      .sort(compareTasks);
+  }
 
-        return left.updatedAt < right.updatedAt ? 1 : -1;
+  function listChildTasks(parentTaskId: string) {
+    return taskState
+      .filter((task) => task.parentTaskId === parentTaskId)
+      .sort(compareTasks);
+  }
+
+  function taskHasChildren(taskId: string) {
+    return taskState.some((task) => task.parentTaskId === taskId);
+  }
+
+  function listTasksForBoard(projectId: string) {
+    const project = getProject(projectId);
+    if (!project) {
+      return [];
+    }
+
+    const orderedTasks: Task[] = [];
+
+    [...project.laneSummaries]
+      .sort((left, right) => left.position - right.position)
+      .forEach((lane) => {
+        listSiblingTasks(projectId, lane.id, null).forEach((task) => {
+          orderedTasks.push(task);
+          listChildTasks(task.id).forEach((childTask) => orderedTasks.push(childTask));
+        });
       });
+
+    return orderedTasks;
   }
 
   function syncAllProjects() {
@@ -318,39 +361,45 @@ export async function mockAuthenticated(
     });
   }
 
-  function reindexLane(projectId: string, laneIdValue: string) {
-    sortTasksForProject(projectId, laneIdValue).forEach((task, index) => {
+  function reindexTaskGroup(projectId: string, laneIdValue: string, parentTaskId: string | null) {
+    listSiblingTasks(projectId, laneIdValue, parentTaskId).forEach((task, index) => {
       task.position = index;
     });
   }
 
-  function moveTask(task: Task, targetLaneId: string, targetPosition: number) {
-    const sourceLaneId = task.laneId;
-
-    if (sourceLaneId && sourceLaneId !== targetLaneId) {
-      taskState
-        .filter(
-          (candidate) =>
-            candidate.projectId === task.projectId &&
-            candidate.laneId === sourceLaneId &&
-            candidate.id !== task.id
-        )
-        .sort((left, right) => left.position - right.position)
-        .forEach((candidate, index) => {
-          candidate.position = index;
-        });
+  function moveTask(
+    task: Task,
+    targetLaneId: string,
+    targetParentTaskId: string | null,
+    targetPosition: number
+  ) {
+    if (!task.laneId) {
+      return;
     }
 
-    const targetTasks = sortTasksForProject(task.projectId, targetLaneId).filter(
-      (candidate) => candidate.id !== task.id
-    );
-    const clampedPosition = Math.max(0, Math.min(targetPosition, targetTasks.length));
+    const sourceLaneId = task.laneId;
+    const sourceParentTaskId = task.parentTaskId;
+    const sourceSiblings = listSiblingTasks(task.projectId, sourceLaneId, sourceParentTaskId, task.id);
+    const targetSiblings = listSiblingTasks(task.projectId, targetLaneId, targetParentTaskId, task.id);
+    const clampedPosition = Math.max(0, Math.min(targetPosition, targetSiblings.length));
 
-    targetTasks.splice(clampedPosition, 0, task);
-    targetTasks.forEach((candidate, index) => {
-      candidate.laneId = targetLaneId;
+    sourceSiblings.forEach((candidate, index) => {
       candidate.position = index;
     });
+
+    const reorderedTargets = [...targetSiblings];
+    reorderedTargets.splice(clampedPosition, 0, task);
+    reorderedTargets.forEach((candidate, index) => {
+      candidate.laneId = targetLaneId;
+      candidate.parentTaskId = candidate.id === task.id ? targetParentTaskId : candidate.parentTaskId;
+      candidate.position = index;
+    });
+
+    if (task.parentTaskId === null && sourceLaneId !== targetLaneId) {
+      listChildTasks(task.id).forEach((childTask) => {
+        childTask.laneId = targetLaneId;
+      });
+    }
   }
 
   function moveLane(projectId: string, laneIdValue: string, targetPosition: number) {
@@ -405,22 +454,22 @@ export async function mockAuthenticated(
       return { status: "destination_not_found" as const };
     }
 
-    const laneTasks = sortTasksForProject(projectId, laneIdValue);
+    const laneTasks = taskState.filter((task) => task.projectId === projectId && task.laneId === laneIdValue);
     if (laneTasks.length > 0 && !destinationLane) {
       return { status: "destination_required" as const };
     }
 
     if (destinationLane) {
-      const destinationTasks = sortTasksForProject(projectId, destinationLane.id);
-      const movedTaskIds = new Set(laneTasks.map((task) => task.id));
-      const orderedTasks = [...destinationTasks, ...laneTasks];
+      const sourceTopLevelTasks = listSiblingTasks(projectId, laneIdValue, null);
+      const destinationTopLevelTasks = listSiblingTasks(projectId, destinationLane.id, null);
 
-      orderedTasks.forEach((task, index) => {
+      laneTasks.forEach((task) => {
         task.laneId = destinationLane.id;
+        task.updatedAt = "2026-03-18T08:16:00.000Z";
+      });
+
+      [...destinationTopLevelTasks, ...sourceTopLevelTasks].forEach((task, index) => {
         task.position = index;
-        if (movedTaskIds.has(task.id)) {
-          task.updatedAt = "2026-03-18T08:16:00.000Z";
-        }
       });
     }
 
@@ -451,6 +500,7 @@ export async function mockAuthenticated(
           destinationLaneId?: string;
           laneId?: string;
           name?: string;
+          parentTaskId?: string | null;
           position?: number;
           tags?: TaskTag[];
           theme?: UserTheme;
@@ -641,7 +691,7 @@ export async function mockAuthenticated(
         return;
       }
 
-      await fulfillJson(route, 200, sortTasksForProject(projectId));
+      await fulfillJson(route, 200, listTasksForBoard(projectId));
       return;
     }
 
@@ -653,18 +703,41 @@ export async function mockAuthenticated(
         return;
       }
 
-      const targetLane = project.laneSummaries.find((lane) => lane.id === body?.laneId) ?? project.laneSummaries[0];
+      const parentTask =
+        body?.parentTaskId === undefined
+          ? null
+          : taskState.find(
+              (candidate) => candidate.projectId === projectId && candidate.id === body.parentTaskId
+            ) ?? null;
+
+      if (body?.parentTaskId !== undefined && !parentTask) {
+        await fulfillJson(route, 404, { message: "Parent task not found." });
+        return;
+      }
+
+      if (parentTask?.parentTaskId !== null) {
+        await fulfillJson(route, 400, { message: "Subtasks can only be added under top-level tasks." });
+        return;
+      }
+
+      const targetLane =
+        parentTask?.laneId
+          ? project.laneSummaries.find((lane) => lane.id === parentTask.laneId) ?? null
+          : project.laneSummaries.find((lane) => lane.id === body?.laneId) ?? project.laneSummaries[0] ?? null;
       if (!targetLane) {
         await fulfillJson(route, 404, { message: "Project or lane not found." });
         return;
       }
+
+      const parentTaskId = parentTask?.id ?? null;
 
       const createdTask: Task = {
         body: body?.body ?? "",
         createdAt: "2026-03-18T08:00:00.000Z",
         id: `task-${nextTaskId++}`,
         laneId: targetLane.id,
-        position: sortTasksForProject(projectId, targetLane.id).length,
+        parentTaskId,
+        position: listSiblingTasks(projectId, targetLane.id, parentTaskId).length,
         projectId,
         tags: body?.tags ?? [],
         title: body?.title ?? "Untitled task",
@@ -708,8 +781,29 @@ export async function mockAuthenticated(
       }
 
       const [removedTask] = taskState.splice(taskIndex, 1);
-      if (removedTask.laneId) {
-        reindexLane(projectId, removedTask.laneId);
+      if (!removedTask.laneId) {
+        syncProject(projectId);
+        await fulfillJson(route, 204, null);
+        return;
+      }
+
+      const childTasks = listChildTasks(removedTask.id);
+      if (removedTask.parentTaskId !== null) {
+        reindexTaskGroup(projectId, removedTask.laneId, removedTask.parentTaskId);
+      } else if (childTasks.length > 0) {
+        const topLevelTasks = listSiblingTasks(projectId, removedTask.laneId, null);
+        childTasks.forEach((childTask) => {
+          childTask.parentTaskId = null;
+          childTask.updatedAt = "2026-03-18T08:05:00.000Z";
+        });
+
+        const insertIndex = Math.max(0, Math.min(removedTask.position, topLevelTasks.length));
+        topLevelTasks.splice(insertIndex, 0, ...childTasks);
+        topLevelTasks.forEach((task, index) => {
+          task.position = index;
+        });
+      } else {
+        reindexTaskGroup(projectId, removedTask.laneId, null);
       }
       syncProject(projectId);
       await fulfillJson(route, 204, null);
@@ -726,18 +820,53 @@ export async function mockAuthenticated(
         return;
       }
 
+      const nextParentTaskId =
+        body?.parentTaskId === undefined && task.parentTaskId !== null && body?.laneId !== undefined
+          ? null
+          : body?.parentTaskId === undefined
+            ? task.parentTaskId
+            : body.parentTaskId;
+      const parentTask =
+        nextParentTaskId === null
+          ? null
+          : taskState.find(
+              (candidate) => candidate.projectId === projectId && candidate.id === nextParentTaskId
+            ) ?? null;
+
+      if (nextParentTaskId !== null && !parentTask) {
+        await fulfillJson(route, 404, { message: "Parent task not found." });
+        return;
+      }
+
+      if (
+        (parentTask && (parentTask.parentTaskId !== null || parentTask.id === task.id)) ||
+        (nextParentTaskId !== null && taskHasChildren(task.id))
+      ) {
+        await fulfillJson(route, 400, { message: "Subtasks can only be added under top-level tasks." });
+        return;
+      }
+
       const nextLane =
-        (body?.laneId ? project.laneSummaries.find((lane) => lane.id === body.laneId) : undefined) ??
-        project.laneSummaries.find((lane) => lane.id === task.laneId);
+        parentTask?.laneId
+          ? project.laneSummaries.find((lane) => lane.id === parentTask.laneId) ?? null
+          : (body?.laneId ? project.laneSummaries.find((lane) => lane.id === body.laneId) : undefined) ??
+            project.laneSummaries.find((lane) => lane.id === task.laneId) ??
+            null;
       if (!nextLane) {
         await fulfillJson(route, 404, { message: "Task or lane not found." });
         return;
       }
 
-      const isTaskMoveRequest = body?.laneId !== undefined || body?.position !== undefined;
+      const isTaskMoveRequest =
+        body?.laneId !== undefined || body?.parentTaskId !== undefined || body?.position !== undefined;
 
       if (isTaskMoveRequest) {
-        moveTask(task, nextLane.id, body?.position ?? sortTasksForProject(projectId, nextLane.id).length);
+        moveTask(
+          task,
+          nextLane.id,
+          parentTask?.id ?? null,
+          body?.position ?? listSiblingTasks(projectId, nextLane.id, parentTask?.id ?? null).length
+        );
       }
 
       task.body = body?.body ?? task.body;

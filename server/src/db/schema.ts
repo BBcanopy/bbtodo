@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { type AnySQLiteColumn, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const timestamps = {
   createdAt: text("created_at").notNull(),
@@ -81,13 +81,21 @@ export const tasks = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     laneId: text("lane_id").references(() => lanes.id, { onDelete: "cascade" }),
+    parentTaskId: text("parent_task_id").references((): AnySQLiteColumn => tasks.id, {
+      onDelete: "set null"
+    }),
     title: text("title").notNull(),
     body: text("body").notNull().default(""),
     position: integer("position").notNull().default(0),
     ...timestamps
   },
   (table) => [
-    index("tasks_project_lane_position_idx").on(table.projectId, table.laneId, table.position)
+    index("tasks_project_lane_parent_position_idx").on(
+      table.projectId,
+      table.laneId,
+      table.parentTaskId,
+      table.position
+    )
   ]
 );
 

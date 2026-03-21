@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, max, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, max, ne } from "drizzle-orm";
 
 import {
   type DatabaseClient,
@@ -174,6 +174,14 @@ function getProjectLaneById(db: DatabaseClient, projectId: string, laneId: strin
     .get();
 }
 
+function getProjectTaskById(db: DatabaseClient, projectId: string, taskId: string) {
+  return db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)))
+    .get();
+}
+
 function resolveTaskLane(
   db: DatabaseClient,
   input: {
@@ -193,11 +201,33 @@ function resolveTaskLane(
   return listProjectLanesByProjectId(db, input.projectId)[0] ?? null;
 }
 
-function getLaneTaskIds(db: DatabaseClient, projectId: string, laneId: string, excludedTaskId?: string) {
-  const filters = [eq(tasks.projectId, projectId), eq(tasks.laneId, laneId)];
+function compareTaskRecords(left: TaskRecord, right: TaskRecord) {
+  if (left.position !== right.position) {
+    return left.position - right.position;
+  }
 
-  if (excludedTaskId) {
-    filters.push(ne(tasks.id, excludedTaskId));
+  return left.updatedAt < right.updatedAt ? 1 : -1;
+}
+
+function listSiblingTaskIds(
+  db: DatabaseClient,
+  input: {
+    excludedTaskId?: string;
+    laneId: string;
+    parentTaskId: string | null;
+    projectId: string;
+  }
+) {
+  const filters = [eq(tasks.projectId, input.projectId), eq(tasks.laneId, input.laneId)];
+
+  if (input.parentTaskId === null) {
+    filters.push(isNull(tasks.parentTaskId));
+  } else {
+    filters.push(eq(tasks.parentTaskId, input.parentTaskId));
+  }
+
+  if (input.excludedTaskId) {
+    filters.push(ne(tasks.id, input.excludedTaskId));
   }
 
   return db
@@ -211,11 +241,115 @@ function getLaneTaskIds(db: DatabaseClient, projectId: string, laneId: string, e
     .map((task) => task.id);
 }
 
-function reorderLaneTasks(
+function listChildTaskIds(db: DatabaseClient, parentTaskId: string) {
+  return db
+    .select({
+      id: tasks.id
+    })
+    .from(tasks)
+    .where(eq(tasks.parentTaskId, parentTaskId))
+    .orderBy(asc(tasks.position), desc(tasks.updatedAt))
+    .all()
+    .map((task) => task.id);
+}
+
+function taskHasChildren(db: DatabaseClient, taskId: string) {
+  return listChildTaskIds(db, taskId).length > 0;
+}
+
+function resolveTaskPlacement(
+  db: DatabaseClient,
+  input: {
+    laneId?: string;
+    parentTaskId?: string | null;
+    projectId: string;
+  },
+  currentTask?: TaskRecord
+):
+  | {
+      lane: LaneRecord;
+      parentTask: TaskRecord | null;
+      status: "ok";
+    }
+  | {
+      status: "invalid_parent" | "lane_not_found" | "parent_not_found";
+    } {
+  const nextParentTaskId =
+    input.parentTaskId === undefined ? currentTask?.parentTaskId ?? null : input.parentTaskId;
+
+  if (nextParentTaskId !== null) {
+    const parentTask = getProjectTaskById(db, input.projectId, nextParentTaskId);
+    if (!parentTask) {
+      return {
+        status: "parent_not_found"
+      };
+    }
+
+    if (currentTask && parentTask.id === currentTask.id) {
+      return {
+        status: "invalid_parent"
+      };
+    }
+
+    if (parentTask.parentTaskId !== null) {
+      return {
+        status: "invalid_parent"
+      };
+    }
+
+    if (currentTask && taskHasChildren(db, currentTask.id)) {
+      return {
+        status: "invalid_parent"
+      };
+    }
+
+    if (!parentTask.laneId) {
+      return {
+        status: "invalid_parent"
+      };
+    }
+
+    const lane = getProjectLaneById(db, input.projectId, parentTask.laneId);
+    if (!lane) {
+      return {
+        status: "lane_not_found"
+      };
+    }
+
+    return {
+      lane,
+      parentTask,
+      status: "ok"
+    };
+  }
+
+  const lane = resolveTaskLane(
+    db,
+    {
+      laneId: input.laneId,
+      projectId: input.projectId
+    },
+    currentTask
+  );
+  if (!lane) {
+    return {
+      status: "lane_not_found"
+    };
+  }
+
+  return {
+    lane,
+    parentTask: null,
+    status: "ok"
+  };
+}
+
+function reorderTaskSiblings(
   db: DatabaseClient,
   input: {
     projectId: string;
     taskId: string;
+    targetParentTaskId: string | null;
     targetLaneId: string;
     targetPosition: number;
   }
@@ -225,23 +359,23 @@ function reorderLaneTasks(
     return;
   }
 
-  if (task.laneId === input.targetLaneId) {
-    const laneTaskIds = getLaneTaskIds(db, input.projectId, input.targetLaneId, task.id);
-    const clampedPosition = Math.max(0, Math.min(input.targetPosition, laneTaskIds.length));
-    laneTaskIds.splice(clampedPosition, 0, task.id);
+  const sourceLaneId = task.laneId;
+  const sourceParentTaskId = task.parentTaskId;
+  const sourceTaskIds = listSiblingTaskIds(db, {
+    excludedTaskId: task.id,
+    laneId: sourceLaneId,
+    parentTaskId: sourceParentTaskId,
+    projectId: input.projectId
+  });
+  const targetTaskIds = listSiblingTaskIds(db, {
+    excludedTaskId: task.id,
+    laneId: input.targetLaneId,
+    parentTaskId: input.targetParentTaskId,
+    projectId: input.projectId
+  });
+  const clampedPosition = Math.max(0, Math.min(input.targetPosition, targetTaskIds.length));
+  targetTaskIds.splice(clampedPosition, 0, task.id);
 
-    laneTaskIds.forEach((taskId, index) => {
-      db
-        .update(tasks)
-        .set({ position: index })
-        .where(eq(tasks.id, taskId))
-        .run();
-    });
-
-    return;
-  }
-
-  const sourceTaskIds = getLaneTaskIds(db, input.projectId, task.laneId, task.id);
   sourceTaskIds.forEach((taskId, index) => {
     db
       .update(tasks)
@@ -250,17 +384,80 @@ function reorderLaneTasks(
       .run();
   });
 
-  const targetTaskIds = getLaneTaskIds(db, input.projectId, input.targetLaneId);
-  const clampedPosition = Math.max(0, Math.min(input.targetPosition, targetTaskIds.length));
-  targetTaskIds.splice(clampedPosition, 0, task.id);
-
   targetTaskIds.forEach((taskId, index) => {
     db
       .update(tasks)
       .set({ position: index })
       .where(eq(tasks.id, taskId))
       .run();
+  });
+}
+
+function moveSubtasksToLane(db: DatabaseClient, parentTaskId: string, laneId: string, updatedAt: string) {
+  db
+    .update(tasks)
+    .set({
+      laneId,
+      updatedAt
+    })
+    .where(eq(tasks.parentTaskId, parentTaskId))
+    .run();
+}
+
+function orderTasksForProject(taskRows: TaskRecord[], projectLanes: LaneRecord[]) {
+  const tasksById = new Map(taskRows.map((task) => [task.id, task]));
+  const topLevelByLane = new Map<string, TaskRecord[]>();
+  const subtasksByParent = new Map<string, TaskRecord[]>();
+  const orderedTasks: TaskRecord[] = [];
+  const includedTaskIds = new Set<string>();
+
+  taskRows.forEach((task) => {
+    if (task.parentTaskId === null) {
+      if (!task.laneId) {
+        return;
+      }
+
+      const laneTasks = topLevelByLane.get(task.laneId) ?? [];
+      laneTasks.push(task);
+      topLevelByLane.set(task.laneId, laneTasks);
+      return;
+    }
+
+    const childTasks = subtasksByParent.get(task.parentTaskId) ?? [];
+    childTasks.push(task);
+    subtasksByParent.set(task.parentTaskId, childTasks);
+  });
+
+  projectLanes.forEach((lane) => {
+    const laneTasks = (topLevelByLane.get(lane.id) ?? []).sort(compareTaskRecords);
+    laneTasks.forEach((task) => {
+      orderedTasks.push(task);
+      includedTaskIds.add(task.id);
+
+      const childTasks = (subtasksByParent.get(task.id) ?? []).sort(compareTaskRecords);
+      childTasks.forEach((childTask) => {
+        orderedTasks.push(childTask);
+        includedTaskIds.add(childTask.id);
+      });
     });
+  });
+
+  taskRows
+    .filter((task) => !includedTaskIds.has(task.id))
+    .sort(compareTaskRecords)
+    .forEach((task) => {
+      if (task.parentTaskId !== null && !tasksById.has(task.parentTaskId)) {
+        orderedTasks.push({
+          ...task,
+          parentTaskId: null
+        });
+        return;
+      }
+
+      orderedTasks.push(task);
+    });
+
+  return orderedTasks;
 }
 
 function createProjectLanesFromTemplates(
@@ -629,29 +826,27 @@ export function deleteOwnedLane(
 
   db.transaction((tx) => {
     if (destinationLane) {
-      const destinationTaskIds = tx
-        .select({
-          id: tasks.id
-        })
-        .from(tasks)
-        .where(and(eq(tasks.projectId, input.projectId), eq(tasks.laneId, destinationLane.id)))
-        .orderBy(asc(tasks.position), desc(tasks.updatedAt))
-        .all()
-        .map((task) => task.id);
-
-      laneTasks.forEach((task) => {
-        tx
-          .update(tasks)
-          .set({
-            laneId: destinationLane.id,
-            updatedAt
-          })
-          .where(eq(tasks.id, task.id))
-          .run();
-        destinationTaskIds.push(task.id);
+      const sourceTopLevelTaskIds = listSiblingTaskIds(tx, {
+        laneId: lane.id,
+        parentTaskId: null,
+        projectId: input.projectId
+      });
+      const destinationTopLevelTaskIds = listSiblingTaskIds(tx, {
+        laneId: destinationLane.id,
+        parentTaskId: null,
+        projectId: input.projectId
       });
 
-      destinationTaskIds.forEach((taskId, index) => {
+      tx
+        .update(tasks)
+        .set({
+          laneId: destinationLane.id,
+          updatedAt
+        })
+        .where(and(eq(tasks.projectId, input.projectId), eq(tasks.laneId, lane.id)))
+        .run();
+
+      [...destinationTopLevelTaskIds, ...sourceTopLevelTaskIds].forEach((taskId, index) => {
         tx
           .update(tasks)
           .set({
@@ -709,10 +904,9 @@ export function listTasksForProject(
     .select()
     .from(tasks)
     .where(eq(tasks.projectId, input.projectId))
-    .orderBy(asc(tasks.position), desc(tasks.updatedAt))
     .all();
 
-  return attachTagsToTasks(db, taskRows);
+  return attachTagsToTasks(db, orderTasksForProject(taskRows, listProjectLanesByProjectId(db, input.projectId)));
 }
 
 export function createTask(
@@ -723,38 +917,45 @@ export function createTask(
     title: string;
     body?: string;
     laneId?: string;
+    parentTaskId?: string;
     tags?: TaskTagInput[];
   }
 ) {
   const project = getOwnedProject(db, input.userId, input.projectId);
   if (!project) {
-    return null;
+    return {
+      status: "project_not_found" as const
+    };
   }
 
-  const lane = resolveTaskLane(db, {
+  const placement = resolveTaskPlacement(db, {
     laneId: input.laneId,
+    parentTaskId: input.parentTaskId,
     projectId: input.projectId
   });
-  if (!lane) {
-    return null;
+  if (placement.status !== "ok") {
+    return {
+      status: placement.status
+    };
   }
 
-  const lastPosition = db
-    .select({
-      value: max(tasks.position)
-    })
-    .from(tasks)
-    .where(and(eq(tasks.projectId, input.projectId), eq(tasks.laneId, lane.id)))
-    .get();
+  const parentTaskId = placement.parentTask?.id ?? null;
+
+  const lastPosition = listSiblingTaskIds(db, {
+    laneId: placement.lane.id,
+    parentTaskId,
+    projectId: input.projectId
+  }).length;
 
   const now = new Date().toISOString();
   const task = {
     id: crypto.randomUUID(),
     projectId: input.projectId,
-    laneId: lane.id,
+    laneId: placement.lane.id,
+    parentTaskId,
     title: input.title,
     body: input.body ?? "",
-    position: (lastPosition?.value ?? -1) + 1,
+    position: lastPosition,
     createdAt: now,
     updatedAt: now
   };
@@ -763,8 +964,15 @@ export function createTask(
   replaceTaskTags(db, task.id, input.tags ?? []);
   syncTaskTagColorsForUser(db, input.userId, input.tags);
   touchProject(db, input.projectId, now);
+  const createdTask = getTaskWithTags(db, task.id);
+  if (!createdTask) {
+    throw new Error(`Failed to load created task ${task.id}.`);
+  }
 
-  return getTaskWithTags(db, task.id);
+  return {
+    status: "created" as const,
+    task: createdTask
+  };
 }
 
 export function getOwnedTask(
@@ -796,6 +1004,7 @@ export function updateOwnedTask(
   input: {
     body?: string;
     laneId?: string;
+    parentTaskId?: string | null;
     position?: number;
     projectId: string;
     taskId: string;
@@ -806,38 +1015,54 @@ export function updateOwnedTask(
 ) {
   const task = getOwnedTask(db, input);
   if (!task) {
-    return null;
+    return {
+      status: "task_not_found" as const
+    };
   }
 
-  const nextLane = resolveTaskLane(
+  const nextParentTaskIdInput =
+    input.parentTaskId === undefined && task.parentTaskId !== null && input.laneId !== undefined
+      ? null
+      : input.parentTaskId;
+
+  const placement = resolveTaskPlacement(
     db,
     {
       laneId: input.laneId,
+      parentTaskId: nextParentTaskIdInput,
       projectId: input.projectId
     },
     task
   );
-  if (!nextLane) {
-    return null;
+  if (placement.status !== "ok") {
+    return {
+      status: placement.status
+    };
   }
 
-  const shouldReorder = input.position !== undefined || nextLane.id !== task.laneId;
+  const nextParentTaskId = placement.parentTask?.id ?? null;
+  const shouldReorder =
+    input.position !== undefined ||
+    placement.lane.id !== task.laneId ||
+    nextParentTaskId !== task.parentTaskId;
   if (shouldReorder) {
-    const laneTaskIds = getLaneTaskIds(
-      db,
-      input.projectId,
-      nextLane.id,
-      nextLane.id === task.laneId ? task.id : undefined
-    );
+    const laneTaskIds = listSiblingTaskIds(db, {
+      excludedTaskId:
+        placement.lane.id === task.laneId && nextParentTaskId === task.parentTaskId ? task.id : undefined,
+      laneId: placement.lane.id,
+      parentTaskId: nextParentTaskId,
+      projectId: input.projectId
+    });
     const targetPosition = Math.max(
       0,
       Math.min(input.position ?? laneTaskIds.length, laneTaskIds.length)
     );
 
-    reorderLaneTasks(db, {
+    reorderTaskSiblings(db, {
       projectId: input.projectId,
       taskId: task.id,
-      targetLaneId: nextLane.id,
+      targetLaneId: placement.lane.id,
+      targetParentTaskId: nextParentTaskId,
       targetPosition
     });
   }
@@ -848,12 +1073,17 @@ export function updateOwnedTask(
     .update(tasks)
     .set({
       body: input.body ?? task.body,
-      laneId: nextLane.id,
+      laneId: placement.lane.id,
+      parentTaskId: nextParentTaskId,
       title: input.title ?? task.title,
       updatedAt
     })
     .where(eq(tasks.id, task.id))
     .run();
+
+  if (task.parentTaskId === null && placement.lane.id !== task.laneId) {
+    moveSubtasksToLane(db, task.id, placement.lane.id, updatedAt);
+  }
 
   if (input.tags !== undefined) {
     replaceTaskTags(db, task.id, input.tags);
@@ -861,8 +1091,15 @@ export function updateOwnedTask(
   }
 
   touchProject(db, input.projectId, updatedAt);
+  const updatedTask = getTaskWithTags(db, task.id);
+  if (!updatedTask) {
+    throw new Error(`Failed to load updated task ${task.id}.`);
+  }
 
-  return getTaskWithTags(db, task.id);
+  return {
+    status: "updated" as const,
+    task: updatedTask
+  };
 }
 
 export function deleteOwnedTask(
@@ -878,18 +1115,78 @@ export function deleteOwnedTask(
     return false;
   }
 
-  db.delete(tasks).where(eq(tasks.id, task.id)).run();
+  const updatedAt = new Date().toISOString();
+  const childTaskIds = listChildTaskIds(db, task.id);
 
-  if (task.laneId) {
-    getLaneTaskIds(db, input.projectId, task.laneId).forEach((taskId, index) => {
-      db
+  db.transaction((tx) => {
+    if (!task.laneId) {
+      tx.delete(tasks).where(eq(tasks.id, task.id)).run();
+    } else if (task.parentTaskId !== null) {
+      tx.delete(tasks).where(eq(tasks.id, task.id)).run();
+
+      listSiblingTaskIds(tx, {
+        laneId: task.laneId,
+        parentTaskId: task.parentTaskId,
+        projectId: input.projectId
+      }).forEach((taskId, index) => {
+        tx
+          .update(tasks)
+          .set({ position: index })
+          .where(eq(tasks.id, taskId))
+          .run();
+      });
+    } else if (childTaskIds.length > 0) {
+      const topLevelTaskIds = listSiblingTaskIds(tx, {
+        excludedTaskId: task.id,
+        laneId: task.laneId,
+        parentTaskId: null,
+        projectId: input.projectId
+      });
+      const insertIndex = Math.max(0, Math.min(task.position, topLevelTaskIds.length));
+
+      tx
         .update(tasks)
-        .set({ position: index })
-        .where(eq(tasks.id, taskId))
+        .set({
+          parentTaskId: null,
+          updatedAt
+        })
+        .where(eq(tasks.parentTaskId, task.id))
         .run();
-    });
-  }
 
-  touchProject(db, input.projectId, new Date().toISOString());
+      topLevelTaskIds.splice(insertIndex, 0, ...childTaskIds);
+      topLevelTaskIds.forEach((taskId, index) => {
+        tx
+          .update(tasks)
+          .set({ position: index })
+          .where(eq(tasks.id, taskId))
+          .run();
+      });
+
+      tx.delete(tasks).where(eq(tasks.id, task.id)).run();
+    } else {
+      tx.delete(tasks).where(eq(tasks.id, task.id)).run();
+
+      listSiblingTaskIds(tx, {
+        laneId: task.laneId,
+        parentTaskId: null,
+        projectId: input.projectId
+      }).forEach((taskId, index) => {
+        tx
+          .update(tasks)
+          .set({ position: index })
+          .where(eq(tasks.id, taskId))
+          .run();
+      });
+    }
+
+    tx
+      .update(projects)
+      .set({
+        updatedAt
+      })
+      .where(eq(projects.id, input.projectId))
+      .run();
+  });
+
   return true;
 }

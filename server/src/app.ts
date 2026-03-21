@@ -949,6 +949,7 @@ export function buildApp(options: {
       params: projectParamsSchema,
       security: apiDocsSecurity,
       response: {
+        400: errorResponseSchema,
         201: taskResponseSchema,
         401: errorResponseSchema,
         404: errorResponseSchema
@@ -967,15 +968,29 @@ export function buildApp(options: {
         title: request.body.title.trim(),
         body: request.body.body,
         laneId: request.body.laneId,
+        parentTaskId: request.body.parentTaskId,
         tags: request.body.tags
       });
-      if (!task) {
+      if (task.status === "project_not_found" || task.status === "lane_not_found" || task.status === "parent_not_found") {
         return reply.status(404).send({
-          message: "Project or lane not found."
+          message:
+            task.status === "project_not_found" || task.status === "lane_not_found"
+              ? "Project or lane not found."
+              : "Parent task not found."
         });
       }
 
-      return reply.status(201).send(toTaskResponse(task));
+      if (task.status === "invalid_parent") {
+        return reply.status(400).send({
+          message: "Subtasks can only be added under top-level tasks."
+        });
+      }
+
+      if (task.status !== "created") {
+        throw new Error(`Unexpected create task status: ${task.status}`);
+      }
+
+      return reply.status(201).send(toTaskResponse(task.task));
     }
   });
 
@@ -987,6 +1002,7 @@ export function buildApp(options: {
       params: taskParamsSchema,
       security: apiDocsSecurity,
       response: {
+        400: errorResponseSchema,
         200: taskResponseSchema,
         401: errorResponseSchema,
         404: errorResponseSchema
@@ -1006,16 +1022,32 @@ export function buildApp(options: {
         title: request.body.title?.trim(),
         body: request.body.body,
         laneId: request.body.laneId,
+        parentTaskId: request.body.parentTaskId,
         tags: request.body.tags,
         position: request.body.position
       });
-      if (!task) {
+      if (
+        task.status === "task_not_found" ||
+        task.status === "lane_not_found" ||
+        task.status === "parent_not_found"
+      ) {
         return reply.status(404).send({
-          message: "Task or lane not found."
+          message:
+            task.status === "parent_not_found" ? "Parent task not found." : "Task or lane not found."
         });
       }
 
-      return toTaskResponse(task);
+      if (task.status === "invalid_parent") {
+        return reply.status(400).send({
+          message: "Subtasks can only be added under top-level tasks."
+        });
+      }
+
+      if (task.status !== "updated") {
+        throw new Error(`Unexpected update task status: ${task.status}`);
+      }
+
+      return toTaskResponse(task.task);
     }
   });
 

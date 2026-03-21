@@ -201,6 +201,321 @@ describe("projects and tasks API", () => {
     expect(afterDeleteListResponse.json()).toEqual([]);
   });
 
+  it("supports one-level subtasks and promotes them when a parent is deleted", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const createProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Subtask board"
+      }
+    });
+    const project = createProjectResponse.json();
+    const todoLane = project.laneSummaries[0];
+    const inProgressLane = project.laneSummaries[1];
+
+    const parentTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Parent task"
+      }
+    });
+    const siblingTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Sibling task"
+      }
+    });
+
+    const parentTask = parentTaskResponse.json();
+    const siblingTask = siblingTaskResponse.json();
+
+    const createSubtaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Child task",
+        parentTaskId: parentTask.id
+      }
+    });
+
+    expect(createSubtaskResponse.statusCode).toBe(201);
+    const childTask = createSubtaskResponse.json();
+    expect(childTask).toMatchObject({
+      laneId: todoLane.id,
+      parentTaskId: parentTask.id,
+      position: 0,
+      title: "Child task"
+    });
+
+    const nestedSubtaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Too deep",
+        parentTaskId: childTask.id
+      }
+    });
+
+    expect(nestedSubtaskResponse.statusCode).toBe(400);
+
+    const moveChildToParentLaneResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/tasks/${siblingTask.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        parentTaskId: parentTask.id
+      }
+    });
+
+    expect(moveChildToParentLaneResponse.statusCode).toBe(200);
+    expect(moveChildToParentLaneResponse.json()).toMatchObject({
+      laneId: todoLane.id,
+      parentTaskId: parentTask.id,
+      position: 1
+    });
+
+    const moveParentResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/tasks/${parentTask.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        laneId: inProgressLane.id
+      }
+    });
+
+    expect(moveParentResponse.statusCode).toBe(200);
+    expect(moveParentResponse.json()).toMatchObject({
+      laneId: inProgressLane.id,
+      parentTaskId: null
+    });
+
+    const listedTasksResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(listedTasksResponse.statusCode).toBe(200);
+    expect(listedTasksResponse.json()).toEqual([
+      expect.objectContaining({
+        id: parentTask.id,
+        laneId: inProgressLane.id,
+        parentTaskId: null,
+        position: 0
+      }),
+      expect.objectContaining({
+        id: childTask.id,
+        laneId: inProgressLane.id,
+        parentTaskId: parentTask.id,
+        position: 0
+      }),
+      expect.objectContaining({
+        id: siblingTask.id,
+        laneId: inProgressLane.id,
+        parentTaskId: parentTask.id,
+        position: 1
+      })
+    ]);
+
+    const projectSummaryResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(projectSummaryResponse.statusCode).toBe(200);
+    expect(projectSummaryResponse.json()[0].laneSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: todoLane.id, taskCount: 0 }),
+        expect.objectContaining({ id: inProgressLane.id, taskCount: 3 })
+      ])
+    );
+
+    const invalidParentMoveResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/tasks/${parentTask.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        parentTaskId: childTask.id
+      }
+    });
+
+    expect(invalidParentMoveResponse.statusCode).toBe(400);
+
+    const deleteParentResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}/tasks/${parentTask.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(deleteParentResponse.statusCode).toBe(204);
+
+    const tasksAfterDeleteResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(tasksAfterDeleteResponse.statusCode).toBe(200);
+    expect(tasksAfterDeleteResponse.json()).toEqual([
+      expect.objectContaining({
+        id: childTask.id,
+        laneId: inProgressLane.id,
+        parentTaskId: null,
+        position: 0
+      }),
+      expect.objectContaining({
+        id: siblingTask.id,
+        laneId: inProgressLane.id,
+        parentTaskId: null,
+        position: 1
+      })
+    ]);
+  });
+
+  it("unnests a subtask when a lane-only move omits parentTaskId", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const createProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Lane-only move board"
+      }
+    });
+    const project = createProjectResponse.json();
+    const todoLane = project.laneSummaries[0];
+    const inProgressLane = project.laneSummaries[1];
+
+    const parentTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Parent task"
+      }
+    });
+    const childTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Child task",
+        parentTaskId: parentTaskResponse.json().id
+      }
+    });
+
+    const childTask = childTaskResponse.json();
+
+    const moveChildResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/tasks/${childTask.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        laneId: inProgressLane.id,
+        position: 0
+      }
+    });
+
+    expect(moveChildResponse.statusCode).toBe(200);
+    expect(moveChildResponse.json()).toMatchObject({
+      id: childTask.id,
+      laneId: inProgressLane.id,
+      parentTaskId: null,
+      position: 0
+    });
+
+    const listedTasksResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(listedTasksResponse.statusCode).toBe(200);
+    expect(listedTasksResponse.json()).toEqual([
+      expect.objectContaining({
+        id: parentTaskResponse.json().id,
+        laneId: todoLane.id,
+        parentTaskId: null,
+        position: 0
+      }),
+      expect.objectContaining({
+        id: childTask.id,
+        laneId: inProgressLane.id,
+        parentTaskId: null,
+        position: 0
+      })
+    ]);
+  });
+
   it("lists reusable tags across the user's projects", async () => {
     const oidc = createMutableMockOidcProvider({
       subject: "user-1",
