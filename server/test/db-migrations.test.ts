@@ -195,4 +195,114 @@ describe("database migrations", () => {
       services.database.close();
     }
   });
+
+  it("backfills a random letter ticket prefix for legacy projects whose names have no letters", () => {
+    const sqlitePath = createTempSqlitePath();
+    const legacyDatabase = new Database(sqlitePath);
+    legacyDatabase.pragma("foreign_keys = ON");
+    legacyDatabase.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        issuer TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        email TEXT,
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX users_issuer_subject_idx
+        ON users (issuer, subject);
+
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX sessions_user_id_idx ON sessions (user_id);
+      CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
+
+      CREATE TABLE projects (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX projects_user_updated_at_idx
+        ON projects (user_id, updated_at);
+
+      CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX tasks_project_status_updated_at_idx
+        ON tasks (project_id, status, updated_at);
+
+      CREATE TABLE api_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        last_used_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX api_tokens_user_updated_at_idx
+        ON api_tokens (user_id, updated_at);
+    `);
+
+    const now = "2026-03-19T00:24:29.000Z";
+    legacyDatabase
+      .prepare(
+        `INSERT INTO users (id, issuer, subject, email, display_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run("user-1", "https://issuer.example.com", "subject-1", "one@example.com", "User One", now, now);
+    legacyDatabase
+      .prepare(
+        `INSERT INTO projects (id, user_id, name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run("project-1", "user-1", "12345", now, now);
+    legacyDatabase
+      .prepare(
+        `INSERT INTO tasks (id, project_id, title, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run("task-1", "project-1", "Legacy task", "todo", now, now);
+    legacyDatabase.close();
+
+    const services = createDatabase(sqlitePath);
+
+    try {
+      const migratedProject = services.database
+        .prepare("SELECT ticket_prefix, next_ticket_number FROM projects WHERE id = ?")
+        .get("project-1") as {
+        next_ticket_number: number | null;
+        ticket_prefix: string | null;
+      };
+      expect(migratedProject.next_ticket_number).toBe(2);
+      expect(migratedProject.ticket_prefix).toMatch(/^[A-Z]{4}$/);
+
+      const migratedTask = services.database
+        .prepare("SELECT ticket_number FROM tasks WHERE id = ?")
+        .get("task-1") as {
+        ticket_number: number | null;
+      };
+      expect(migratedTask.ticket_number).toBe(1);
+    } finally {
+      services.database.close();
+    }
+  });
 });

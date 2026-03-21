@@ -788,4 +788,12 @@ test("board page switcher renames and creates projects while guarding protected 
   await expect(page.getByLabel("Delete lane Done")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Done" })).toBeVisible();
   await expect(page.getByText("Todo and Done lanes cannot be deleted.")).toHaveCount(0);
+
+  await switcherButton.click();
+  await switcherInput.fill("12345");
+  await page.getByRole("button", { name: "Create Project" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/project-8$/);
+  await expect(page.locator(".subnav__current-value")).toHaveText("12345");
+  await expect(page.getByText("Project names must contain at least one letter to generate a ticket prefix.")).toHaveCount(0);
 });

@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 import { and, asc, desc, eq, inArray, isNull, max, ne, or } from "drizzle-orm";
 
 import {
@@ -75,14 +77,50 @@ function normalizeProjectTicketPrefixSource(name: string) {
   return name.normalize("NFKD").replace(/[^A-Za-z]/g, "").toUpperCase();
 }
 
-function listProjectTicketPrefixCandidates(name: string) {
-  const normalized = normalizeProjectTicketPrefixSource(name);
-  if (normalized.length === 0) {
-    return {
-      status: "invalid_name" as const
-    };
+const fallbackTicketPrefixLetters = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
+const fallbackTicketPrefixLength = 4;
+
+function createRandomTicketPrefix(length = fallbackTicketPrefixLength) {
+  let prefix = "";
+
+  for (let index = 0; index < length; index += 1) {
+    prefix += fallbackTicketPrefixLetters[randomInt(0, fallbackTicketPrefixLetters.length)];
   }
 
+  return prefix;
+}
+
+function findAvailableFallbackTicketPrefix(usedPrefixes: Set<string>) {
+  const totalPrefixCount = fallbackTicketPrefixLetters.length ** fallbackTicketPrefixLength;
+  if (usedPrefixes.size >= totalPrefixCount) {
+    return null;
+  }
+
+  for (let attempt = 0; attempt < 256; attempt += 1) {
+    const candidate = createRandomTicketPrefix();
+    if (!usedPrefixes.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  for (const firstLetter of fallbackTicketPrefixLetters) {
+    for (const secondLetter of fallbackTicketPrefixLetters) {
+      for (const thirdLetter of fallbackTicketPrefixLetters) {
+        for (const fourthLetter of fallbackTicketPrefixLetters) {
+          const candidate = `${firstLetter}${secondLetter}${thirdLetter}${fourthLetter}`;
+          if (!usedPrefixes.has(candidate)) {
+            return candidate;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function listProjectTicketPrefixCandidates(name: string) {
+  const normalized = normalizeProjectTicketPrefixSource(name);
   const candidates: string[] = [];
   const seenCandidates = new Set<string>();
 
@@ -145,22 +183,29 @@ function listProjectTicketPrefixCandidates(name: string) {
 
 function resolveProjectTicketPrefix(name: string, usedPrefixes: Set<string>) {
   const candidates = listProjectTicketPrefixCandidates(name);
-  if (candidates.status !== "ok") {
-    return candidates;
-  }
-
   const prefix = candidates.candidates.find((candidate) => !usedPrefixes.has(candidate));
-  if (!prefix) {
+  if (prefix) {
     return {
       normalized: candidates.normalized,
-      status: "prefix_exhausted" as const
+      prefix,
+      status: "ok" as const
     };
+  }
+
+  if (candidates.normalized.length === 0) {
+    const fallbackPrefix = findAvailableFallbackTicketPrefix(usedPrefixes);
+    if (fallbackPrefix) {
+      return {
+        normalized: candidates.normalized,
+        prefix: fallbackPrefix,
+        status: "ok" as const
+      };
+    }
   }
 
   return {
     normalized: candidates.normalized,
-    prefix,
-    status: "ok" as const
+    status: "prefix_exhausted" as const
   };
 }
 
@@ -759,11 +804,6 @@ export function backfillTicketIds(db: DatabaseClient) {
         }
 
         const prefixResult = resolveProjectTicketPrefix(project.name, usedPrefixes);
-        if (prefixResult.status === "invalid_name") {
-          throw new Error(
-            `Cannot derive a ticket prefix for project ${project.id} (${project.name}) owned by user ${userId}.`
-          );
-        }
         if (prefixResult.status === "prefix_exhausted") {
           throw new Error(
             `No unique ticket prefix is available for project ${project.id} (${project.name}) owned by user ${userId}.`
@@ -881,11 +921,6 @@ export function createProject(db: DatabaseClient, userId: string, name: string) 
       .flatMap((project) => (project.ticketPrefix ? [project.ticketPrefix] : []))
   );
   const prefixResult = resolveProjectTicketPrefix(name, usedPrefixes);
-  if (prefixResult.status === "invalid_name") {
-    return {
-      status: "invalid_ticket_prefix_source" as const
-    };
-  }
   if (prefixResult.status === "prefix_exhausted") {
     return {
       status: "ticket_prefix_unavailable" as const

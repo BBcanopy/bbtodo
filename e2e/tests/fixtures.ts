@@ -113,12 +113,50 @@ function normalizeProjectTicketPrefixSource(name: string) {
   return name.normalize("NFKD").replace(/[^A-Za-z]/g, "").toUpperCase();
 }
 
-function listProjectTicketPrefixCandidates(name: string) {
-  const normalized = normalizeProjectTicketPrefixSource(name);
-  if (normalized.length === 0) {
-    return [];
+const fallbackTicketPrefixLetters = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
+const fallbackTicketPrefixLength = 4;
+
+function createRandomTicketPrefix(length = fallbackTicketPrefixLength) {
+  let prefix = "";
+
+  for (let index = 0; index < length; index += 1) {
+    prefix += fallbackTicketPrefixLetters[Math.floor(Math.random() * fallbackTicketPrefixLetters.length)];
   }
 
+  return prefix;
+}
+
+function findAvailableFallbackTicketPrefix(usedPrefixes: Set<string>) {
+  const totalPrefixCount = fallbackTicketPrefixLetters.length ** fallbackTicketPrefixLength;
+  if (usedPrefixes.size >= totalPrefixCount) {
+    return null;
+  }
+
+  for (let attempt = 0; attempt < 256; attempt += 1) {
+    const candidate = createRandomTicketPrefix();
+    if (!usedPrefixes.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  for (const firstLetter of fallbackTicketPrefixLetters) {
+    for (const secondLetter of fallbackTicketPrefixLetters) {
+      for (const thirdLetter of fallbackTicketPrefixLetters) {
+        for (const fourthLetter of fallbackTicketPrefixLetters) {
+          const candidate = `${firstLetter}${secondLetter}${thirdLetter}${fourthLetter}`;
+          if (!usedPrefixes.has(candidate)) {
+            return candidate;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function listProjectTicketPrefixCandidates(name: string) {
+  const normalized = normalizeProjectTicketPrefixSource(name);
   const candidates: string[] = [];
   const seenCandidates = new Set<string>();
 
@@ -177,7 +215,15 @@ function listProjectTicketPrefixCandidates(name: string) {
 
 function resolveProjectTicketPrefix(name: string, usedPrefixes: Set<string>) {
   const prefix = listProjectTicketPrefixCandidates(name).find((candidate) => !usedPrefixes.has(candidate));
-  return prefix ?? null;
+  if (prefix) {
+    return prefix;
+  }
+
+  if (normalizeProjectTicketPrefixSource(name).length === 0) {
+    return findAvailableFallbackTicketPrefix(usedPrefixes);
+  }
+
+  return null;
 }
 
 function parseTicketNumber(ticketId: string) {
@@ -719,13 +765,6 @@ export async function mockAuthenticated(
       case "POST /api/v1/projects": {
         const createdProjectId = `project-${nextProjectId++}`;
         const projectName = body?.title ?? body?.name ?? "Untitled board";
-        if (normalizeProjectTicketPrefixSource(projectName).length === 0) {
-          await fulfillJson(route, 400, {
-            message: "Project names must contain at least one letter to generate a ticket prefix."
-          });
-          return;
-        }
-
         const resolvedPrefix = resolveProjectTicketPrefix(projectName, new Set(projectTicketPrefixes.values()));
         if (!resolvedPrefix) {
           await fulfillJson(route, 409, { message: "No unique project ticket prefix is available for that name." });

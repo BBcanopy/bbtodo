@@ -312,7 +312,7 @@ describe("projects and tasks API", () => {
     });
   });
 
-  it("rejects invalid prefixes, resolves collisions, and reports exhausted automatic prefixes", async () => {
+  it("falls back for non-letter names, resolves collisions, and reports exhausted automatic prefixes", async () => {
     const oidc = createMutableMockOidcProvider({
       subject: "user-1",
       email: "one@example.com",
@@ -327,7 +327,7 @@ describe("projects and tasks API", () => {
 
     const session = await loginWithOidc(app);
 
-    const invalidProjectResponse = await app.inject({
+    const numericOnlyProjectResponse = await app.inject({
       method: "POST",
       url: "/api/v1/projects",
       cookies: {
@@ -337,7 +337,24 @@ describe("projects and tasks API", () => {
         name: "12345"
       }
     });
-    expect(invalidProjectResponse.statusCode).toBe(400);
+    expect(numericOnlyProjectResponse.statusCode).toBe(201);
+    const numericOnlyProject = numericOnlyProjectResponse.json();
+
+    const numericOnlyTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${numericOnlyProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Fallback prefix task"
+      }
+    });
+    expect(numericOnlyTaskResponse.statusCode).toBe(201);
+    expect(numericOnlyTaskResponse.json()).toMatchObject({
+      title: "Fallback prefix task"
+    });
+    expect(numericOnlyTaskResponse.json().ticketId).toMatch(/^[A-Z]{4}-1$/);
 
     const firstCollidingProjectResponse = await app.inject({
       method: "POST",

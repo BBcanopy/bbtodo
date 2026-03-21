@@ -664,11 +664,6 @@ export function buildApp(options: {
       }
 
       const project = createProject(database.db, user.id, request.body.name.trim());
-      if (project.status === "invalid_ticket_prefix_source") {
-        return reply.status(400).send({
-          message: "Project names must contain at least one letter to generate a ticket prefix."
-        });
-      }
       if (project.status === "ticket_prefix_unavailable") {
         return reply.status(409).send({
           message: "No unique project ticket prefix is available for that name."
