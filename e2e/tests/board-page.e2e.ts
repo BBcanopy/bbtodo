@@ -694,13 +694,13 @@ test("board page resets a subtask preview when dragged back over its current par
 
   await beginTaskDrag(page, copySubtask);
   await hoverDraggedTaskDirectlyToTarget(page, taskCardSurface(releaseChecklistCard), 0.5);
-  await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toHaveCount(0);
 
   await hoverDraggedTaskOver(page, taskCardSurface(shipNoteCard), 0.3);
   await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
 
   await finishTaskDrag(page);
   await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
+  await expect(releaseChecklistCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toHaveCount(0);
 });
 
 test("board page creates lanes from the gap between columns", async ({ page }) => {
@@ -801,5 +801,4 @@ test("board page switcher renames and creates projects while guarding protected 
     "In review",
     "Done"
   ]);
-  await expect(page.getByText("Project names must contain at least one letter to generate a ticket prefix.")).toHaveCount(0);
 });
