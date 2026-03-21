@@ -56,12 +56,14 @@ const taskDropAnimation = {
 };
 
 const taskCollisionDetection: CollisionDetection = (args) => {
+  function getCollisionContainer(collisionId: string | number) {
+    return args.droppableContainers.find((droppableContainer) => droppableContainer.id === collisionId);
+  }
+
   const pointerHits = pointerWithin(args);
   if (pointerHits.length > 0) {
     const nestTargetHits = pointerHits.filter((collision) => {
-      const container = args.droppableContainers.find(
-        (droppableContainer) => droppableContainer.id === collision.id
-      );
+      const container = getCollisionContainer(collision.id);
 
       return container?.data.current?.type === "nest-target";
     });
@@ -71,9 +73,7 @@ const taskCollisionDetection: CollisionDetection = (args) => {
     }
 
     const slotHits = pointerHits.filter((collision) => {
-      const container = args.droppableContainers.find(
-        (droppableContainer) => droppableContainer.id === collision.id
-      );
+      const container = getCollisionContainer(collision.id);
 
       return container?.data.current?.type === "slot";
     });
@@ -83,14 +83,39 @@ const taskCollisionDetection: CollisionDetection = (args) => {
     }
 
     const taskHits = pointerHits.filter((collision) => {
-      const container = args.droppableContainers.find(
-        (droppableContainer) => droppableContainer.id === collision.id
-      );
+      const container = getCollisionContainer(collision.id);
 
       return container?.data.current?.type === "task";
     });
 
     if (taskHits.length > 0) {
+      const taskHitDetails = taskHits
+        .map((collision) => {
+          const container = getCollisionContainer(collision.id);
+          const rect = container?.rect.current;
+          const data = container?.data.current;
+
+          return {
+            area: rect ? rect.width * rect.height : Number.POSITIVE_INFINITY,
+            collision,
+            parentTaskId:
+              typeof data?.parentTaskId === "string" ? String(data.parentTaskId) : null,
+            taskId: typeof data?.taskId === "string" ? String(data.taskId) : null
+          };
+        })
+        .filter((taskHit) => taskHit.taskId !== null);
+      const mostSpecificTaskHits = taskHitDetails.filter(
+        (taskHit) =>
+          !taskHitDetails.some((candidate) => candidate.parentTaskId === taskHit.taskId)
+      );
+
+      if (mostSpecificTaskHits.length > 0) {
+        return mostSpecificTaskHits
+          .slice()
+          .sort((left, right) => left.area - right.area)
+          .map((taskHit) => taskHit.collision);
+      }
+
       return taskHits;
     }
 
@@ -1324,7 +1349,6 @@ export function BoardPage() {
     [activeTasks, lanes]
   );
   const subtaskIdsByParent = useMemo(() => buildSubtaskIdsByParent(activeTasks), [activeTasks]);
-  const canDraggedTaskBecomeSubtask = draggedTask ? canTaskBecomeSubtask(activeTasks, draggedTask) : false;
   const taskSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -2140,9 +2164,9 @@ export function BoardPage() {
                               onOpen={(taskToEdit) => setEditingTaskId(taskToEdit.id)}
                               onTagSelect={handleTagSelect}
                               showNestTarget={
-                                Boolean(draggedTaskId) &&
-                                canDraggedTaskBecomeSubtask &&
-                                draggedTaskId !== taskGroup.task.id
+                                draggedTask !== null &&
+                                draggedTask.id !== taskGroup.task.id &&
+                                canTaskJoinParentGroup(activeTasks, draggedTask, taskGroup.task.id)
                               }
                               showSubtaskSlots={Boolean(draggedTaskId)}
                               subtasks={taskGroup.subtasks}
