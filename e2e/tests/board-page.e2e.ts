@@ -795,5 +795,11 @@ test("board page switcher renames and creates projects while guarding protected 
 
   await expect(page).toHaveURL(/\/projects\/project-8$/);
   await expect(page.locator(".subnav__current-value")).toHaveText("12345");
+  await expect(page.locator(".board-column__header h2")).toHaveText([
+    "Todo",
+    "In Progress",
+    "In review",
+    "Done"
+  ]);
   await expect(page.getByText("Project names must contain at least one letter to generate a ticket prefix.")).toHaveCount(0);
 });

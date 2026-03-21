@@ -109,121 +109,68 @@ function createDefaultLaneSummaries(
   ];
 }
 
-function normalizeProjectTicketPrefixSource(name: string) {
-  return name.normalize("NFKD").replace(/[^A-Za-z]/g, "").toUpperCase();
+const generatedTicketPrefixLetters = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
+const generatedTicketPrefixLength = 4;
+const totalGeneratedTicketPrefixCount = generatedTicketPrefixLetters.length ** generatedTicketPrefixLength;
+
+function toFixtureTicketPrefixStem(name: string) {
+  return name.normalize("NFKD").replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 4);
 }
 
-const fallbackTicketPrefixLetters = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
-const fallbackTicketPrefixLength = 4;
-const totalFallbackTicketPrefixCount = fallbackTicketPrefixLetters.length ** fallbackTicketPrefixLength;
-
-function createRandomTicketPrefix(length = fallbackTicketPrefixLength) {
+function encodeGeneratedTicketPrefix(index: number) {
+  let remaining = index;
   let prefix = "";
 
-  for (let index = 0; index < length; index += 1) {
-    prefix += fallbackTicketPrefixLetters[Math.floor(Math.random() * fallbackTicketPrefixLetters.length)];
+  for (let digitIndex = 0; digitIndex < generatedTicketPrefixLength; digitIndex += 1) {
+    prefix = `${generatedTicketPrefixLetters[remaining % generatedTicketPrefixLetters.length]}${prefix}`;
+    remaining = Math.floor(remaining / generatedTicketPrefixLetters.length);
   }
 
   return prefix;
 }
 
-function findAvailableRandomTicketPrefix(usedPrefixes: Set<string>) {
-  if (usedPrefixes.size >= totalFallbackTicketPrefixCount) {
-    throw new Error("No unique project ticket prefix is available.");
+function findAvailableGeneratedTicketPrefix(usedPrefixes: Set<string>) {
+  if (usedPrefixes.size >= totalGeneratedTicketPrefixCount) {
+    throw new Error("No unique project ticket prefix is available for e2e fixtures.");
   }
 
-  for (let attempt = 0; attempt < 256; attempt += 1) {
-    const candidate = createRandomTicketPrefix();
+  for (let index = 0; index < totalGeneratedTicketPrefixCount; index += 1) {
+    const candidate = encodeGeneratedTicketPrefix(index);
     if (!usedPrefixes.has(candidate)) {
       return candidate;
     }
   }
 
-  for (const firstLetter of fallbackTicketPrefixLetters) {
-    for (const secondLetter of fallbackTicketPrefixLetters) {
-      for (const thirdLetter of fallbackTicketPrefixLetters) {
-        for (const fourthLetter of fallbackTicketPrefixLetters) {
-          const candidate = `${firstLetter}${secondLetter}${thirdLetter}${fourthLetter}`;
-          if (!usedPrefixes.has(candidate)) {
-            return candidate;
-          }
-        }
-      }
-    }
-  }
-
-  throw new Error("No unique project ticket prefix is available.");
+  throw new Error("No unique project ticket prefix is available for e2e fixtures.");
 }
 
-function listProjectTicketPrefixCandidates(name: string) {
-  const normalized = normalizeProjectTicketPrefixSource(name);
-  const candidates: string[] = [];
-  const seenCandidates = new Set<string>();
+function allocateFixtureTicketPrefix(name: string, usedPrefixes: Set<string>) {
+  // Keep the browser mock lightweight: seeded tasks define their own prefixes,
+  // and newly created projects only need a stable unique prefix for UI coverage.
+  const stem = toFixtureTicketPrefixStem(name);
 
-  function addCandidate(candidate: string) {
-    if (candidate.length < 2 || candidate.length > 4 || seenCandidates.has(candidate)) {
-      return;
-    }
-
-    seenCandidates.add(candidate);
-    candidates.push(candidate);
+  if (stem.length >= 2 && !usedPrefixes.has(stem)) {
+    return stem;
   }
 
-  function addCombinations(targetLength: number) {
-    if (targetLength > normalized.length) {
-      return;
+  if (stem.length === 1) {
+    const paddedStem = `${stem}X`;
+    if (!usedPrefixes.has(paddedStem)) {
+      return paddedStem;
     }
-
-    const letters = [...normalized];
-
-    function visit(nextIndex: number, current: string) {
-      if (current.length === targetLength) {
-        addCandidate(current);
-        return;
-      }
-
-      for (let index = nextIndex; index < letters.length; index += 1) {
-        if (current.length === 0 && index !== 0) {
-          continue;
-        }
-
-        visit(index + 1, current + letters[index]);
-      }
-    }
-
-    visit(0, "");
   }
 
-  if (normalized.length === 1) {
-    addCandidate(`${normalized}X`);
-  } else {
-    if (normalized.length <= 4) {
-      addCandidate(normalized);
-    }
-
-    if (normalized.length >= 4) {
-      addCombinations(4);
-    }
-    if (normalized.length >= 3) {
-      addCombinations(3);
-    }
-    addCombinations(2);
-  }
-
-  return candidates;
-}
-
-function resolveProjectTicketPrefix(name: string, usedPrefixes: Set<string>) {
-  const prefixFromName = listProjectTicketPrefixCandidates(name).find(
-    (candidate) => !usedPrefixes.has(candidate)
-  );
-
-  return prefixFromName ?? findAvailableRandomTicketPrefix(usedPrefixes);
+  return findAvailableGeneratedTicketPrefix(usedPrefixes);
 }
 
 function parseTicketNumber(ticketId: string) {
   const match = ticketId.match(/-(\d+)$/);
   return match ? Number(match[1]) : null;
+}
+
+function parseTicketPrefix(ticketId: string) {
+  const match = ticketId.match(/^([A-Z]{2,4})-\d+$/);
+  return match ? match[1] : null;
 }
 
 export const projects: Project[] = [
@@ -410,7 +357,21 @@ export async function mockAuthenticated(
           return;
         }
 
-        const resolvedPrefix = resolveProjectTicketPrefix(project.name, usedPrefixes);
+        const seededPrefixes = new Set(
+          taskState
+            .filter((task) => task.projectId === project.id)
+            .map((task) => parseTicketPrefix(task.ticketId))
+            .filter((prefix): prefix is string => prefix !== null)
+        );
+
+        if (seededPrefixes.size > 1) {
+          throw new Error(`Expected a single seeded ticket prefix for project ${project.id}.`);
+        }
+
+        const resolvedPrefix =
+          seededPrefixes.size === 1
+            ? (seededPrefixes.values().next().value as string)
+            : allocateFixtureTicketPrefix(project.name, usedPrefixes);
 
         projectTicketPrefixes.set(project.id, resolvedPrefix);
         usedPrefixes.add(resolvedPrefix);
@@ -757,7 +718,7 @@ export async function mockAuthenticated(
       case "POST /api/v1/projects": {
         const createdProjectId = `project-${nextProjectId++}`;
         const projectName = body?.title ?? body?.name ?? "Untitled board";
-        const resolvedPrefix = resolveProjectTicketPrefix(projectName, new Set(projectTicketPrefixes.values()));
+        const resolvedPrefix = allocateFixtureTicketPrefix(projectName, new Set(projectTicketPrefixes.values()));
 
         const createdProject: Project = {
           createdAt: "2026-03-18T08:00:00.000Z",
