@@ -197,7 +197,8 @@ export function AppShell({ user }: { user: User }) {
   return (
     <div className="app-frame">
       <div className="app-shell">
-        <header className="topbar">
+        <div className="topbar-shell" data-testid="app-topbar-shell">
+          <header className="topbar">
           <div className="topbar__nav">
             <Link className="brand-mark" to="/">
               <span className="brand-mark__pill">bb</span>
@@ -508,7 +509,8 @@ export function AppShell({ user }: { user: User }) {
               ) : null}
             </div>
           </div>
-        </header>
+          </header>
+        </div>
 
         <div className="shell-content">
           <Outlet />

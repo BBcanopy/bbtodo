@@ -889,6 +889,68 @@ test.describe("mobile board page", () => {
     ...iPhone13
   });
 
+  test("board page lets the mobile header scroll out of view instead of covering content", async ({ page }) => {
+    const projectsWithTallTodo = structuredClone(projectsForGrid);
+    const tasksWithTallTodo = structuredClone(tasks);
+    const billingCleanupProject = projectsWithTallTodo.find((project) => project.id === "project-1");
+    if (!billingCleanupProject) {
+      throw new Error("Expected project-1 test fixture to exist");
+    }
+
+    const todoLaneSummary = billingCleanupProject.laneSummaries.find(
+      (laneSummary) => laneSummary.id === laneId("project-1", "todo")
+    );
+    if (!todoLaneSummary) {
+      throw new Error("Expected the Todo lane summary to exist");
+    }
+
+    for (let taskIndex = 0; taskIndex < 18; taskIndex += 1) {
+      tasksWithTallTodo.push({
+        body: "",
+        createdAt: `2026-03-18T09:${String(taskIndex).padStart(2, "0")}:00.000Z`,
+        id: `task-mobile-tall-${taskIndex + 1}`,
+        laneId: laneId("project-1", "todo"),
+        parentTaskId: null,
+        position: tasks.length + taskIndex,
+        projectId: "project-1",
+        ticketId: `BILL-${taskIndex + 10}`,
+        tags: [],
+        title: `Mobile tall backlog ${taskIndex + 1}`,
+        updatedAt: `2026-03-18T09:${String(taskIndex).padStart(2, "0")}:30.000Z`
+      });
+    }
+
+    todoLaneSummary.taskCount = tasksWithTallTodo.filter(
+      (task) => task.projectId === "project-1" && task.laneId === laneId("project-1", "todo")
+    ).length;
+
+    await mockAuthenticated(page, {
+      projects: projectsWithTallTodo,
+      tasks: tasksWithTallTodo
+    });
+
+    await page.goto("/projects/project-1");
+
+    const topbarShell = page.getByTestId("app-topbar-shell");
+
+    await expect(topbarShell).toBeVisible();
+    await expect
+      .poll(async () => topbarShell.evaluate((element) => element.getBoundingClientRect().top))
+      .toBeGreaterThanOrEqual(0);
+
+    await page.evaluate(() => window.scrollTo({ top: 420, behavior: "auto" }));
+    await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+    await expect
+      .poll(async () => topbarShell.evaluate((element) => element.getBoundingClientRect().bottom))
+      .toBeLessThanOrEqual(0);
+
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+    await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeLessThanOrEqual(0);
+    await expect
+      .poll(async () => topbarShell.evaluate((element) => element.getBoundingClientRect().top))
+      .toBeGreaterThanOrEqual(0);
+  });
+
   test("board page adds tasks from the shared lane header action on mobile", async ({ page }) => {
     const todoLaneId = laneId("project-1", "todo");
 

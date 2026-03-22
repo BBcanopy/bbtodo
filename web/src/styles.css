@@ -309,6 +309,14 @@ h3 {
   position: relative;
 }
 
+.topbar-shell {
+  min-width: 0;
+}
+
+.topbar-shell > .topbar {
+  min-width: 0;
+}
+
 .topbar::after {
   content: "";
   position: absolute;
