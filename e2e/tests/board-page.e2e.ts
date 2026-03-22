@@ -889,7 +889,7 @@ test.describe("mobile board page", () => {
     ...iPhone13
   });
 
-  test("board page hides the mobile header on downward scroll and reveals it on upward scroll", async ({ page }) => {
+  test("board page lets the mobile header scroll out of view instead of covering content", async ({ page }) => {
     const projectsWithTallTodo = structuredClone(projectsForGrid);
     const tasksWithTallTodo = structuredClone(tasks);
     const billingCleanupProject = projectsWithTallTodo.find((project) => project.id === "project-1");
@@ -934,17 +934,21 @@ test.describe("mobile board page", () => {
     const topbarShell = page.getByTestId("app-topbar-shell");
 
     await expect(topbarShell).toBeVisible();
-    await expect(topbarShell).not.toHaveClass(/is-mobile-hidden/);
+    await expect
+      .poll(async () => topbarShell.evaluate((element) => element.getBoundingClientRect().top))
+      .toBeGreaterThanOrEqual(0);
 
     await page.evaluate(() => window.scrollTo({ top: 420, behavior: "auto" }));
     await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
-    await expect(topbarShell).toHaveClass(/is-mobile-hidden/);
-    await page.waitForTimeout(350);
-    await expect(topbarShell).toHaveClass(/is-mobile-hidden/);
+    await expect
+      .poll(async () => topbarShell.evaluate((element) => element.getBoundingClientRect().bottom))
+      .toBeLessThanOrEqual(0);
 
-    await page.evaluate(() => window.scrollTo({ top: 48, behavior: "auto" }));
-    await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeLessThanOrEqual(60);
-    await expect(topbarShell).not.toHaveClass(/is-mobile-hidden/);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+    await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeLessThanOrEqual(0);
+    await expect
+      .poll(async () => topbarShell.evaluate((element) => element.getBoundingClientRect().top))
+      .toBeGreaterThanOrEqual(0);
   });
 
   test("board page adds tasks from the shared lane header action on mobile", async ({ page }) => {

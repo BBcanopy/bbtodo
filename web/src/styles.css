@@ -3126,28 +3126,6 @@ textarea:focus {
     align-items: stretch;
   }
 
-  .topbar-shell {
-    position: sticky;
-    top: 0;
-    z-index: 12;
-    display: grid;
-    grid-template-rows: 1fr;
-    overflow: clip;
-    transition:
-      grid-template-rows 220ms var(--ease),
-      opacity 180ms var(--ease);
-  }
-
-  .topbar-shell.is-mobile-hidden {
-    grid-template-rows: 0fr;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .topbar-shell > .topbar {
-    min-height: 0;
-  }
-
   .topbar {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
