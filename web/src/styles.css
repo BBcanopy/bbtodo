@@ -1780,8 +1780,13 @@ textarea:focus {
 }
 
 .board-column__header.is-task-trash-visible {
+  padding-right: 0.4rem;
   border-color: color-mix(in srgb, var(--danger) 16%, transparent);
   background: color-mix(in srgb, var(--danger) 5%, var(--surface-muted));
+}
+
+.board-column__header.is-task-trash-visible .board-column__header-copy {
+  padding-right: 0;
 }
 
 .board-column__header.is-task-trash-visible .board-column__header-copy h2 {
@@ -1818,6 +1823,13 @@ textarea:focus {
   min-width: 2rem;
   min-height: 2rem;
   transform: translateY(-50%);
+}
+
+.board-column__header.is-task-trash-visible .lane-header__actions {
+  left: 50%;
+  right: auto;
+  justify-content: center;
+  transform: translate(-50%, -50%);
 }
 
 .lane-delete-button,
@@ -1896,6 +1908,12 @@ textarea:focus {
   top: calc(100% + 0.65rem);
   right: 0;
   left: auto;
+}
+
+.board-column__header.is-task-trash-visible .lane-task-trash-popover {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
 }
 
 .lane-delete-popover__field {

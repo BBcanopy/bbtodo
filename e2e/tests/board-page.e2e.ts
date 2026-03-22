@@ -335,8 +335,11 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   const todoTrashBox = await todoLaneTrashTarget.boundingBox();
   expect(todoHeaderBox).not.toBeNull();
   expect(todoTrashBox).not.toBeNull();
+  const todoHeaderCenterX = (todoHeaderBox?.x ?? 0) + (todoHeaderBox?.width ?? 0) / 2;
   const todoHeaderCenterY = (todoHeaderBox?.y ?? 0) + (todoHeaderBox?.height ?? 0) / 2;
+  const todoTrashCenterX = (todoTrashBox?.x ?? 0) + (todoTrashBox?.width ?? 0) / 2;
   const todoTrashCenterY = (todoTrashBox?.y ?? 0) + (todoTrashBox?.height ?? 0) / 2;
+  expect(Math.abs(todoHeaderCenterX - todoTrashCenterX)).toBeLessThanOrEqual(8);
   expect(Math.abs(todoHeaderCenterY - todoTrashCenterY)).toBeLessThanOrEqual(6);
   await dropDraggedTaskOnHeaderTrashZone(page, todoLaneHeader);
 
