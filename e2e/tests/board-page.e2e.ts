@@ -918,9 +918,21 @@ test.describe("mobile board page", () => {
     await page.goto("/projects/project-1");
 
     const mobileCreateLaneButton = page.getByTestId(`create-lane-mobile-after-${todoLaneId}`);
+    const firstLaneSpacing = await page.locator(".board-column-shell").first().evaluate((element) => {
+      const shellStyle = window.getComputedStyle(element);
+      const gapButton = element.querySelector<HTMLButtonElement>(".board-lane-gap-mobile");
+      const buttonStyle = gapButton ? window.getComputedStyle(gapButton) : null;
+
+      return {
+        buttonMarginTop: buttonStyle ? Number.parseFloat(buttonStyle.marginTop) : Number.NaN,
+        rowGap: Number.parseFloat(shellStyle.rowGap)
+      };
+    });
 
     await expect(mobileCreateLaneButton).toBeVisible();
     await expect(mobileCreateLaneButton.locator("span")).toHaveCount(0);
+    expect(firstLaneSpacing.rowGap).toBeLessThanOrEqual(8);
+    expect(firstLaneSpacing.buttonMarginTop).toBeLessThanOrEqual(1);
     await mobileCreateLaneButton.click();
 
     const laneDialog = page.getByRole("dialog", { name: "Create Lane" });
