@@ -7,6 +7,17 @@ description: Operate the BBTodo app itself for agent work tracking. Use when Cod
 
 Use `scripts/bbtodo.py` to keep one tracked BBTodo task aligned with the current worktree.
 
+## Explicit Invocation
+
+- Tell AI agents to use this skill explicitly each time. Do not assume they will discover or invoke it automatically.
+- A good default is to add an instruction to your repo-level `AGENTS.md` so every task reminds the agent to run this skill for BBTodo work tracking.
+
+Example `AGENTS.md` instruction:
+
+```md
+Always use `$bbtodo` at `./skills/bbtodo/SKILL.md` for BBTodo work tracking: create a task before substantial work, move it to In Progress when active work starts, and move it to In review when the work is ready.
+```
+
 ## Required Config
 
 - Create a personal API token in BBTodo at `/settings/api-tokens`.
