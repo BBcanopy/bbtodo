@@ -21,42 +21,69 @@ async function beginTaskDrag(page: Page, source: Locator) {
     .locator("xpath=ancestor-or-self::article[contains(concat(' ', normalize-space(@class), ' '), ' task-card ')]")
     .first();
 
-  await dragHandle.scrollIntoViewIfNeeded();
-  await expect(dragHandle).toBeVisible();
-  const sourceBox = await dragHandle.boundingBox();
+  // CI can occasionally drop the first pointer-down activation path, so retry the
+  // whole gesture a few times instead of waiting forever on one dead drag attempt.
+  for (const [attemptIndex, pointerMoves] of [
+    [
+      { x: 18, y: 0, steps: 6 },
+      { x: 28, y: -2, steps: 4 },
+      { x: 32, y: -4, steps: 2 },
+      { x: 44, y: -6, steps: 4 }
+    ],
+    [
+      { x: 20, y: 1, steps: 8 },
+      { x: 34, y: -1, steps: 6 },
+      { x: 52, y: -5, steps: 5 }
+    ],
+    [
+      { x: 24, y: 2, steps: 10 },
+      { x: 42, y: 0, steps: 8 },
+      { x: 60, y: -8, steps: 6 }
+    ]
+  ].entries()) {
+    await dragHandle.scrollIntoViewIfNeeded();
+    await expect(dragHandle).toBeVisible();
+    const sourceBox = await dragHandle.boundingBox();
 
-  expect(sourceBox).not.toBeNull();
+    expect(sourceBox).not.toBeNull();
 
-  const sourceCenterX = (sourceBox?.x ?? 0) + (sourceBox?.width ?? 0) / 2;
-  const sourceCenterY = (sourceBox?.y ?? 0) + (sourceBox?.height ?? 0) / 2;
+    const sourceCenterX = (sourceBox?.x ?? 0) + (sourceBox?.width ?? 0) / 2;
+    const sourceCenterY = (sourceBox?.y ?? 0) + (sourceBox?.height ?? 0) / 2;
 
-  await page.mouse.move(sourceCenterX, sourceCenterY, { steps: 6 });
-  await page.mouse.down();
-  await page.waitForTimeout(40);
+    await page.mouse.move(sourceCenterX, sourceCenterY, { steps: attemptIndex === 0 ? 6 : 10 });
+    if (attemptIndex > 0) {
+      await page.waitForTimeout(40);
+    }
+    await page.mouse.down();
+    await page.waitForTimeout(attemptIndex === 0 ? 40 : 80);
 
-  // CI can occasionally miss the first activation path, so keep nudging the pointer
-  // a little farther until dnd-kit promotes the pointer movement into an active drag.
-  for (const pointerMove of [
-    { x: 18, y: 0, steps: 6 },
-    { x: 28, y: -2, steps: 4 },
-    { x: 32, y: -4, steps: 2 },
-    { x: 44, y: -6, steps: 4 }
-  ]) {
-    await page.mouse.move(sourceCenterX + pointerMove.x, sourceCenterY + pointerMove.y, {
-      steps: pointerMove.steps
-    });
+    for (const pointerMove of pointerMoves) {
+      await page.mouse.move(sourceCenterX + pointerMove.x, sourceCenterY + pointerMove.y, {
+        steps: pointerMove.steps
+      });
 
-    if (await isTaskDragActive(dragOverlay, taskCard)) {
-      return;
+      if (await isTaskDragActive(dragOverlay, taskCard)) {
+        return;
+      }
+
+      await page.waitForTimeout(40);
+      if (await isTaskDragActive(dragOverlay, taskCard)) {
+        return;
+      }
     }
 
-    await page.waitForTimeout(40);
-    if (await isTaskDragActive(dragOverlay, taskCard)) {
-      return;
+    for (let settleAttempt = 0; settleAttempt < 4; settleAttempt += 1) {
+      await page.waitForTimeout(60);
+      if (await isTaskDragActive(dragOverlay, taskCard)) {
+        return;
+      }
     }
+
+    await page.mouse.up();
+    await page.waitForTimeout(120);
   }
 
-  await expect.poll(async () => ((await isTaskDragActive(dragOverlay, taskCard)) ? 1 : 0)).toBe(1);
+  throw new Error("Task drag did not activate after retrying the pointer gesture.");
 }
 
 async function hoverDraggedTaskOver(page: Page, target: Locator, targetYRatio = 0.5) {
