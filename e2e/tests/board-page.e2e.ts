@@ -91,18 +91,44 @@ async function hoverDraggedTaskDirectlyToTarget(page: Page, target: Locator, tar
   await page.waitForTimeout(160);
 }
 
-async function dropDraggedTaskOnTrashTarget(page: Page, target: Locator) {
-  await expect(target).toBeAttached();
-  const targetBox = await target.boundingBox();
+async function hoverDraggedTaskToNestTarget(
+  page: Page,
+  card: Locator,
+  targetYRatio = 0.5,
+  settleTarget?: Locator
+) {
+  const nestTarget = taskCardNestTarget(card);
 
-  expect(targetBox).not.toBeNull();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await hoverDraggedTaskOver(page, nestTarget, targetYRatio);
+
+    if (settleTarget && (await settleTarget.count()) > 0) {
+      await hoverDraggedTaskDirectlyToTarget(page, settleTarget);
+      return;
+    }
+
+    const cardClass = await card.getAttribute("class");
+    if (cardClass?.includes("is-nest-target")) {
+      await hoverDraggedTaskDirectlyToTarget(page, nestTarget, targetYRatio);
+      return;
+    }
+  }
+
+  await hoverDraggedTaskDirectlyToTarget(page, nestTarget, targetYRatio);
+}
+
+async function dropDraggedTaskOnHeaderTrashZone(page: Page, header: Locator) {
+  await expect(header).toBeAttached();
+  const headerBox = await header.boundingBox();
+
+  expect(headerBox).not.toBeNull();
 
   await page.mouse.move(
-    (targetBox?.x ?? 0) + (targetBox?.width ?? 0) / 2,
-    (targetBox?.y ?? 0) + (targetBox?.height ?? 0) / 2,
+    (headerBox?.x ?? 0) + (headerBox?.width ?? 0) * 0.28,
+    (headerBox?.y ?? 0) + (headerBox?.height ?? 0) * 0.5,
     { steps: 12 }
   );
-  await expect(target).toHaveClass(/is-active/);
+  await expect(header).toHaveClass(/is-task-trash-active/);
   await finishTaskDrag(page);
 }
 
@@ -289,6 +315,8 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await page.goto("/projects/project-1");
 
   const firstTaskCard = page.getByTestId("task-card-task-1");
+  const todoLaneHeader = page.getByTestId(`lane-header-${laneId("project-1", "todo")}`);
+  const doneLaneHeader = page.getByTestId(`lane-header-${laneId("project-1", "done")}`);
   const todoLaneTrashTarget = page.getByTestId(`lane-task-trash-target-${laneId("project-1", "todo")}`);
   const doneLaneTrashTarget = page.getByTestId(`lane-task-trash-target-${laneId("project-1", "done")}`);
 
@@ -300,7 +328,22 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(page.locator(".task-drag-overlay .task-card__title")).toHaveText(
     "[BILL-1] Review retry settings"
   );
-  await dropDraggedTaskOnTrashTarget(page, todoLaneTrashTarget);
+  await expect(todoLaneHeader).toHaveClass(/is-task-trash-visible/);
+  await expect(doneLaneHeader).not.toHaveClass(/is-task-trash-visible/);
+  await expect(todoLaneTrashTarget).toBeVisible();
+  await expect(doneLaneTrashTarget).toBeHidden();
+  await expect(todoLaneTrashTarget).toHaveCSS("border-top-width", "0px");
+  const todoHeaderBox = await todoLaneHeader.boundingBox();
+  const todoTrashBox = await todoLaneTrashTarget.boundingBox();
+  expect(todoHeaderBox).not.toBeNull();
+  expect(todoTrashBox).not.toBeNull();
+  const todoHeaderCenterX = (todoHeaderBox?.x ?? 0) + (todoHeaderBox?.width ?? 0) / 2;
+  const todoHeaderCenterY = (todoHeaderBox?.y ?? 0) + (todoHeaderBox?.height ?? 0) / 2;
+  const todoTrashCenterX = (todoTrashBox?.x ?? 0) + (todoTrashBox?.width ?? 0) / 2;
+  const todoTrashCenterY = (todoTrashBox?.y ?? 0) + (todoTrashBox?.height ?? 0) / 2;
+  expect(Math.abs(todoHeaderCenterX - todoTrashCenterX)).toBeLessThanOrEqual(8);
+  expect(Math.abs(todoHeaderCenterY - todoTrashCenterY)).toBeLessThanOrEqual(6);
+  await dropDraggedTaskOnHeaderTrashZone(page, todoLaneHeader);
 
   const deleteDialog = page.getByRole("alertdialog", { name: "Delete task Review retry settings" });
   await expect(deleteDialog).toBeVisible();
@@ -309,7 +352,8 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(todoLaneTrashTarget).toBeHidden();
 
   await beginTaskDrag(page, taskCardSurface(firstTaskCard));
-  await dropDraggedTaskOnTrashTarget(page, todoLaneTrashTarget);
+  await expect(todoLaneHeader).toHaveClass(/is-task-trash-visible/);
+  await dropDraggedTaskOnHeaderTrashZone(page, todoLaneHeader);
 
   await expect(deleteDialog).toBeVisible();
   await deleteDialog.getByRole("button", { exact: true, name: "Delete" }).click();
@@ -379,6 +423,8 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
 
   const qaColumn = page.getByTestId("board-column-project-1-lane-custom-1");
   const doneColumn = page.getByTestId(`board-column-${laneId("project-1", "done")}`);
+  const qaRootInsertSlot = page.getByTestId("task-drop-slot-project-1-lane-custom-1-2");
+  const shipNoteSubtaskSlot = page.getByTestId("task-drop-slot-task-5-0");
 
   const createdCard = page.getByTestId("task-card-task-5");
   const releaseChecklistCard = page.getByTestId("task-card-task-6");
@@ -387,9 +433,11 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(releaseChecklistCard).toBeVisible();
   await expect(createdCard.locator(".task-tag")).toHaveCount(0);
 
-  await beginTaskDrag(page, retryCard);
-  await hoverDraggedTaskOver(page, taskCardNestTarget(createdCard), 0.25);
-  await expect(createdCard.locator(".task-card__subtasks").getByText("Review retry settings")).toBeVisible();
+  await dragTaskToTarget(page, retryCard, qaRootInsertSlot);
+  const retryCardInQa = qaColumn.getByTestId("task-card-task-1");
+  await expect(retryCardInQa).toBeVisible();
+  await beginTaskDrag(page, retryCardInQa);
+  await hoverDraggedTaskToNestTarget(page, createdCard, 0.35, shipNoteSubtaskSlot);
   await finishTaskDrag(page);
   await expect(createdCard.locator(".task-card__subtasks").getByText("Review retry settings")).toBeVisible();
   await expect(todoColumn.getByText("Review retry settings")).toHaveCount(0);
@@ -399,9 +447,11 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(createdCard.locator(".task-card__subtasks").getByText("Review retry settings")).toHaveCount(0);
   await expect(qaColumn.getByText("Review retry settings")).toBeVisible();
 
-  await beginTaskDrag(page, copyCard);
-  await hoverDraggedTaskDirectlyToTarget(page, taskCardNestTarget(createdCard), 0.5);
-  await expect(createdCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
+  await dragTaskToTarget(page, copyCard, qaRootInsertSlot);
+  const copyCardInQa = qaColumn.getByTestId("task-card-task-4");
+  await expect(copyCardInQa).toBeVisible();
+  await beginTaskDrag(page, copyCardInQa);
+  await hoverDraggedTaskToNestTarget(page, createdCard, 0.5, shipNoteSubtaskSlot);
   await finishTaskDrag(page);
   await expect(createdCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
   await expect(todoColumn.getByText("Queue copy pass")).toHaveCount(0);
@@ -548,15 +598,21 @@ test("board page moves a dragged subtask under another empty parent", async ({ p
   const shipNoteCard = page.getByTestId("task-card-task-5");
   const releaseChecklistCard = page.getByTestId("task-card-task-6");
   const copyCard = page.getByTestId("task-card-task-4");
+  const qaRootInsertSlot = page.getByTestId("task-drop-slot-project-1-lane-custom-1-2");
+  const shipNoteSubtaskSlot = page.getByTestId("task-drop-slot-task-5-0");
+  const releaseChecklistSubtaskSlot = page.getByTestId("task-drop-slot-task-6-0");
 
-  await beginTaskDrag(page, copyCard);
-  await hoverDraggedTaskOver(page, taskCardNestTarget(shipNoteCard), 0.25);
+  await dragTaskToTarget(page, copyCard, qaRootInsertSlot);
+  const copyCardInQa = page.getByTestId("task-card-task-4");
+  await expect(copyCardInQa).toBeVisible();
+  await beginTaskDrag(page, copyCardInQa);
+  await hoverDraggedTaskToNestTarget(page, shipNoteCard, 0.35, shipNoteSubtaskSlot);
   await finishTaskDrag(page);
   await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
 
   const copySubtask = shipNoteCard.locator(".task-card__subtasks").getByTestId("task-card-task-4");
   await beginTaskDrag(page, copySubtask);
-  await hoverDraggedTaskDirectlyToTarget(page, taskCardNestTarget(releaseChecklistCard), 0.5);
+  await hoverDraggedTaskToNestTarget(page, releaseChecklistCard, 0.5, releaseChecklistSubtaskSlot);
   await finishTaskDrag(page);
 
   await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toHaveCount(0);
@@ -731,6 +787,69 @@ test("board page creates lanes from the gap between columns", async ({ page }) =
     "Done",
     "Ready for QA"
   ]);
+});
+
+test("board page keeps a tall lane gap marker in the first screen", async ({ page }) => {
+  const projectsWithTallTodo = structuredClone(projectsForGrid);
+  const tasksWithTallTodo = structuredClone(tasks);
+  const billingCleanupProject = projectsWithTallTodo.find((project) => project.id === "project-1");
+  if (!billingCleanupProject) {
+    throw new Error("Expected project-1 test fixture to exist");
+  }
+
+  const todoLaneSummary = billingCleanupProject.laneSummaries.find(
+    (laneSummary) => laneSummary.id === laneId("project-1", "todo")
+  );
+  if (!todoLaneSummary) {
+    throw new Error("Expected the Todo lane summary to exist");
+  }
+
+  for (let taskIndex = 0; taskIndex < 18; taskIndex += 1) {
+    tasksWithTallTodo.push({
+      body: "",
+      createdAt: `2026-03-18T09:${String(taskIndex).padStart(2, "0")}:00.000Z`,
+      id: `task-tall-${taskIndex + 1}`,
+      laneId: laneId("project-1", "todo"),
+      parentTaskId: null,
+      position: tasks.length + taskIndex,
+      projectId: "project-1",
+      ticketId: `BILL-${taskIndex + 10}`,
+      tags: [],
+      title: `Tall backlog ${taskIndex + 1}`,
+      updatedAt: `2026-03-18T09:${String(taskIndex).padStart(2, "0")}:30.000Z`
+    });
+  }
+
+  todoLaneSummary.taskCount = tasksWithTallTodo.filter(
+    (task) => task.projectId === "project-1" && task.laneId === laneId("project-1", "todo")
+  ).length;
+
+  await mockAuthenticated(page, {
+    projects: projectsWithTallTodo,
+    tasks: tasksWithTallTodo
+  });
+
+  await page.goto("/projects/project-1");
+
+  const createLaneGap = page.getByTestId(`create-lane-gap-after-${laneId("project-1", "todo")}`);
+  const createLaneGapMarker = createLaneGap.locator(".board-lane-gap__marker");
+  await createLaneGap.hover({ position: { x: 4, y: 16 } });
+  await expect(createLaneGapMarker).toBeVisible();
+
+  const gapBox = await createLaneGap.boundingBox();
+  const markerBox = await createLaneGapMarker.boundingBox();
+  const viewportHeight = page.viewportSize()?.height ?? 0;
+
+  expect(gapBox).not.toBeNull();
+  expect(markerBox).not.toBeNull();
+  expect(viewportHeight).toBeGreaterThan(0);
+
+  const gapHeight = gapBox?.height ?? 0;
+  const markerCenterY = (markerBox?.y ?? 0) + (markerBox?.height ?? 0) / 2;
+  const expectedMarkerCenterY = (gapBox?.y ?? 0) + Math.min(gapHeight / 2, viewportHeight / 2);
+
+  expect(gapHeight).toBeGreaterThan(viewportHeight);
+  expect(Math.abs(markerCenterY - expectedMarkerCenterY)).toBeLessThanOrEqual(12);
 });
 
 test("board page switcher renames and creates projects while guarding protected lanes", async ({ page }) => {

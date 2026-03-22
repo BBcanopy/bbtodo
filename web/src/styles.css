@@ -1752,8 +1752,16 @@ textarea:focus {
 .board-column__header {
   align-items: flex-start;
   position: relative;
-  min-height: 2rem;
-  padding-right: 2.6rem;
+  min-height: 2.3rem;
+  margin: -0.15rem -0.25rem 0;
+  padding: 0.2rem 2.75rem 0.2rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 0.95rem;
+  transition:
+    border-color 220ms var(--ease),
+    background-color 220ms var(--ease),
+    box-shadow 220ms var(--ease),
+    color 220ms var(--ease);
 }
 
 .board-column__header.is-draggable {
@@ -1771,18 +1779,57 @@ textarea:focus {
   padding-right: 0.2rem;
 }
 
+.board-column__header.is-task-trash-visible {
+  padding-right: 0.4rem;
+  border-color: color-mix(in srgb, var(--danger) 16%, transparent);
+  background: color-mix(in srgb, var(--danger) 5%, var(--surface-muted));
+}
+
+.board-column__header.is-task-trash-visible .board-column__header-copy {
+  padding-right: 0;
+}
+
+.board-column__header.is-task-trash-visible .board-column__header-copy h2 {
+  color: color-mix(in srgb, var(--danger) 68%, var(--ink));
+}
+
+.board-column__header.is-task-trash-active {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line-strong));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--danger) 14%, var(--surface-strong)),
+      color-mix(in srgb, var(--danger) 8%, var(--surface-muted))
+    );
+  box-shadow:
+    inset 0 1px 0 var(--surface-highlight-strong),
+    0 0 0 1px color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.board-column__header.is-task-trash-active .board-column__header-copy h2 {
+  color: var(--danger);
+}
+
 .lane-header__actions {
   position: absolute;
-  top: 0;
+  top: 50%;
   right: 0;
   z-index: 5;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.4rem;
   flex: 0 0 auto;
   min-width: 2rem;
   min-height: 2rem;
+  transform: translateY(-50%);
+}
+
+.board-column__header.is-task-trash-visible .lane-header__actions {
+  left: 50%;
+  right: auto;
+  justify-content: center;
+  transform: translate(-50%, -50%);
 }
 
 .lane-delete-button,
@@ -1812,12 +1859,10 @@ textarea:focus {
   width: 100%;
   height: 100%;
   padding: 0;
-  border: 1px dashed color-mix(in srgb, var(--danger) 24%, var(--line-strong));
-  background: color-mix(in srgb, var(--surface-muted) 88%, var(--surface-strong));
+  border: none;
+  background: transparent;
   color: color-mix(in srgb, var(--danger) 72%, var(--ink-soft));
-  box-shadow:
-    inset 0 1px 0 var(--surface-highlight-strong),
-    0 12px 26px -24px rgba(159, 61, 51, 0.28);
+  box-shadow: none;
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
@@ -1825,10 +1870,7 @@ textarea:focus {
   transition:
     opacity 180ms var(--ease),
     transform 220ms var(--ease),
-    border-color 220ms var(--ease),
-    background-color 220ms var(--ease),
-    color 220ms var(--ease),
-    box-shadow 220ms var(--ease);
+    color 220ms var(--ease);
 }
 
 .lane-header__task-trash.is-visible,
@@ -1851,12 +1893,7 @@ textarea:focus {
 
 .lane-header__task-trash.is-active,
 .lane-header__task-trash.is-confirm-open {
-  border-color: color-mix(in srgb, var(--danger) 46%, var(--line-strong));
-  background: color-mix(in srgb, var(--danger) 10%, var(--surface-strong));
   color: var(--danger);
-  box-shadow:
-    inset 0 1px 0 var(--surface-highlight-strong),
-    0 18px 34px -28px rgba(159, 61, 51, 0.34);
 }
 
 .lane-header__action-spacer {
@@ -1871,6 +1908,12 @@ textarea:focus {
   top: calc(100% + 0.65rem);
   right: 0;
   left: auto;
+}
+
+.board-column__header.is-task-trash-visible .lane-task-trash-popover {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
 }
 
 .lane-delete-popover__field {
@@ -1912,7 +1955,7 @@ textarea:focus {
 
 .board-lane-gap__marker {
   position: absolute;
-  top: 50%;
+  top: min(50%, calc(50vh - 0.475rem));
   left: 50%;
   display: inline-grid;
   place-items: center;

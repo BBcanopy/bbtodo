@@ -509,6 +509,7 @@ function LaneHeader({
   isProtected,
   isTaskDeletePending,
   isTaskDragging,
+  isTaskTrashVisible,
   lane,
   onCancelTaskDelete,
   onDelete,
@@ -523,6 +524,7 @@ function LaneHeader({
   isProtected: boolean;
   isTaskDeletePending: boolean;
   isTaskDragging: boolean;
+  isTaskTrashVisible: boolean;
   lane: BoardLane;
   onCancelTaskDelete: () => void;
   onDelete: (destinationLaneId?: string) => void;
@@ -533,10 +535,20 @@ function LaneHeader({
 }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const confirmRef = useRef<HTMLDivElement | null>(null);
+  const { isOver: isTaskTrashOver, setNodeRef: setTaskTrashRef } = useDroppable({
+    id: getTaskTrashDropTargetId(lane.id),
+    data: {
+      laneId: lane.id,
+      type: "trash"
+    },
+    disabled: !isTaskTrashVisible
+  });
   const preferredDestinationId = getPreferredLaneDeleteDestination(lane.id, destinationLanes)?.id ?? "";
   const [destinationLaneId, setDestinationLaneId] = useState(preferredDestinationId);
   const requiresDestination = lane.taskCount > 0;
   const showLaneDeleteAction = !isTaskDragging && !pendingTaskDelete && !isProtected;
+  const showTaskTrashState = isTaskTrashVisible || pendingTaskDelete !== null;
+  const isTaskTrashActive = (isTaskTrashVisible && isTaskTrashOver) || pendingTaskDelete !== null;
 
   useDismissableLayer(isConfirmOpen, confirmRef, () => setIsConfirmOpen(false));
 
@@ -557,11 +569,12 @@ function LaneHeader({
   return (
     <div
       aria-label={`Reorder lane ${lane.name}`}
-      className={`board-column__header${isDragDisabled ? "" : " is-draggable"}`}
+      className={`board-column__header${isDragDisabled ? "" : " is-draggable"}${showTaskTrashState ? " is-task-trash-visible" : ""}${isTaskTrashActive ? " is-task-trash-active" : ""}`}
       data-testid={`lane-header-${lane.id}`}
       draggable={!isDragDisabled}
       onDragEnd={onDragEnd}
       onDragStart={(event) => onDragStart(event, lane.id)}
+      ref={setTaskTrashRef}
     >
       <div className="board-column__header-copy">
         <h2>{lane.name}</h2>
@@ -569,7 +582,8 @@ function LaneHeader({
       <div className="lane-header__actions" ref={confirmRef}>
         <LaneTaskTrashTarget
           isDeletePending={isTaskDeletePending}
-          isDraggingTask={isTaskDragging}
+          isDropActive={isTaskTrashActive}
+          isVisible={showTaskTrashState}
           laneId={lane.id}
           onCancel={onCancelTaskDelete}
           onConfirm={onConfirmTaskDelete}
@@ -912,28 +926,22 @@ function TaskCard({
 
 function LaneTaskTrashTarget({
   isDeletePending,
-  isDraggingTask,
+  isDropActive,
+  isVisible,
   laneId,
   pendingTask,
   onCancel,
   onConfirm
 }: {
   isDeletePending: boolean;
-  isDraggingTask: boolean;
+  isDropActive: boolean;
+  isVisible: boolean;
   laneId: string;
   pendingTask: Task | null;
   onCancel: () => void;
   onConfirm: (taskId: string) => void;
 }) {
   const confirmRef = useRef<HTMLDivElement | null>(null);
-  const { isOver, setNodeRef } = useDroppable({
-    id: getTaskTrashDropTargetId(laneId),
-    data: {
-      laneId,
-      type: "trash"
-    },
-    disabled: !isDraggingTask
-  });
 
   useDismissableLayer(Boolean(pendingTask), confirmRef, () => {
     if (!isDeletePending) {
@@ -943,13 +951,12 @@ function LaneTaskTrashTarget({
 
   return (
     <div
-      className={`lane-task-trash-shell${isDraggingTask || pendingTask ? " is-active" : ""}`}
+      className={`lane-task-trash-shell${isVisible || pendingTask ? " is-active" : ""}`}
       ref={confirmRef}
     >
       <div
-        className={`lane-header__task-trash${isDraggingTask ? " is-visible" : ""}${isOver ? " is-active" : ""}${pendingTask ? " is-confirm-open" : ""}`}
+        className={`lane-header__task-trash${isVisible ? " is-visible" : ""}${isDropActive ? " is-active" : ""}${pendingTask ? " is-confirm-open" : ""}`}
         data-testid={`lane-task-trash-target-${laneId}`}
-        ref={setNodeRef}
         role="presentation"
         title="Drop to delete"
       >
@@ -2412,6 +2419,7 @@ export function BoardPage() {
                       isProtected={lane.isProtectedLane}
                       isTaskDeletePending={deleteTaskMutation.isPending}
                       isTaskDragging={draggedTaskId !== null}
+                      isTaskTrashVisible={draggedTask?.laneId === lane.id}
                       lane={lane}
                       onCancelTaskDelete={() => {
                         setPendingDeleteTaskId(null);
