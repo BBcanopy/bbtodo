@@ -19,9 +19,29 @@ async function beginTaskDrag(page: Page, source: Locator) {
 
   await page.mouse.move(sourceCenterX, sourceCenterY);
   await page.mouse.down();
-  await page.mouse.move(sourceCenterX + 18, sourceCenterY, { steps: 6 });
-  await page.mouse.move(sourceCenterX + 28, sourceCenterY - 2, { steps: 4 });
-  await page.mouse.move(sourceCenterX + 32, sourceCenterY - 4, { steps: 2 });
+
+  // CI can occasionally miss the first activation path, so keep nudging the pointer
+  // a little farther until dnd-kit promotes the pointer movement into an active drag.
+  for (const pointerMove of [
+    { x: 18, y: 0, steps: 6 },
+    { x: 28, y: -2, steps: 4 },
+    { x: 32, y: -4, steps: 2 },
+    { x: 44, y: -6, steps: 4 }
+  ]) {
+    await page.mouse.move(sourceCenterX + pointerMove.x, sourceCenterY + pointerMove.y, {
+      steps: pointerMove.steps
+    });
+
+    if ((await dragOverlay.count()) > 0) {
+      return;
+    }
+
+    await page.waitForTimeout(40);
+    if ((await dragOverlay.count()) > 0) {
+      return;
+    }
+  }
+
   await expect(dragOverlay).toHaveCount(1);
 }
 
