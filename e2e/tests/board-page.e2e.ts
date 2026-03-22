@@ -304,6 +304,14 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   );
   await expect(todoLaneHeader).toHaveClass(/is-task-trash-visible/);
   await expect(doneLaneHeader).toHaveClass(/is-task-trash-visible/);
+  await expect(todoLaneTrashTarget).toHaveCSS("border-top-width", "0px");
+  const todoHeaderBox = await todoLaneHeader.boundingBox();
+  const todoTrashBox = await todoLaneTrashTarget.boundingBox();
+  expect(todoHeaderBox).not.toBeNull();
+  expect(todoTrashBox).not.toBeNull();
+  const todoHeaderCenterY = (todoHeaderBox?.y ?? 0) + (todoHeaderBox?.height ?? 0) / 2;
+  const todoTrashCenterY = (todoTrashBox?.y ?? 0) + (todoTrashBox?.height ?? 0) / 2;
+  expect(Math.abs(todoHeaderCenterY - todoTrashCenterY)).toBeLessThanOrEqual(6);
   await dropDraggedTaskOnHeaderTrashZone(page, todoLaneHeader);
 
   const deleteDialog = page.getByRole("alertdialog", { name: "Delete task Review retry settings" });
