@@ -533,10 +533,20 @@ function LaneHeader({
 }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const confirmRef = useRef<HTMLDivElement | null>(null);
+  const { isOver: isTaskTrashOver, setNodeRef: setTaskTrashRef } = useDroppable({
+    id: getTaskTrashDropTargetId(lane.id),
+    data: {
+      laneId: lane.id,
+      type: "trash"
+    },
+    disabled: !isTaskDragging
+  });
   const preferredDestinationId = getPreferredLaneDeleteDestination(lane.id, destinationLanes)?.id ?? "";
   const [destinationLaneId, setDestinationLaneId] = useState(preferredDestinationId);
   const requiresDestination = lane.taskCount > 0;
   const showLaneDeleteAction = !isTaskDragging && !pendingTaskDelete && !isProtected;
+  const showTaskTrashState = isTaskDragging || pendingTaskDelete !== null;
+  const isTaskTrashActive = isTaskTrashOver || pendingTaskDelete !== null;
 
   useDismissableLayer(isConfirmOpen, confirmRef, () => setIsConfirmOpen(false));
 
@@ -557,11 +567,12 @@ function LaneHeader({
   return (
     <div
       aria-label={`Reorder lane ${lane.name}`}
-      className={`board-column__header${isDragDisabled ? "" : " is-draggable"}`}
+      className={`board-column__header${isDragDisabled ? "" : " is-draggable"}${showTaskTrashState ? " is-task-trash-visible" : ""}${isTaskTrashActive ? " is-task-trash-active" : ""}`}
       data-testid={`lane-header-${lane.id}`}
       draggable={!isDragDisabled}
       onDragEnd={onDragEnd}
       onDragStart={(event) => onDragStart(event, lane.id)}
+      ref={setTaskTrashRef}
     >
       <div className="board-column__header-copy">
         <h2>{lane.name}</h2>
@@ -569,6 +580,7 @@ function LaneHeader({
       <div className="lane-header__actions" ref={confirmRef}>
         <LaneTaskTrashTarget
           isDeletePending={isTaskDeletePending}
+          isDropActive={isTaskTrashActive}
           isDraggingTask={isTaskDragging}
           laneId={lane.id}
           onCancel={onCancelTaskDelete}
@@ -912,6 +924,7 @@ function TaskCard({
 
 function LaneTaskTrashTarget({
   isDeletePending,
+  isDropActive,
   isDraggingTask,
   laneId,
   pendingTask,
@@ -919,6 +932,7 @@ function LaneTaskTrashTarget({
   onConfirm
 }: {
   isDeletePending: boolean;
+  isDropActive: boolean;
   isDraggingTask: boolean;
   laneId: string;
   pendingTask: Task | null;
@@ -926,14 +940,6 @@ function LaneTaskTrashTarget({
   onConfirm: (taskId: string) => void;
 }) {
   const confirmRef = useRef<HTMLDivElement | null>(null);
-  const { isOver, setNodeRef } = useDroppable({
-    id: getTaskTrashDropTargetId(laneId),
-    data: {
-      laneId,
-      type: "trash"
-    },
-    disabled: !isDraggingTask
-  });
 
   useDismissableLayer(Boolean(pendingTask), confirmRef, () => {
     if (!isDeletePending) {
@@ -947,9 +953,8 @@ function LaneTaskTrashTarget({
       ref={confirmRef}
     >
       <div
-        className={`lane-header__task-trash${isDraggingTask ? " is-visible" : ""}${isOver ? " is-active" : ""}${pendingTask ? " is-confirm-open" : ""}`}
+        className={`lane-header__task-trash${isDraggingTask ? " is-visible" : ""}${isDropActive ? " is-active" : ""}${pendingTask ? " is-confirm-open" : ""}`}
         data-testid={`lane-task-trash-target-${laneId}`}
-        ref={setNodeRef}
         role="presentation"
         title="Drop to delete"
       >

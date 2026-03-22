@@ -91,18 +91,18 @@ async function hoverDraggedTaskDirectlyToTarget(page: Page, target: Locator, tar
   await page.waitForTimeout(160);
 }
 
-async function dropDraggedTaskOnTrashTarget(page: Page, target: Locator) {
-  await expect(target).toBeAttached();
-  const targetBox = await target.boundingBox();
+async function dropDraggedTaskOnHeaderTrashZone(page: Page, header: Locator) {
+  await expect(header).toBeAttached();
+  const headerBox = await header.boundingBox();
 
-  expect(targetBox).not.toBeNull();
+  expect(headerBox).not.toBeNull();
 
   await page.mouse.move(
-    (targetBox?.x ?? 0) + (targetBox?.width ?? 0) / 2,
-    (targetBox?.y ?? 0) + (targetBox?.height ?? 0) / 2,
+    (headerBox?.x ?? 0) + (headerBox?.width ?? 0) * 0.28,
+    (headerBox?.y ?? 0) + (headerBox?.height ?? 0) * 0.5,
     { steps: 12 }
   );
-  await expect(target).toHaveClass(/is-active/);
+  await expect(header).toHaveClass(/is-task-trash-active/);
   await finishTaskDrag(page);
 }
 
@@ -289,6 +289,8 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await page.goto("/projects/project-1");
 
   const firstTaskCard = page.getByTestId("task-card-task-1");
+  const todoLaneHeader = page.getByTestId(`lane-header-${laneId("project-1", "todo")}`);
+  const doneLaneHeader = page.getByTestId(`lane-header-${laneId("project-1", "done")}`);
   const todoLaneTrashTarget = page.getByTestId(`lane-task-trash-target-${laneId("project-1", "todo")}`);
   const doneLaneTrashTarget = page.getByTestId(`lane-task-trash-target-${laneId("project-1", "done")}`);
 
@@ -300,7 +302,9 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(page.locator(".task-drag-overlay .task-card__title")).toHaveText(
     "[BILL-1] Review retry settings"
   );
-  await dropDraggedTaskOnTrashTarget(page, todoLaneTrashTarget);
+  await expect(todoLaneHeader).toHaveClass(/is-task-trash-visible/);
+  await expect(doneLaneHeader).toHaveClass(/is-task-trash-visible/);
+  await dropDraggedTaskOnHeaderTrashZone(page, todoLaneHeader);
 
   const deleteDialog = page.getByRole("alertdialog", { name: "Delete task Review retry settings" });
   await expect(deleteDialog).toBeVisible();
@@ -309,7 +313,8 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(todoLaneTrashTarget).toBeHidden();
 
   await beginTaskDrag(page, taskCardSurface(firstTaskCard));
-  await dropDraggedTaskOnTrashTarget(page, todoLaneTrashTarget);
+  await expect(todoLaneHeader).toHaveClass(/is-task-trash-visible/);
+  await dropDraggedTaskOnHeaderTrashZone(page, todoLaneHeader);
 
   await expect(deleteDialog).toBeVisible();
   await deleteDialog.getByRole("button", { exact: true, name: "Delete" }).click();
