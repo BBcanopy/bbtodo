@@ -112,7 +112,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: server-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ steps.owner.outputs.value }}/bbtodo-server
           tags: |
@@ -132,7 +132,7 @@ jobs:
           tags: ${{ steps.server-meta.outputs.tags }}
 
       - id: web-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ steps.owner.outputs.value }}/bbtodo-web
           tags: |
@@ -152,7 +152,7 @@ jobs:
           tags: ${{ steps.web-meta.outputs.tags }}
 
       - id: all-in-one-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ steps.owner.outputs.value }}/bbtodo
           tags: |
