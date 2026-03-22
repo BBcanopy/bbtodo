@@ -1764,6 +1764,14 @@ textarea:focus {
     color 220ms var(--ease);
 }
 
+.board-column__header.has-add-task-action {
+  padding-right: 5rem;
+}
+
+.board-column__header.has-add-task-action.has-lane-delete-action {
+  padding-right: 7.2rem;
+}
+
 .board-column__header.is-draggable {
   cursor: grab;
   user-select: none;
@@ -1832,11 +1840,25 @@ textarea:focus {
   transform: translate(-50%, -50%);
 }
 
+.lane-add-task-button,
 .lane-delete-button,
 .lane-header__task-trash,
 .lane-header__action-spacer {
   width: 2rem;
   height: 2rem;
+}
+
+.icon-button.lane-add-task-button {
+  color: var(--accent-strong);
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.icon-button.lane-add-task-button:hover,
+.icon-button.lane-add-task-button:focus-visible {
+  color: var(--accent);
+  background: transparent;
 }
 
 .lane-task-trash-shell {
@@ -1989,6 +2011,42 @@ textarea:focus {
 
 .board-lane-gap:focus-visible {
   outline: none;
+}
+
+.board-lane-gap-mobile {
+  display: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  min-height: 0;
+  margin: 0.7rem auto 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-popover);
+  color: var(--ink-soft);
+  box-shadow:
+    inset 0 1px 0 var(--surface-highlight),
+    0 10px 22px -18px rgba(18, 34, 36, 0.28);
+  transition:
+    transform 220ms var(--ease),
+    border-color 220ms var(--ease),
+    color 220ms var(--ease);
+}
+
+.board-lane-gap-mobile:hover,
+.board-lane-gap-mobile:focus-visible {
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.board-lane-gap-mobile:active {
+  transform: scale(0.96);
+}
+
+.board-lane-gap-mobile__icon {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 .task-drop-slot {
@@ -3133,7 +3191,22 @@ textarea:focus {
   }
 
   .board-grid {
+    gap: 0.75rem;
     min-height: auto;
+  }
+
+  .board-column-shell {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .board-lane-gap {
+    display: none;
+  }
+
+  .board-lane-gap-mobile {
+    display: inline-grid;
+    margin-top: 0;
   }
 
   .task-card__actions,
@@ -3165,8 +3238,24 @@ textarea:focus {
 
   .token-row,
   .token-row--skeleton {
+    display: grid;
     grid-template-columns: 1fr;
     gap: 0.8rem;
+  }
+
+  .topbar__label,
+  .eyebrow,
+  .label-chip,
+  .field__label,
+  .field__hint,
+  .task-card__ticket-id,
+  .task-card__timestamp,
+  .token-row__timestamp,
+  .task-tag,
+  .lane-delete-popover__field span,
+  .micro-button,
+  .text-button {
+    font-size: 0.875rem;
   }
 
   .hero-panel,
@@ -3177,10 +3266,60 @@ textarea:focus {
   .dialog-panel,
   .token-list,
   .token-reveal {
-    padding: 1.05rem;
+    padding: 1.15rem;
   }
 
   .metric-pill {
     min-height: auto;
+  }
+
+  .board-column {
+    gap: 0.9rem;
+  }
+
+  .board-column__header {
+    min-height: 2.75rem;
+    padding-left: 0.55rem;
+  }
+
+  .board-column__header.has-add-task-action {
+    padding-right: 5.6rem;
+  }
+
+  .board-column__header.has-add-task-action.has-lane-delete-action {
+    padding-right: 8.25rem;
+  }
+
+  .board-column__content {
+    gap: 0.75rem;
+  }
+
+  .task-card {
+    gap: 0.5rem;
+    padding: 0.8rem;
+  }
+
+  .lane-add-task-button,
+  .lane-delete-button,
+  .lane-header__task-trash,
+  .lane-header__action-spacer,
+  .icon-button {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .lane-task-trash-shell {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .lane-composer {
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .lane-composer__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
   }
 }

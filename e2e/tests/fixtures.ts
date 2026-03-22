@@ -895,7 +895,7 @@ export async function mockAuthenticated(
         return;
       }
 
-      if (parentTask?.parentTaskId !== null) {
+      if (parentTask && parentTask.parentTaskId !== null) {
         await fulfillJson(route, 400, { message: "Subtasks can only be added under top-level tasks." });
         return;
       }

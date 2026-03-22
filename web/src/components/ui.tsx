@@ -63,6 +63,20 @@ export function PencilIcon({ className }: { className?: string }) {
   );
 }
 
+export function PlusIcon({ className }: { className?: string }) {
+  return (
+    <SvgIcon className={className}>
+      <path
+        d="M12 5.25v13.5M5.25 12h13.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </SvgIcon>
+  );
+}
+
 export function TrashIcon({ className }: { className?: string }) {
   return (
     <SvgIcon className={className}>

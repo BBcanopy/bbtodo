@@ -1,6 +1,8 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { devices, expect, test, type Locator, type Page } from "@playwright/test";
 
 import { laneId, mockAuthenticated, projectsForGrid, tag, tasks } from "./fixtures";
+
+const { defaultBrowserType: _ignoredDefaultBrowserType, ...iPhone13 } = devices["iPhone 13"];
 
 async function beginTaskDrag(page: Page, source: Locator) {
   const taskSurface = source.locator(":scope > .task-card__surface-wrap > .task-card__surface");
@@ -759,6 +761,36 @@ test("board page resets a subtask preview when dragged back over its current par
   await expect(releaseChecklistCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toHaveCount(0);
 });
 
+test("board page adds tasks from the lane header action and keeps the double-click shortcut", async ({ page }) => {
+  const todoLaneId = laneId("project-1", "todo");
+
+  await mockAuthenticated(page, { projects: projectsForGrid });
+
+  await page.goto("/projects/project-1");
+
+  const addTaskButton = page.getByTestId(`add-task-button-${todoLaneId}`);
+  const composer = page.getByTestId(`lane-composer-${todoLaneId}`);
+
+  await expect(addTaskButton).toBeVisible();
+  const addTaskButtonBorderWidth = await addTaskButton.evaluate(
+    (element) => window.getComputedStyle(element).borderTopWidth
+  );
+  expect(addTaskButtonBorderWidth).toBe("0px");
+  await addTaskButton.click();
+  await expect(composer).toBeVisible();
+
+  const composerInput = composer.getByLabel("New task title for Todo");
+  await composerInput.fill("Capture mobile tap flow");
+  await composerInput.press("Enter");
+
+  await expect(page.locator(".task-card__title", { hasText: "Capture mobile tap flow" })).toBeVisible();
+
+  await page.getByTestId(`lane-header-${todoLaneId}`).dblclick({ position: { x: 28, y: 18 } });
+  await expect(composer).toBeVisible();
+  await composer.getByRole("button", { name: "Cancel" }).click();
+  await expect(composer).toHaveCount(0);
+});
+
 test("board page creates lanes from the gap between columns", async ({ page }) => {
   await mockAuthenticated(page, { projects: projectsForGrid });
 
@@ -850,6 +882,72 @@ test("board page keeps a tall lane gap marker in the first screen", async ({ pag
 
   expect(gapHeight).toBeGreaterThan(viewportHeight);
   expect(Math.abs(markerCenterY - expectedMarkerCenterY)).toBeLessThanOrEqual(12);
+});
+
+test.describe("mobile board page", () => {
+  test.use({
+    ...iPhone13
+  });
+
+  test("board page adds tasks from the shared lane header action on mobile", async ({ page }) => {
+    const todoLaneId = laneId("project-1", "todo");
+
+    await mockAuthenticated(page, { projects: projectsForGrid });
+
+    await page.goto("/projects/project-1");
+
+    const addTaskButton = page.getByTestId(`add-task-button-${todoLaneId}`);
+    const composer = page.getByTestId(`lane-composer-${todoLaneId}`);
+
+    await expect(addTaskButton).toBeVisible();
+    await addTaskButton.click();
+    await expect(composer).toBeVisible();
+
+    const composerInput = composer.getByLabel("New task title for Todo");
+    await composerInput.fill("Confirm mobile tap flow");
+    await composerInput.press("Enter");
+
+    await expect(page.locator(".task-card__title", { hasText: "Confirm mobile tap flow" })).toBeVisible();
+  });
+
+  test("board page creates lanes from the mobile between-lane control", async ({ page }) => {
+    const todoLaneId = laneId("project-1", "todo");
+
+    await mockAuthenticated(page, { projects: projectsForGrid });
+
+    await page.goto("/projects/project-1");
+
+    const mobileCreateLaneButton = page.getByTestId(`create-lane-mobile-after-${todoLaneId}`);
+    const firstLaneSpacing = await page.locator(".board-column-shell").first().evaluate((element) => {
+      const shellStyle = window.getComputedStyle(element);
+      const gapButton = element.querySelector<HTMLButtonElement>(".board-lane-gap-mobile");
+      const buttonStyle = gapButton ? window.getComputedStyle(gapButton) : null;
+
+      return {
+        buttonMarginTop: buttonStyle ? Number.parseFloat(buttonStyle.marginTop) : Number.NaN,
+        rowGap: Number.parseFloat(shellStyle.rowGap)
+      };
+    });
+
+    await expect(mobileCreateLaneButton).toBeVisible();
+    await expect(mobileCreateLaneButton.locator("span")).toHaveCount(0);
+    expect(firstLaneSpacing.rowGap).toBeLessThanOrEqual(8);
+    expect(firstLaneSpacing.buttonMarginTop).toBeLessThanOrEqual(1);
+    await mobileCreateLaneButton.click();
+
+    const laneDialog = page.getByRole("dialog", { name: "Create Lane" });
+    await expect(laneDialog).toBeVisible();
+    await laneDialog.getByLabel("Lane name").fill("Ready for mobile QA");
+    await laneDialog.getByRole("button", { exact: true, name: "Create Lane" }).click();
+
+    await expect(page.locator(".board-column__header h2")).toHaveText([
+      "Todo",
+      "In Progress",
+      "In review",
+      "Done",
+      "Ready for mobile QA"
+    ]);
+  });
 });
 
 test("board page switcher renames and creates projects while guarding protected lanes", async ({ page }) => {

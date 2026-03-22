@@ -37,7 +37,7 @@ import {
   parseSingleTagInput,
   parseTagInput
 } from "../app/utils";
-import { BoardSkeleton, CloseIcon, EmptyState, ErrorBanner, TrashIcon } from "../components/ui";
+import { BoardSkeleton, CloseIcon, EmptyState, ErrorBanner, PlusIcon, TrashIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
 type TaskEditorView = "preview" | "source";
@@ -511,6 +511,7 @@ function LaneHeader({
   isTaskDragging,
   isTaskTrashVisible,
   lane,
+  onAddTask,
   onCancelTaskDelete,
   onDelete,
   onConfirmTaskDelete,
@@ -526,6 +527,7 @@ function LaneHeader({
   isTaskDragging: boolean;
   isTaskTrashVisible: boolean;
   lane: BoardLane;
+  onAddTask: () => void;
   onCancelTaskDelete: () => void;
   onDelete: (destinationLaneId?: string) => void;
   onConfirmTaskDelete: (taskId: string) => void;
@@ -546,6 +548,7 @@ function LaneHeader({
   const preferredDestinationId = getPreferredLaneDeleteDestination(lane.id, destinationLanes)?.id ?? "";
   const [destinationLaneId, setDestinationLaneId] = useState(preferredDestinationId);
   const requiresDestination = lane.taskCount > 0;
+  const showAddTaskAction = !isTaskDragging && !pendingTaskDelete;
   const showLaneDeleteAction = !isTaskDragging && !pendingTaskDelete && !isProtected;
   const showTaskTrashState = isTaskTrashVisible || pendingTaskDelete !== null;
   const isTaskTrashActive = (isTaskTrashVisible && isTaskTrashOver) || pendingTaskDelete !== null;
@@ -569,7 +572,7 @@ function LaneHeader({
   return (
     <div
       aria-label={`Reorder lane ${lane.name}`}
-      className={`board-column__header${isDragDisabled ? "" : " is-draggable"}${showTaskTrashState ? " is-task-trash-visible" : ""}${isTaskTrashActive ? " is-task-trash-active" : ""}`}
+      className={`board-column__header${isDragDisabled ? "" : " is-draggable"}${showAddTaskAction ? " has-add-task-action" : ""}${showLaneDeleteAction ? " has-lane-delete-action" : ""}${showTaskTrashState ? " is-task-trash-visible" : ""}${isTaskTrashActive ? " is-task-trash-active" : ""}`}
       data-testid={`lane-header-${lane.id}`}
       draggable={!isDragDisabled}
       onDragEnd={onDragEnd}
@@ -589,6 +592,24 @@ function LaneHeader({
           onConfirm={onConfirmTaskDelete}
           pendingTask={pendingTaskDelete}
         />
+        {showAddTaskAction ? (
+          <button
+            aria-label={`Add task to ${lane.name}`}
+            className="icon-button lane-add-task-button"
+            data-testid={`add-task-button-${lane.id}`}
+            draggable={false}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAddTask();
+            }}
+            onDragStart={(event) => event.preventDefault()}
+            onPointerDown={(event) => event.stopPropagation()}
+            title={`Add task to ${lane.name}`}
+            type="button"
+          >
+            <PlusIcon />
+          </button>
+        ) : null}
         {showLaneDeleteAction ? (
           <button
             aria-haspopup="dialog"
@@ -2389,7 +2410,7 @@ export function BoardPage() {
                     data-testid={`board-column-${lane.id}`}
                     onDoubleClick={(event) => {
                       const target = event.target as HTMLElement;
-                      if (target.closest("button, input, textarea, form, a")) {
+                      if (target.closest("button, input, select, textarea, form, a")) {
                         return;
                       }
 
@@ -2421,6 +2442,7 @@ export function BoardPage() {
                       isTaskDragging={draggedTaskId !== null}
                       isTaskTrashVisible={draggedTask?.laneId === lane.id}
                       lane={lane}
+                      onAddTask={() => openComposer(lane.id)}
                       onCancelTaskDelete={() => {
                         setPendingDeleteTaskId(null);
                         setPendingDeleteTaskLaneId(null);
@@ -2445,7 +2467,9 @@ export function BoardPage() {
                           <form
                             className="lane-composer"
                             data-testid={`lane-composer-${lane.id}`}
+                            onClick={(event) => event.stopPropagation()}
                             onDoubleClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
                             onSubmit={(event) => {
                               event.preventDefault();
                               createTaskMutation.mutate({
@@ -2545,6 +2569,19 @@ export function BoardPage() {
                     <span aria-hidden="true" className="board-lane-gap__marker">
                       +
                     </span>
+                  </button>
+                  <button
+                    aria-label={`Create lane after ${lane.name}`}
+                    className="board-lane-gap-mobile"
+                    data-testid={`create-lane-mobile-after-${lane.id}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openCreateLaneDialog();
+                    }}
+                    type="button"
+                  >
+                    <PlusIcon className="board-lane-gap-mobile__icon" />
                   </button>
                 </div>
               );
