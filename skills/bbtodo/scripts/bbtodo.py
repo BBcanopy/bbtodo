@@ -376,7 +376,7 @@ def build_config(args: argparse.Namespace) -> ScriptConfig:
     worktree = resolve_worktree(args.worktree)
 
     base_url = normalize_base_url(
-        resolve_config_value(args.base_url, "BBTODO_BASE_URL", env_file_values, "https://kb.jybb.me")
+        resolve_config_value(args.base_url, "BBTODO_BASE_URL", env_file_values, "https://app.bbotdo.com")
     )
     api_token, api_token_source = resolve_api_token(getattr(args, "api_token", None), env_file_values)
     project_name = resolve_config_value(

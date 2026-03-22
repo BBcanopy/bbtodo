@@ -28,7 +28,7 @@ Then edit `.\skills\bbtodo\scripts\.env`:
 
 ```dotenv
 BBTODO_API_TOKEN=replace-with-your-token
-BBTODO_BASE_URL=https://kb.jybb.me
+BBTODO_BASE_URL=https://app.bbotdo.com
 ```
 
 ## Workflow
