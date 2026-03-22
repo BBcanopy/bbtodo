@@ -12,10 +12,10 @@
 
 ```bash
 # Create .env file and modify as you wish
-wget https://raw.githubusercontent.com/JyQuery/bbtodo/refs/heads/main/.env.example -O .env 
+wget https://raw.githubusercontent.com/BBcanopy/bbtodo/refs/heads/main/.env.example -O .env 
 
 # Download the all-in-one docker compose file
-wget https://raw.githubusercontent.com/JyQuery/bbtodo/refs/heads/main/docker-compose.all-in-one.yml -O docker-compose.yml
+wget https://raw.githubusercontent.com/BBcanopy/bbtodo/refs/heads/main/docker-compose.all-in-one.yml -O docker-compose.yml
 
 # Create data folder
 mkdir data

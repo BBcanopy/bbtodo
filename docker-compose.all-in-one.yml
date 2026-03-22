@@ -1,6 +1,6 @@
 services:
   bbtodo:
-    image: ghcr.io/jyquery/bbtodo-all-in-one:${BBTODO_IMAGE_TAG:-latest}
+    image: ghcr.io/bbcanopy/bbtodo-all-in-one:${BBTODO_IMAGE_TAG:-latest}
     pull_policy: always
     user: "${BBTODO_UID:-1000}:${BBTODO_GID:-1000}"
     environment:
