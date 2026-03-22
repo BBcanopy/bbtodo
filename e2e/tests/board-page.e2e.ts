@@ -4,11 +4,24 @@ import { laneId, mockAuthenticated, projectsForGrid, tag, tasks } from "./fixtur
 
 const { defaultBrowserType: _ignoredDefaultBrowserType, ...iPhone13 } = devices["iPhone 13"];
 
+async function isTaskDragActive(dragOverlay: Locator, taskCard: Locator) {
+  if ((await dragOverlay.count()) > 0) {
+    return true;
+  }
+
+  const taskCardClass = await taskCard.getAttribute("class");
+  return taskCardClass?.includes("is-dragging") ?? false;
+}
+
 async function beginTaskDrag(page: Page, source: Locator) {
   const taskSurface = source.locator(":scope > .task-card__surface-wrap > .task-card__surface");
   const dragHandle = (await taskSurface.count()) > 0 ? taskSurface : source;
   const dragOverlay = page.locator(".task-card--drag-overlay");
+  const taskCard = source
+    .locator("xpath=ancestor-or-self::article[contains(concat(' ', normalize-space(@class), ' '), ' task-card ')]")
+    .first();
 
+  await dragHandle.scrollIntoViewIfNeeded();
   await expect(dragHandle).toBeVisible();
   const sourceBox = await dragHandle.boundingBox();
 
@@ -17,8 +30,9 @@ async function beginTaskDrag(page: Page, source: Locator) {
   const sourceCenterX = (sourceBox?.x ?? 0) + (sourceBox?.width ?? 0) / 2;
   const sourceCenterY = (sourceBox?.y ?? 0) + (sourceBox?.height ?? 0) / 2;
 
-  await page.mouse.move(sourceCenterX, sourceCenterY);
+  await page.mouse.move(sourceCenterX, sourceCenterY, { steps: 6 });
   await page.mouse.down();
+  await page.waitForTimeout(40);
 
   // CI can occasionally miss the first activation path, so keep nudging the pointer
   // a little farther until dnd-kit promotes the pointer movement into an active drag.
@@ -32,17 +46,17 @@ async function beginTaskDrag(page: Page, source: Locator) {
       steps: pointerMove.steps
     });
 
-    if ((await dragOverlay.count()) > 0) {
+    if (await isTaskDragActive(dragOverlay, taskCard)) {
       return;
     }
 
     await page.waitForTimeout(40);
-    if ((await dragOverlay.count()) > 0) {
+    if (await isTaskDragActive(dragOverlay, taskCard)) {
       return;
     }
   }
 
-  await expect(dragOverlay).toHaveCount(1);
+  await expect.poll(async () => ((await isTaskDragActive(dragOverlay, taskCard)) ? 1 : 0)).toBe(1);
 }
 
 async function hoverDraggedTaskOver(page: Page, target: Locator, targetYRatio = 0.5) {

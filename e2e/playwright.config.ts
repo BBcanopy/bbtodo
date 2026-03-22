@@ -18,6 +18,7 @@ export default defineConfig({
   workers: 1,
   use: {
     baseURL: useExternalBaseURL ? externalBaseURL : "http://127.0.0.1:4173",
+    reducedMotion: "reduce",
     trace: "on-first-retry"
   },
   ...(useExternalBaseURL

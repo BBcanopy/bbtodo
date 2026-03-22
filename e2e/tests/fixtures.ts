@@ -12,6 +12,20 @@ import {
 
 type DefaultLaneKey = "todo" | "in_progress" | "in_review" | "done";
 
+const bootstrappedPages = new WeakSet<Page>();
+const reducedMotionStyleId = "bbtodo-e2e-reduced-motion";
+const reducedMotionCss = `
+  *,
+  *::before,
+  *::after {
+    animation-delay: 0ms !important;
+    animation-duration: 0ms !important;
+    transition-delay: 0ms !important;
+    transition-duration: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+`;
+
 const user = {
   email: "operator@example.com",
   id: "user-1",
@@ -315,7 +329,50 @@ async function fulfillJson(route: Route, status: number, body: unknown) {
   });
 }
 
+async function bootstrapPage(page: Page) {
+  if (bootstrappedPages.has(page)) {
+    return;
+  }
+
+  bootstrappedPages.add(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(
+    ({ cssText, styleId }: { cssText: string; styleId: string }) => {
+      function ensureReducedMotionStyle() {
+        if (document.getElementById(styleId)) {
+          return;
+        }
+
+        const parent = document.head ?? document.documentElement;
+        if (!parent) {
+          return;
+        }
+
+        const style = document.createElement("style");
+        style.id = styleId;
+        style.textContent = cssText;
+        parent.append(style);
+      }
+
+      ensureReducedMotionStyle();
+
+      if (!document.getElementById(styleId) && document.documentElement) {
+        const observer = new MutationObserver(() => {
+          ensureReducedMotionStyle();
+          if (document.getElementById(styleId)) {
+            observer.disconnect();
+          }
+        });
+
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+      }
+    },
+    { cssText: reducedMotionCss, styleId: reducedMotionStyleId }
+  );
+}
+
 export async function mockUnauthenticated(page: Page) {
+  await bootstrapPage(page);
   await page.route("**/api/v1/me", async (route) => {
     await fulfillJson(route, 401, { message: "Unauthorized" });
   });
@@ -332,6 +389,7 @@ export async function mockAuthenticated(
     tasks?: Task[];
   }
 ) {
+  await bootstrapPage(page);
   let nextApiTokenId = options?.nextApiTokenId ?? 1;
   let nextProjectId = options?.nextProjectId ?? 2;
   let nextLaneId = 1;
