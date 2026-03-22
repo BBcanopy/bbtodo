@@ -309,6 +309,14 @@ h3 {
   position: relative;
 }
 
+.topbar-shell {
+  min-width: 0;
+}
+
+.topbar-shell > .topbar {
+  min-width: 0;
+}
+
 .topbar::after {
   content: "";
   position: absolute;
@@ -3116,6 +3124,28 @@ textarea:focus {
   .compose-form {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .topbar-shell {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    display: grid;
+    grid-template-rows: 1fr;
+    overflow: clip;
+    transition:
+      grid-template-rows 220ms var(--ease),
+      opacity 180ms var(--ease);
+  }
+
+  .topbar-shell.is-mobile-hidden {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .topbar-shell > .topbar {
+    min-height: 0;
   }
 
   .topbar {

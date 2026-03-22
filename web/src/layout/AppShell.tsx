@@ -22,6 +22,14 @@ import {
 import { ChevronDownIcon, CloseIcon, ErrorBanner, PencilIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
+const mobileTopbarMediaQuery = "(max-width: 860px)";
+const mobileTopbarHideOffset = 72;
+const mobileTopbarScrollThreshold = 10;
+type LegacyMediaQueryList = MediaQueryList & {
+  addListener?: (listener: (event: MediaQueryListEvent) => void) => void;
+  removeListener?: (listener: (event: MediaQueryListEvent) => void) => void;
+};
+
 export function AppShell({ user }: { user: User }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -31,12 +39,15 @@ export function AppShell({ user }: { user: User }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProjectSwitcherOpen, setIsProjectSwitcherOpen] = useState(false);
   const [isTagFilterOpen, setIsTagFilterOpen] = useState(false);
+  const [isMobileTopbarHidden, setIsMobileTopbarHidden] = useState(false);
   const [projectSwitcherInput, setProjectSwitcherInput] = useState("");
   const queryClient = useQueryClient();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const projectSwitcherRef = useRef<HTMLDivElement | null>(null);
   const tagFilterRef = useRef<HTMLDivElement | null>(null);
   const tagFilterInputRef = useRef<HTMLInputElement | null>(null);
+  const lastScrollYRef = useRef(0);
+  const isMobileViewportRef = useRef(false);
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
@@ -147,6 +158,97 @@ export function AppShell({ user }: { user: User }) {
     setIsTagFilterOpen(false);
   }, [boardMatch]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia(mobileTopbarMediaQuery);
+    const legacyMediaQuery = mediaQuery as LegacyMediaQueryList;
+    let frame = 0;
+
+    const syncViewportState = () => {
+      isMobileViewportRef.current = mediaQuery.matches;
+      lastScrollYRef.current = window.scrollY;
+      if (!mediaQuery.matches) {
+        setIsMobileTopbarHidden(false);
+      }
+    };
+
+    const updateTopbarVisibility = () => {
+      frame = 0;
+
+      const currentScrollY = window.scrollY;
+      const scrollDelta = currentScrollY - lastScrollYRef.current;
+
+      if (!isMobileViewportRef.current) {
+        lastScrollYRef.current = currentScrollY;
+        return;
+      }
+
+      if (currentScrollY <= mobileTopbarScrollThreshold) {
+        setIsMobileTopbarHidden(false);
+      } else if (
+        currentScrollY > mobileTopbarHideOffset &&
+        scrollDelta > mobileTopbarScrollThreshold
+      ) {
+        setIsMobileTopbarHidden(true);
+      } else if (scrollDelta < -mobileTopbarScrollThreshold) {
+        setIsMobileTopbarHidden(false);
+      }
+
+      lastScrollYRef.current = currentScrollY;
+    };
+
+    const handleScroll = () => {
+      if (frame !== 0) {
+        return;
+      }
+
+      frame = window.requestAnimationFrame(updateTopbarVisibility);
+    };
+
+    const handleViewportChange = () => {
+      syncViewportState();
+    };
+
+    syncViewportState();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    if ("addEventListener" in mediaQuery) {
+      mediaQuery.addEventListener("change", handleViewportChange);
+    } else {
+      legacyMediaQuery.addListener?.(handleViewportChange);
+    }
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if ("removeEventListener" in mediaQuery) {
+        mediaQuery.removeEventListener("change", handleViewportChange);
+      } else {
+        legacyMediaQuery.removeListener?.(handleViewportChange);
+      }
+      if (frame !== 0) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setIsMobileTopbarHidden(false);
+    if (typeof window !== "undefined") {
+      lastScrollYRef.current = window.scrollY;
+    }
+  }, [location.key]);
+
+  useEffect(() => {
+    if (isMenuOpen || isProjectSwitcherOpen || isTagFilterOpen) {
+      setIsMobileTopbarHidden(false);
+      if (typeof window !== "undefined") {
+        lastScrollYRef.current = window.scrollY;
+      }
+    }
+  }, [isMenuOpen, isProjectSwitcherOpen, isTagFilterOpen]);
+
   function updateRouteParams(updater: (params: URLSearchParams) => void) {
     const nextParams = new URLSearchParams(searchParams);
     updater(nextParams);
@@ -197,7 +299,11 @@ export function AppShell({ user }: { user: User }) {
   return (
     <div className="app-frame">
       <div className="app-shell">
-        <header className="topbar">
+        <div
+          className={`topbar-shell${isMobileTopbarHidden ? " is-mobile-hidden" : ""}`}
+          data-testid="app-topbar-shell"
+        >
+          <header className="topbar">
           <div className="topbar__nav">
             <Link className="brand-mark" to="/">
               <span className="brand-mark__pill">bb</span>
@@ -508,7 +614,8 @@ export function AppShell({ user }: { user: User }) {
               ) : null}
             </div>
           </div>
-        </header>
+          </header>
+        </div>
 
         <div className="shell-content">
           <Outlet />
