@@ -2949,16 +2949,33 @@ textarea:focus {
   animation: rise-in 320ms var(--ease) both;
 }
 
+.toast-notice--danger {
+  border-color: color-mix(in srgb, var(--danger) 22%, var(--line));
+  background: color-mix(in srgb, var(--surface-popover) 88%, rgba(159, 61, 51, 0.12));
+}
+
+.toast-notice--success {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: color-mix(in srgb, var(--surface-popover) 90%, var(--accent-soft));
+}
+
 .toast-notice__copy {
   display: grid;
   gap: 0.2rem;
 }
 
 .toast-notice__copy strong {
-  color: var(--danger);
   font-size: 0.88rem;
   letter-spacing: 0.03em;
   text-transform: uppercase;
+}
+
+.toast-notice--danger .toast-notice__copy strong {
+  color: var(--danger);
+}
+
+.toast-notice--success .toast-notice__copy strong {
+  color: var(--accent-strong);
 }
 
 .toast-notice__copy p {

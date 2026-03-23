@@ -48,6 +48,11 @@ type TaskMoveTarget = {
   position: number;
   taskId?: string;
 };
+type BoardToast = {
+  message: string;
+  title: string;
+  tone: "danger" | "success";
+};
 
 const taskSortableTransition = {
   duration: 220,
@@ -1492,15 +1497,21 @@ function TaskEditorDialog({
 function ToastNotice({
   message,
   onDismiss,
-  title
+  title,
+  tone
 }: {
   message: string;
   onDismiss: () => void;
   title: string;
+  tone: BoardToast["tone"];
 }) {
   return (
     <div aria-live="polite" className="toast-stack">
-      <div className="toast-notice" data-testid="board-toast" role="status">
+      <div
+        className={`toast-notice toast-notice--${tone}`}
+        data-testid="board-toast"
+        role="status"
+      >
         <div className="toast-notice__copy">
           <strong>{title}</strong>
           <p>{message}</p>
@@ -1538,7 +1549,7 @@ export function BoardPage() {
   const [pendingDeleteTaskId, setPendingDeleteTaskId] = useState<string | null>(null);
   const [pendingDeleteTaskLaneId, setPendingDeleteTaskLaneId] = useState<string | null>(null);
   const [taskDragPreviewWidth, setTaskDragPreviewWidth] = useState<number | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<BoardToast | null>(null);
   const laneDragPreviewRef = useRef<HTMLElement | null>(null);
   const pointerClientYRef = useRef<number | null>(null);
   const previewTasksRef = useRef<Task[] | null>(null);
@@ -1751,12 +1762,30 @@ export function BoardPage() {
         laneId,
         destinationLaneId ? { destinationLaneId } : undefined
       ),
-    onSuccess: async (_, { laneId }) => {
+    onSuccess: async (_, { destinationLaneId, laneId }) => {
+      const deletedLane = lanes.find((lane) => lane.id === laneId) ?? null;
+      const destinationLane =
+        destinationLaneId
+          ? lanes.find((lane) => lane.id === destinationLaneId) ?? null
+          : null;
+      const movedTaskCount = tasks.filter((task) => task.laneId === laneId).length;
+
       if (composerLaneId === laneId) {
         closeComposer();
       }
       if (draggedLaneId === laneId) {
         clearLaneDrag();
+      }
+      if (deletedLane) {
+        const movedCardsCopy =
+          destinationLane && movedTaskCount > 0
+            ? ` Cards moved to ${destinationLane.name}.`
+            : "";
+        setToast({
+          message: `${deletedLane.name} was deleted.${movedCardsCopy}`,
+          title: "Lane deleted",
+          tone: "success"
+        });
       }
       await invalidateBoardData();
     }
@@ -1782,9 +1811,18 @@ export function BoardPage() {
 
   const deleteTaskMutation = useMutation({
     mutationFn: (taskId: string) => api.deleteTask(projectId ?? "", taskId),
-    onSuccess: async () => {
+    onSuccess: async (_, taskId) => {
+      const deletedTask = tasks.find((task) => task.id === taskId) ?? null;
+
       setPendingDeleteTaskId(null);
       setPendingDeleteTaskLaneId(null);
+      if (deletedTask) {
+        setToast({
+          message: `${deletedTask.title} (${deletedTask.ticketId}) was deleted.`,
+          title: "Task deleted",
+          tone: "success"
+        });
+      }
       await invalidateBoardData();
     }
   });
@@ -2345,18 +2383,18 @@ export function BoardPage() {
   }, []);
 
   useEffect(() => {
-    if (!toastMessage) {
+    if (!toast) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      setToastMessage(null);
+      setToast(null);
     }, 4000);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [toastMessage]);
+  }, [toast]);
 
   useEffect(() => {
     if (
@@ -2371,7 +2409,11 @@ export function BoardPage() {
       return;
     }
 
-    setToastMessage(`Ticket ${ticketId} does not exist.`);
+    setToast({
+      message: `Ticket ${ticketId} does not exist.`,
+      title: "Ticket not found",
+      tone: "danger"
+    });
     navigate(
       {
         pathname: buildBoardPath(projectId),
@@ -2398,11 +2440,12 @@ export function BoardPage() {
   return (
     <main className="page-shell page-shell--board">
       <title>{project ? `${project.name} | BBTodo` : "Board | BBTodo"}</title>
-      {toastMessage ? (
+      {toast ? (
         <ToastNotice
-          message={toastMessage}
-          onDismiss={() => setToastMessage(null)}
-          title="Ticket not found"
+          message={toast.message}
+          onDismiss={() => setToast(null)}
+          title={toast.title}
+          tone={toast.tone}
         />
       ) : null}
       {isCreateLaneDialogOpen ? (

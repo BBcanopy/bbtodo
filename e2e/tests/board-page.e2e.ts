@@ -466,6 +466,10 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(firstTaskCard).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-4")).toBeVisible();
   await expect(todoLaneTrashTarget).toBeHidden();
+  const taskDeleteToast = page.getByTestId("board-toast");
+  await expect(taskDeleteToast).toBeVisible();
+  await expect(taskDeleteToast).toContainText("Task deleted");
+  await expect(taskDeleteToast).toContainText("Review retry settings (BILL-1) was deleted.");
 });
 
 test("board page reorders tasks and manages lanes", async ({ page }) => {
@@ -587,6 +591,10 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(createdCardInDone).toBeVisible();
   await expect(createdCardInDone.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
   await expect(doneColumn.getByText("Review retry settings")).toBeVisible();
+  const laneDeleteToast = page.getByTestId("board-toast");
+  await expect(laneDeleteToast).toBeVisible();
+  await expect(laneDeleteToast).toContainText("Lane deleted");
+  await expect(laneDeleteToast).toContainText("Ready for QA was deleted. Cards moved to Done.");
 });
 
 test("board page keeps Done ordered by newest update time and ignores drag reordering", async ({ page }) => {
