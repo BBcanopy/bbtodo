@@ -257,6 +257,7 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await expect(firstTaskCard).toHaveCSS("border-radius", "0px");
   await expect(firstTaskCard).toHaveCSS("padding-top", "10.4px");
   await expect(firstTaskCard).toHaveCSS("padding-bottom", "10.4px");
+  await expect(firstTaskCard.locator(".task-card__title")).toHaveCSS("font-family", /Space Grotesk/);
   await expect(laneDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(laneDeleteButton).toHaveCSS("color", "rgb(47, 119, 116)");
 
