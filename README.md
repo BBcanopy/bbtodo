@@ -47,4 +47,6 @@ Then tell your AI agent to use it whenever they work. If you have an `AGENTS.md`
 Always use `$bbtodo` at `./skills/bbtodo/SKILL.md` for work tracking: create a task before substantial work, move it to In Progress when active work starts, and move it to In review when the work is ready.
 ```
 
+When a human asks the agent to start working on an existing ticket such as `BBTO-45`, tell the agent to run `start --ticket-id BBTO-45` so it fetches the task title and description from BBTodo before attaching tracking metadata.
+
 You can also ask your AI agent to do the above steps for you.

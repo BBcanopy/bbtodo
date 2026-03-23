@@ -153,17 +153,26 @@ def read_text_argument(raw_value: str | None, file_path: str | None) -> str:
     return (raw_value or "").strip()
 
 
-def build_start_body(body: str, worktree: str) -> str:
-    metadata = "\n".join(
+def join_markdown_sections(*sections: str) -> str:
+    return "\n\n".join(section.rstrip() for section in sections if section and section.strip())
+
+
+def build_tracking_section(worktree: str) -> str:
+    return "\n".join(
         [
             "## Tracking",
             f"- Worktree: `{worktree}`",
             f"- Started: {utc_now()}",
         ]
     )
-    if not body:
-        return metadata
-    return f"{body.rstrip()}\n\n{metadata}"
+
+
+def build_start_body(body: str, worktree: str) -> str:
+    return join_markdown_sections(body, build_tracking_section(worktree))
+
+
+def build_attached_start_body(existing_body: str, body: str, worktree: str) -> str:
+    return join_markdown_sections(existing_body, body, build_tracking_section(worktree))
 
 
 def detect_git_branch(worktree: str) -> str | None:
@@ -282,6 +291,9 @@ class BBTodoClient:
     def list_tasks(self, project_id: str) -> list[dict[str, Any]]:
         return self._request("GET", f"/api/v1/projects/{project_id}/tasks")
 
+    def get_task_by_ticket_id(self, ticket_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/v1/tasks/by-ticket/{ticket_id}")
+
     def create_task(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", f"/api/v1/projects/{project_id}/tasks", payload)
 
@@ -304,6 +316,14 @@ def get_or_create_project(client: BBTodoClient, project_name: str) -> tuple[dict
     if existing:
         return existing, False
     return client.create_project(project_name), True
+
+
+def get_project_by_id(client: BBTodoClient, project_id: str) -> dict[str, Any]:
+    projects = client.list_projects()
+    for project in projects:
+        if str(project.get("id") or "").strip() == project_id:
+            return project
+    raise BBTodoError(f"Project not found for task project id {project_id}.")
 
 
 def get_lane(lanes: list[dict[str, Any]], lane_name: str) -> dict[str, Any]:
@@ -418,64 +438,84 @@ def command_start(args: argparse.Namespace) -> None:
     config = build_config(args)
     require_api_token(config)
 
-    requested_title = args.title.strip()
-    if not requested_title:
-        raise BBTodoError("Task title cannot be empty.")
-
     request_body = read_text_argument(args.body, args.body_file)
-    body_text = build_start_body(request_body, config.worktree)
     client = BBTodoClient(config.base_url, config.api_token)
-    project, created_project = get_or_create_project(client, config.project_name)
+    requested_ticket_id = str(args.ticket_id or "").strip()
+    requested_title = str(args.title or "").strip()
+    created_project = False
+
+    if requested_ticket_id:
+        task = client.get_task_by_ticket_id(requested_ticket_id)
+        project = get_project_by_id(client, str(task.get("projectId") or "").strip())
+    else:
+        if not requested_title:
+            raise BBTodoError("Task title cannot be empty.")
+        project, created_project = get_or_create_project(client, config.project_name)
+        task = {}
+
     lanes = client.list_lanes(project["id"])
     start_lane = get_lane(lanes, config.start_lane)
     active_lane = get_lane(lanes, config.active_lane)
     review_lane = get_lane(lanes, config.review_lane)
     existing_state = load_state(config.state_file)
 
-    payload = {
-        "body": body_text,
-        "laneId": start_lane["id"],
-        "title": requested_title,
-    }
-
     action = "created"
-    task: dict[str, Any]
-    can_reuse_existing = (
-        existing_state is not None
-        and existing_state.get("baseUrl") == client.base_url
-        and existing_state.get("project", {}).get("id") == project["id"]
-        and existing_state.get("task", {}).get("id")
-    )
-    existing_task_in_review = False
-    if can_reuse_existing:
-        existing_task_in_review = is_task_in_review(client, project["id"], review_lane, existing_state)
 
-    if can_reuse_existing and existing_task_in_review:
-        existing_title = str(existing_state.get("task", {}).get("title") or "")
-        if titles_match(existing_title, requested_title):
+    if requested_ticket_id:
+        requested_title = str(task.get("title") or "").strip()
+        task = client.update_task(
+            project["id"],
+            str(task["id"]),
+            {
+                "body": build_attached_start_body(str(task.get("body") or ""), request_body, config.worktree),
+                "laneId": start_lane["id"],
+            },
+        )
+        action = "attached"
+    else:
+        body_text = build_start_body(request_body, config.worktree)
+        payload = {
+            "body": body_text,
+            "laneId": start_lane["id"],
+            "title": requested_title,
+        }
+
+        can_reuse_existing = (
+            existing_state is not None
+            and existing_state.get("baseUrl") == client.base_url
+            and existing_state.get("project", {}).get("id") == project["id"]
+            and existing_state.get("task", {}).get("id")
+        )
+        existing_task_in_review = False
+        if can_reuse_existing:
+            existing_task_in_review = is_task_in_review(client, project["id"], review_lane, existing_state)
+
+        if can_reuse_existing and existing_task_in_review:
+            existing_title = str(existing_state.get("task", {}).get("title") or "")
+            if titles_match(existing_title, requested_title):
+                task_id = str(existing_state["task"]["id"])
+                try:
+                    existing_task = get_task(client, project["id"], task_id)
+                    payload["body"] = build_resume_body(str(existing_task.get("body") or ""), request_body)
+                    task = client.update_task(project["id"], task_id, payload)
+                    action = "reopened"
+                except BBTodoError as exc:
+                    if "404" not in str(exc) and "no longer exists" not in str(exc):
+                        raise
+                    task = client.create_task(project["id"], payload)
+            else:
+                task = client.create_task(project["id"], payload)
+        elif can_reuse_existing:
             task_id = str(existing_state["task"]["id"])
             try:
-                existing_task = get_task(client, project["id"], task_id)
-                payload["body"] = build_resume_body(str(existing_task.get("body") or ""), request_body)
                 task = client.update_task(project["id"], task_id, payload)
-                action = "reopened"
+                action = "updated"
             except BBTodoError as exc:
                 if "404" not in str(exc) and "no longer exists" not in str(exc):
                     raise
                 task = client.create_task(project["id"], payload)
         else:
             task = client.create_task(project["id"], payload)
-    elif can_reuse_existing:
-        task_id = str(existing_state["task"]["id"])
-        try:
-            task = client.update_task(project["id"], task_id, payload)
-            action = "updated"
-        except BBTodoError as exc:
-            if "404" not in str(exc) and "no longer exists" not in str(exc):
-                raise
-            task = client.create_task(project["id"], payload)
-    else:
-        task = client.create_task(project["id"], payload)
 
     state = {
         "activeLane": {
@@ -756,7 +796,9 @@ def build_parser() -> argparse.ArgumentParser:
     start_parser = subparsers.add_parser("start", help="Create or update the tracked BBTodo task.")
     start_parser.add_argument("--body", help="Markdown body for the task.")
     start_parser.add_argument("--body-file", help="Path to a file containing the markdown body.")
-    start_parser.add_argument("--title", required=True, help="Short title for the task.")
+    start_target_group = start_parser.add_mutually_exclusive_group(required=True)
+    start_target_group.add_argument("--ticket-id", help="Attach the worktree to an existing BBTodo ticket.")
+    start_target_group.add_argument("--title", help="Short title for the task.")
     start_parser.set_defaults(func=command_start)
 
     begin_work_parser = subparsers.add_parser("begin-work", help="Move the tracked task into the active lane.")

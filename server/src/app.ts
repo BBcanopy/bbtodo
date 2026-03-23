@@ -30,6 +30,7 @@ import {
   meResponseSchema,
   projectParamsSchema,
   projectResponseSchema,
+  ticketIdParamsSchema,
   taskParamsSchema,
   taskTagsResponseSchema,
   taskResponseSchema,
@@ -59,6 +60,7 @@ import {
   deleteOwnedTask,
   deleteSession,
   getOwnedProject,
+  getOwnedTaskByTicketId,
   getUserForApiToken,
   getUserForSession,
   listLanesForProject,
@@ -912,6 +914,40 @@ export function buildApp(options: {
       }
 
       return reply.status(204).send(null);
+    }
+  });
+
+  typedApp.route({
+    method: "GET",
+    url: "/api/v1/tasks/by-ticket/:ticketId",
+    schema: {
+      params: ticketIdParamsSchema,
+      security: apiDocsSecurity,
+      response: {
+        200: taskResponseSchema,
+        400: errorResponseSchema,
+        401: errorResponseSchema,
+        404: errorResponseSchema
+      },
+      tags: ["tasks"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database.db, request, reply);
+      if (!user) {
+        return;
+      }
+
+      const task = getOwnedTaskByTicketId(database.db, {
+        userId: user.id,
+        ticketId: request.params.ticketId
+      });
+      if (!task) {
+        return reply.status(404).send({
+          message: "Task not found."
+        });
+      }
+
+      return toTaskResponse(task.task, { ticketPrefix: task.ticketPrefix });
     }
   });
 

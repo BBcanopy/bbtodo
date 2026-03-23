@@ -20,6 +20,7 @@ export {
   deleteOwnedProject,
   deleteOwnedTask,
   getOwnedProject,
+  getOwnedTaskByTicketId,
   getOwnedTask,
   listLanesForProject,
   listProjectsForUser,

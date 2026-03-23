@@ -133,6 +133,10 @@ export const taskParamsSchema = z.object({
   taskId: z.string().uuid()
 });
 
+export const ticketIdParamsSchema = z.object({
+  ticketId: z.string().regex(/^[A-Z]{2,4}-[1-9]\d*$/, "Invalid ticket ID.")
+});
+
 export const updateTaskBodySchema = z
   .object({
     title: z.string().trim().min(1).max(240).optional(),

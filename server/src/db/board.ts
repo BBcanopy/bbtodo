@@ -213,6 +213,18 @@ function getProjectTaskById(db: DatabaseClient, projectId: string, taskId: strin
     .get();
 }
 
+function parseTicketId(ticketId: string) {
+  const match = ticketId.trim().match(/^([A-Z]{2,4})-([1-9]\d*)$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    ticketNumber: Number.parseInt(match[2], 10),
+    ticketPrefix: match[1]
+  };
+}
+
 function resolveTaskLane(
   db: DatabaseClient,
   input: {
@@ -1224,6 +1236,49 @@ export function getOwnedTask(
     .get();
 
   return result?.task ? attachTagsToTasks(db, [result.task])[0] ?? null : null;
+}
+
+export function getOwnedTaskByTicketId(
+  db: DatabaseClient,
+  input: {
+    ticketId: string;
+    userId: string;
+  }
+) {
+  const parsedTicketId = parseTicketId(input.ticketId);
+  if (!parsedTicketId) {
+    return null;
+  }
+
+  const result = db
+    .select({
+      task: tasks,
+      ticketPrefix: projects.ticketPrefix
+    })
+    .from(tasks)
+    .innerJoin(projects, eq(tasks.projectId, projects.id))
+    .where(
+      and(
+        eq(projects.userId, input.userId),
+        eq(projects.ticketPrefix, parsedTicketId.ticketPrefix),
+        eq(tasks.ticketNumber, parsedTicketId.ticketNumber)
+      )
+    )
+    .get();
+
+  if (!result?.task || !result.ticketPrefix) {
+    return null;
+  }
+
+  const task = attachTagsToTasks(db, [result.task])[0];
+  if (!task) {
+    return null;
+  }
+
+  return {
+    task,
+    ticketPrefix: result.ticketPrefix
+  };
 }
 
 export function updateOwnedTask(

@@ -35,6 +35,7 @@ BBTODO_BASE_URL=https://app.bbtodo.com
 
 1. Before substantial exploration, editing, or long-running commands, derive a short task title and optional markdown details.
 2. Run `python .\skills\bbtodo\scripts\bbtodo.py start ...` to create or reuse the tracked task in `Todo`.
+   If the human gives you a ticket ID such as `BBTO-45`, use `start --ticket-id BBTO-45` so the helper fetches the existing task title and description from BBTodo before attaching the worktree.
 3. When active work begins, run `python .\skills\bbtodo\scripts\bbtodo.py begin-work`.
 4. After the work is ready for review, run `python .\skills\bbtodo\scripts\bbtodo.py finish ...`.
 5. If the same issue comes back for follow-up work, run `python .\skills\bbtodo\scripts\bbtodo.py resume-current ...`.
@@ -43,6 +44,7 @@ BBTODO_BASE_URL=https://app.bbtodo.com
 ## Start The Task
 
 - Keep the title stable across planning and implementation when it is the same issue.
+- When the human references an existing ticket ID, prefer `--ticket-id` instead of inventing a new title. The helper will fetch the current title and body from BBTodo and append the new tracking metadata.
 - The helper auto-creates the configured project when it does not exist yet.
 - The helper reuses the currently tracked task when local state already points at an active task.
 - If the saved task is already in `In review` and `start` is called again with the same title, the helper reopens that same task in `Todo` and appends a follow-up section.
@@ -66,6 +68,27 @@ python .\skills\bbtodo\scripts\bbtodo.py start `
 body=$'- Goal: tighten lane-delete behavior.\n- Plan:\n  - inspect the board workflow\n  - implement the fix\n  - verify the regression stays covered'
 python ./skills/bbtodo/scripts/bbtodo.py start \
   --title "Fix lane delete flow" \
+  --body "$body"
+```
+
+When the user already gave you a ticket ID, attach to that task instead:
+
+```powershell
+$body = @"
+- Plan:
+  - inspect the current issue state
+  - implement the requested change
+  - verify the affected behavior
+"@
+python .\skills\bbtodo\scripts\bbtodo.py start `
+  --ticket-id "BBTO-45" `
+  --body $body
+```
+
+```bash
+body=$'- Plan:\n  - inspect the current issue state\n  - implement the requested change\n  - verify the affected behavior'
+python ./skills/bbtodo/scripts/bbtodo.py start \
+  --ticket-id "BBTO-45" \
   --body "$body"
 ```
 

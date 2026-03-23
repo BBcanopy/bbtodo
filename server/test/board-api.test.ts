@@ -312,6 +312,122 @@ describe("projects and tasks API", () => {
     });
   });
 
+  it("looks up a task by ticket id for the current user", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const createProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Lookup board"
+      }
+    });
+    const project = createProjectResponse.json();
+
+    const createTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        body: "Resolve me by ticket id",
+        title: "Lookup target",
+        tags: [tag("api", "amber")]
+      }
+    });
+    expect(createTaskResponse.statusCode).toBe(201);
+    const createdTask = createTaskResponse.json();
+
+    const lookupResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/by-ticket/${createdTask.ticketId}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(lookupResponse.statusCode).toBe(200);
+    expect(lookupResponse.json()).toMatchObject({
+      body: "Resolve me by ticket id",
+      id: createdTask.id,
+      projectId: project.id,
+      tags: [tag("api", "amber")],
+      ticketId: createdTask.ticketId,
+      title: "Lookup target"
+    });
+  });
+
+  it("returns 404 when a ticket lookup misses", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const lookupResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/tasks/by-ticket/LOOK-99",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(lookupResponse.statusCode).toBe(404);
+    expect(lookupResponse.json()).toEqual({
+      message: "Task not found."
+    });
+  });
+
+  it("rejects invalid ticket id formats on lookup", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const lookupResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/tasks/by-ticket/look-0",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(lookupResponse.statusCode).toBe(400);
+  });
+
   it("falls back for non-letter names and exhausted name-derived prefixes while resolving collisions", async () => {
     const oidc = createMutableMockOidcProvider({
       subject: "user-1",
@@ -998,6 +1114,7 @@ describe("projects and tasks API", () => {
     });
 
     expect(createTaskResponse.statusCode).toBe(201);
+    const ownerTask = createTaskResponse.json();
 
     oidc.setIdentity({
       subject: "other-user",
@@ -1038,6 +1155,19 @@ describe("projects and tasks API", () => {
 
     expect(otherDeleteResponse.statusCode).toBe(404);
 
+    const otherLookupResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/by-ticket/${ownerTask.ticketId}`,
+      cookies: {
+        bbtodo_session: otherSession.sessionCookie
+      }
+    });
+
+    expect(otherLookupResponse.statusCode).toBe(404);
+    expect(otherLookupResponse.json()).toEqual({
+      message: "Task not found."
+    });
+
     const openApiResponse = await app.inject({
       method: "GET",
       url: "/docs/openapi.json"
@@ -1077,6 +1207,7 @@ describe("projects and tasks API", () => {
     );
     expect(openApi.paths["/api/v1/task-tags"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects"]).toBeDefined();
+    expect(openApi.paths["/api/v1/tasks/by-ticket/{ticketId}"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/lanes"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/lanes/{laneId}"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/tasks"]).toBeDefined();
@@ -1102,6 +1233,16 @@ describe("projects and tasks API", () => {
       type: "string"
     });
     expect(openApi.paths["/api/v1/projects/{projectId}/tasks"].post.responses["201"]).toEqual({
+      content: {
+        "application/json": {
+          schema: {
+            $ref: "#/components/schemas/Task"
+          }
+        }
+      },
+      description: "Default Response"
+    });
+    expect(openApi.paths["/api/v1/tasks/by-ticket/{ticketId}"].get.responses["200"]).toEqual({
       content: {
         "application/json": {
           schema: {
