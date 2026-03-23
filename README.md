@@ -2,13 +2,22 @@
 
 `bbtodo` is a minimal kanban with:
 
-- multiple projects
-- flexible lanes
-- only OIDC login
-- personal API tokens
-- React frontend, Fastify server, and SQLite
+- Multi-project
+- Flexible lanes
+- OIDC-only
+- Personal API tokens
+- For both humans and AI agents
+- Built with a React frontend, Fastify backend, and SQLite storage
 
 ## Run the project
+
+1. You should have an OIDC client ready. 
+
+Use `https://<hostname>/auth/callback` as the redirect URI.
+
+For local run, you can use `http://localhost:8080`.
+
+2. Run docker compose 
 
 ```bash
 # Create .env file and modify as you wish
@@ -24,3 +33,18 @@ docker compose up -d
 ```
 
 The app is available at `http://localhost:8080` by default.
+
+
+## Skills for AI Agents.
+
+The skill is located at `./skills/bbtodo/SKILL.md`.
+
+As a human, copy the `./skills/bbtodo/scripts/.env.example` to `./skills/bbtodo/scripts/.env` and edit it the base url and API token.
+
+Then tell your AI agent to use it whenever they work. If you have an `AGENTS.md` file, you can include a default instruction such as:
+
+```md
+Always use `$bbtodo` at `./skills/bbtodo/SKILL.md` for work tracking: create a task before substantial work, move it to In Progress when active work starts, and move it to In review when the work is ready.
+```
+
+You can also ask your AI agent to do the above steps for you.
