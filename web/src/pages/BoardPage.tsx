@@ -18,7 +18,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { Navigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CSS } from "@dnd-kit/utilities";
 
 import { api, type BoardLane, type Task, type TaskTag, type TaskTagColor } from "../api";
@@ -48,6 +48,11 @@ type TaskMoveTarget = {
   position: number;
   taskId?: string;
 };
+type BoardToast = {
+  message: string;
+  title: string;
+  tone: "danger" | "success";
+};
 
 const taskSortableTransition = {
   duration: 220,
@@ -63,6 +68,17 @@ const taskMeasuring = {
     strategy: MeasuringStrategy.Always
   }
 } as const;
+
+function buildBoardPath(projectId: string, ticketId?: string) {
+  return ticketId
+    ? `/projects/${projectId}/${encodeURIComponent(ticketId)}`
+    : `/projects/${projectId}`;
+}
+
+function toSearchString(searchParams: URLSearchParams) {
+  const serializedParams = searchParams.toString();
+  return serializedParams ? `?${serializedParams}` : "";
+}
 
 function getTaskTrashDropTargetId(laneId: string) {
   return `task-trash:${laneId}`;
@@ -1331,7 +1347,7 @@ function TaskEditorDialog({
         role="dialog"
       >
         <div className="dialog-header">
-          <h2 id="edit-task-title">Edit Card</h2>
+          <h2 id="edit-task-title">{`Edit ${task.ticketId}`}</h2>
           <button
             aria-label="Close edit task dialog"
             className="icon-button"
@@ -1341,20 +1357,6 @@ function TaskEditorDialog({
             <CloseIcon />
           </button>
         </div>
-        <dl aria-label="Card timing" className="task-editor__meta">
-          <div className="task-editor__meta-item">
-            <dt>Created</dt>
-            <dd>
-              <time dateTime={task.createdAt}>{task.createdAt}</time>
-            </dd>
-          </div>
-          <div className="task-editor__meta-item">
-            <dt>Updated</dt>
-            <dd>
-              <time dateTime={task.updatedAt}>{task.updatedAt}</time>
-            </dd>
-          </div>
-        </dl>
         <form
           className="dialog-form task-editor"
           onSubmit={(event) => {
@@ -1464,13 +1466,29 @@ function TaskEditorDialog({
             ) : null}
           </div>
           {error ? <ErrorBanner error={error} /> : null}
-          <div className="dialog-actions">
-            <button className="text-button" onClick={onClose} type="button">
-              Cancel
-            </button>
-            <button className="primary-button" disabled={isPending || title.trim().length === 0} type="submit">
-              {isPending ? "Saving..." : "Save card"}
-            </button>
+          <div className="task-editor__footer">
+            <dl aria-label="Card timing" className="task-editor__meta task-editor__meta--footer">
+              <div className="task-editor__meta-item">
+                <dt>Created</dt>
+                <dd>
+                  <time dateTime={task.createdAt}>{task.createdAt}</time>
+                </dd>
+              </div>
+              <div className="task-editor__meta-item">
+                <dt>Updated</dt>
+                <dd>
+                  <time dateTime={task.updatedAt}>{task.updatedAt}</time>
+                </dd>
+              </div>
+            </dl>
+            <div className="dialog-actions task-editor__actions">
+              <button className="text-button" onClick={onClose} type="button">
+                Cancel
+              </button>
+              <button className="primary-button" disabled={isPending || title.trim().length === 0} type="submit">
+                {isPending ? "Saving..." : "Save card"}
+              </button>
+            </div>
           </div>
         </form>
       </section>
@@ -1478,8 +1496,44 @@ function TaskEditorDialog({
   );
 }
 
+function ToastNotice({
+  message,
+  onDismiss,
+  title,
+  tone
+}: {
+  message: string;
+  onDismiss: () => void;
+  title: string;
+  tone: BoardToast["tone"];
+}) {
+  return (
+    <div aria-live="polite" className="toast-stack">
+      <div
+        className={`toast-notice toast-notice--${tone}`}
+        data-testid="board-toast"
+        role="status"
+      >
+        <div className="toast-notice__copy">
+          <strong>{title}</strong>
+          <p>{message}</p>
+        </div>
+        <button
+          aria-label="Dismiss notification"
+          className="icon-button toast-notice__dismiss"
+          onClick={onDismiss}
+          type="button"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function BoardPage() {
-  const { projectId } = useParams();
+  const { projectId, ticketId } = useParams();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [composerLaneId, setComposerLaneId] = useState<string | null>(null);
@@ -1493,11 +1547,11 @@ export function BoardPage() {
     position: number;
   } | null>(null);
   const [dropTarget, setDropTarget] = useState<TaskMoveTarget | null>(null);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [laneName, setLaneName] = useState("");
   const [pendingDeleteTaskId, setPendingDeleteTaskId] = useState<string | null>(null);
   const [pendingDeleteTaskLaneId, setPendingDeleteTaskLaneId] = useState<string | null>(null);
   const [taskDragPreviewWidth, setTaskDragPreviewWidth] = useState<number | null>(null);
+  const [toast, setToast] = useState<BoardToast | null>(null);
   const laneDragPreviewRef = useRef<HTMLElement | null>(null);
   const pointerClientYRef = useRef<number | null>(null);
   const previewTasksRef = useRef<Task[] | null>(null);
@@ -1531,7 +1585,7 @@ export function BoardPage() {
   const activeTasks = previewTasks ?? tasks;
   const lanesById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane])), [lanes]);
   const draggedLane = draggedLaneId ? lanes.find((lane) => lane.id === draggedLaneId) ?? null : null;
-  const editingTask = editingTaskId ? tasks.find((task) => task.id === editingTaskId) ?? null : null;
+  const editingTask = ticketId ? tasks.find((task) => task.ticketId === ticketId) ?? null : null;
   const isBoardFiltered = boardSearch.length > 0 || activeTagKey !== null;
   const committedTaskMap = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
   const taskMap = useMemo(() => new Map(activeTasks.map((task) => [task.id, task])), [activeTasks]);
@@ -1710,12 +1764,30 @@ export function BoardPage() {
         laneId,
         destinationLaneId ? { destinationLaneId } : undefined
       ),
-    onSuccess: async (_, { laneId }) => {
+    onSuccess: async (_, { destinationLaneId, laneId }) => {
+      const deletedLane = lanes.find((lane) => lane.id === laneId) ?? null;
+      const destinationLane =
+        destinationLaneId
+          ? lanes.find((lane) => lane.id === destinationLaneId) ?? null
+          : null;
+      const movedTaskCount = tasks.filter((task) => task.laneId === laneId).length;
+
       if (composerLaneId === laneId) {
         closeComposer();
       }
       if (draggedLaneId === laneId) {
         clearLaneDrag();
+      }
+      if (deletedLane) {
+        const movedCardsCopy =
+          destinationLane && movedTaskCount > 0
+            ? ` Cards moved to ${destinationLane.name}.`
+            : "";
+        setToast({
+          message: `${deletedLane.name} was deleted.${movedCardsCopy}`,
+          title: "Lane deleted",
+          tone: "success"
+        });
       }
       await invalidateBoardData();
     }
@@ -1741,9 +1813,18 @@ export function BoardPage() {
 
   const deleteTaskMutation = useMutation({
     mutationFn: (taskId: string) => api.deleteTask(projectId ?? "", taskId),
-    onSuccess: async () => {
+    onSuccess: async (_, taskId) => {
+      const deletedTask = tasks.find((task) => task.id === taskId) ?? null;
+
       setPendingDeleteTaskId(null);
       setPendingDeleteTaskLaneId(null);
+      if (deletedTask) {
+        setToast({
+          message: `${deletedTask.title} (${deletedTask.ticketId}) was deleted.`,
+          title: "Task deleted",
+          tone: "success"
+        });
+      }
       await invalidateBoardData();
     }
   });
@@ -1795,8 +1876,33 @@ export function BoardPage() {
     setDraftTitle("");
   }
 
+  function openTaskDialog(task: Task) {
+    if (!projectId) {
+      return;
+    }
+
+    navigate(
+      {
+        pathname: buildBoardPath(projectId, task.ticketId),
+        search: toSearchString(searchParams)
+      },
+      { replace: true }
+    );
+    saveTaskMutation.reset();
+  }
+
   function closeTaskDialog() {
-    setEditingTaskId(null);
+    if (!projectId) {
+      return;
+    }
+
+    navigate(
+      {
+        pathname: buildBoardPath(projectId),
+        search: toSearchString(searchParams)
+      },
+      { replace: true }
+    );
     saveTaskMutation.reset();
   }
 
@@ -2279,12 +2385,55 @@ export function BoardPage() {
   }, []);
 
   useEffect(() => {
-    if (!editingTaskId || editingTask || tasksQuery.isPending) {
+    if (!toast) {
       return;
     }
 
-    setEditingTaskId(null);
-  }, [editingTask, editingTaskId, tasksQuery.isPending]);
+    const timeoutId = window.setTimeout(() => {
+      setToast(null);
+    }, 4000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [toast]);
+
+  useEffect(() => {
+    if (
+      !ticketId ||
+      editingTask ||
+      projectsQuery.isPending ||
+      tasksQuery.isPending ||
+      tasksQuery.error ||
+      !projectId ||
+      !project
+    ) {
+      return;
+    }
+
+    setToast({
+      message: `Ticket ${ticketId} does not exist.`,
+      title: "Ticket not found",
+      tone: "danger"
+    });
+    navigate(
+      {
+        pathname: buildBoardPath(projectId),
+        search: toSearchString(searchParams)
+      },
+      { replace: true }
+    );
+  }, [
+    editingTask,
+    navigate,
+    project,
+    projectId,
+    projectsQuery.isPending,
+    searchParams,
+    tasksQuery.error,
+    tasksQuery.isPending,
+    ticketId
+  ]);
 
   if (!projectId) {
     return <Navigate replace to="/" />;
@@ -2293,6 +2442,14 @@ export function BoardPage() {
   return (
     <main className="page-shell page-shell--board">
       <title>{project ? `${project.name} | BBTodo` : "Board | BBTodo"}</title>
+      {toast ? (
+        <ToastNotice
+          message={toast.message}
+          onDismiss={() => setToast(null)}
+          title={toast.title}
+          tone={toast.tone}
+        />
+      ) : null}
       {isCreateLaneDialogOpen ? (
         <div className="dialog-scrim" onClick={() => closeCreateLaneDialog()}>
           <section
@@ -2524,7 +2681,7 @@ export function BoardPage() {
                                 dropTarget?.kind === "nest" && dropTarget.taskId === taskGroup.task.id
                               }
                               laneId={lane.id}
-                              onOpen={(taskToEdit) => setEditingTaskId(taskToEdit.id)}
+                              onOpen={openTaskDialog}
                               onTagSelect={handleTagSelect}
                               showNestTarget={
                                 draggedTask !== null &&

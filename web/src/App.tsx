@@ -49,7 +49,7 @@ function AuthenticatedApp() {
     <Routes>
       <Route element={<AppShell user={meQuery.data} />}>
         <Route element={<ProjectsPage />} path="/" />
-        <Route element={<BoardPage />} path="/projects/:projectId" />
+        <Route element={<BoardPage />} path="/projects/:projectId/:ticketId?" />
         <Route element={<ApiTokensPage />} path="/settings/api-tokens" />
         <Route element={<Navigate replace to="/" />} path="*" />
       </Route>

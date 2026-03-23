@@ -257,6 +257,7 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await expect(firstTaskCard).toHaveCSS("border-radius", "0px");
   await expect(firstTaskCard).toHaveCSS("padding-top", "10.4px");
   await expect(firstTaskCard).toHaveCSS("padding-bottom", "10.4px");
+  await expect(firstTaskCard.locator(".task-card__title")).toHaveCSS("font-family", /Open Sans/);
   await expect(laneDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(laneDeleteButton).toHaveCSS("color", "rgb(47, 119, 116)");
 
@@ -272,21 +273,37 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await page.getByLabel("Open account menu").click();
 
   await firstTaskCard.click();
+  await expect(page).toHaveURL(/\/projects\/project-1\/BILL-1$/);
 
-  const editDialog = page.getByRole("dialog", { name: "Edit Card" });
+  const editDialog = page.getByRole("dialog", { name: /Edit BILL-/ });
   const sourceTab = editDialog.getByRole("tab", { name: "Markdown source" });
   const previewTab = editDialog.getByRole("tab", { name: "Rendered preview" });
+  const viewTabs = editDialog.locator(".task-editor__view-tabs");
   const tagInput = editDialog.getByLabel("Task tags");
+  const taskEditorFooter = editDialog.locator(".task-editor__footer");
   const createdMeta = editDialog.locator(".task-editor__meta-item", { hasText: "Created" });
   const updatedMeta = editDialog.locator(".task-editor__meta-item", { hasText: "Updated" });
+  const saveButton = editDialog.getByRole("button", { name: "Save card" });
 
   await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByRole("heading", { name: "Edit BILL-1" })).toBeVisible();
+  await expect(taskEditorFooter.locator(".task-editor__meta")).toBeVisible();
+  await expect(taskEditorFooter.locator(".dialog-actions")).toBeVisible();
+  await expect(viewTabs).toHaveCSS("border-top-width", "0px");
+  await expect(sourceTab).toHaveCSS("border-top-width", "0px");
+  await expect(previewTab).toHaveCSS("border-top-width", "0px");
   await expect(createdMeta).toContainText("Created");
   await expect(createdMeta.locator("time")).toHaveAttribute("datetime", "2026-03-18T07:00:00.000Z");
   await expect(createdMeta.locator("time")).toHaveText("2026-03-18T07:00:00.000Z");
   await expect(updatedMeta).toContainText("Updated");
   await expect(updatedMeta.locator("time")).toHaveAttribute("datetime", "2026-03-18T07:10:00.000Z");
   await expect(updatedMeta.locator("time")).toHaveText("2026-03-18T07:10:00.000Z");
+  const footerMetaBox = await taskEditorFooter.locator(".task-editor__meta").boundingBox();
+  const saveButtonBox = await saveButton.boundingBox();
+  expect(footerMetaBox).not.toBeNull();
+  expect(saveButtonBox).not.toBeNull();
+  expect(Math.abs((footerMetaBox?.y ?? 0) - (saveButtonBox?.y ?? 0))).toBeLessThanOrEqual(32);
+  expect((footerMetaBox?.x ?? 0)).toBeLessThan((saveButtonBox?.x ?? 0));
   await expect(editDialog.getByLabel("Title")).toHaveValue("Review retry settings");
   await expect(editDialog.getByRole("button", { name: "Remove tag backend" })).toBeVisible();
   await expect(editDialog.getByRole("button", { name: "Remove tag retry" })).toBeVisible();
@@ -333,6 +350,7 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await expect(recoloredBackendSuggestion).toHaveCSS("background-color", "rgb(255, 241, 217)");
   await editDialog.getByLabel("Close edit task dialog").click();
   await expect(editDialog).toHaveCount(0);
+  await expect(page).toHaveURL(/\/projects\/project-1$/);
 
   await page.getByLabel("Search cards").fill("callback");
   await expect(page.getByText("Review retry scope")).toBeVisible();
@@ -367,6 +385,46 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await expect(routedOpsTagFilterChip).toBeVisible();
   await expect(page.getByText("Remove healthcheck loop")).toBeVisible();
   await expect(page.getByText("Review retry scope")).toHaveCount(0);
+});
+
+test("board page opens a task dialog from a ticket deep link", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto("/projects/project-1/BILL-2?q=callback");
+
+  const editDialog = page.getByRole("dialog", { name: "Edit BILL-2" });
+
+  await expect(editDialog).toBeVisible();
+  await expect(page).toHaveURL(/\/projects\/project-1\/BILL-2\?q=callback$/);
+  await expect(editDialog.getByRole("heading", { name: "Edit BILL-2" })).toBeVisible();
+  await expect(editDialog.getByLabel("Title")).toHaveValue("Tighten callback logging");
+  await expect(page.getByLabel("Search cards")).toHaveValue("callback");
+
+  await editDialog.getByLabel("Close edit task dialog").click();
+
+  await expect(editDialog).toHaveCount(0);
+  await expect(page).toHaveURL(/\/projects\/project-1\?q=callback$/);
+});
+
+test("board page shows a toast when a ticket deep link misses", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto("/projects/project-1/BILL-99?q=callback");
+
+  const toast = page.getByTestId("board-toast");
+
+  await expect(page).toHaveURL(/\/projects\/project-1\?q=callback$/);
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Ticket not found");
+  await expect(toast).toContainText("Ticket BILL-99 does not exist.");
+  await expect(page.getByRole("dialog", { name: /Edit BILL-/ })).toHaveCount(0);
+  await expect(page.getByLabel("Search cards")).toHaveValue("callback");
 });
 
 test("board page deletes tasks from the lane header trash target", async ({ page }) => {
@@ -423,6 +481,10 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(firstTaskCard).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-4")).toBeVisible();
   await expect(todoLaneTrashTarget).toBeHidden();
+  const taskDeleteToast = page.getByTestId("board-toast");
+  await expect(taskDeleteToast).toBeVisible();
+  await expect(taskDeleteToast).toContainText("Task deleted");
+  await expect(taskDeleteToast).toContainText("Review retry settings (BILL-1) was deleted.");
 });
 
 test("board page reorders tasks and manages lanes", async ({ page }) => {
@@ -544,6 +606,10 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(createdCardInDone).toBeVisible();
   await expect(createdCardInDone.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
   await expect(doneColumn.getByText("Review retry settings")).toBeVisible();
+  const laneDeleteToast = page.getByTestId("board-toast");
+  await expect(laneDeleteToast).toBeVisible();
+  await expect(laneDeleteToast).toContainText("Lane deleted");
+  await expect(laneDeleteToast).toContainText("Ready for QA was deleted. Cards moved to Done.");
 });
 
 test("board page keeps Done ordered by newest update time and ignores drag reordering", async ({ page }) => {

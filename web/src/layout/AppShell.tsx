@@ -25,7 +25,7 @@ import { useDismissableLayer } from "../hooks/useDismissableLayer";
 export function AppShell({ user }: { user: User }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const boardMatch = useMatch("/projects/:projectId");
+  const boardMatch = useMatch("/projects/:projectId/:ticketId?");
   const isProjectsRoute = location.pathname === "/";
   const [searchParams, setSearchParams] = useSearchParams();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
