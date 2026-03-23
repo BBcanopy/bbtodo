@@ -278,6 +278,7 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   const editDialog = page.getByRole("dialog", { name: /Edit BILL-/ });
   const sourceTab = editDialog.getByRole("tab", { name: "Markdown source" });
   const previewTab = editDialog.getByRole("tab", { name: "Rendered preview" });
+  const viewTabs = editDialog.locator(".task-editor__view-tabs");
   const tagInput = editDialog.getByLabel("Task tags");
   const taskEditorFooter = editDialog.locator(".task-editor__footer");
   const createdMeta = editDialog.locator(".task-editor__meta-item", { hasText: "Created" });
@@ -288,6 +289,9 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await expect(editDialog.getByRole("heading", { name: "Edit BILL-1" })).toBeVisible();
   await expect(taskEditorFooter.locator(".task-editor__meta")).toBeVisible();
   await expect(taskEditorFooter.locator(".dialog-actions")).toBeVisible();
+  await expect(viewTabs).toHaveCSS("border-top-width", "0px");
+  await expect(sourceTab).toHaveCSS("border-top-width", "0px");
+  await expect(previewTab).toHaveCSS("border-top-width", "0px");
   await expect(createdMeta).toContainText("Created");
   await expect(createdMeta.locator("time")).toHaveAttribute("datetime", "2026-03-18T07:00:00.000Z");
   await expect(createdMeta.locator("time")).toHaveText("2026-03-18T07:00:00.000Z");
