@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildApp } from "../src/app.js";
+import { buildApp } from "../app.js";
 import {
   createMutableMockOidcProvider,
   loginWithOidc,
   testConfig
-} from "./test-helpers.js";
+} from "../test-helpers.js";
 
 const createdApps: ReturnType<typeof buildApp>[] = [];
 const tag = (label: string, color: "amber" | "coral" | "moss" | "orchid" | "sky" | "slate" = "moss") => ({
