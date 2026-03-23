@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
-import type { AppConfig } from "../src/config.js";
-import type { OidcProvider } from "../src/oidc.js";
+import type { AppConfig } from "./config.js";
+import type { OidcProvider } from "./oidc.js";
 
 export const testConfig: AppConfig = {
   clientUrl: "http://localhost:5173",

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createDatabase } from "../src/db.js";
+import { createDatabase } from "./bootstrap.js";
 
 const tempDirectories: string[] = [];
 
