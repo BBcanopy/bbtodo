@@ -188,6 +188,12 @@ function parseCacheControlMaxAgeMs(cacheControlHeader: string | null) {
   const directives = cacheControlHeader
     .split(",")
     .map((directive) => directive.trim().toLowerCase());
+  if (
+    directives.includes("no-store") ||
+    directives.includes("no-cache")
+  ) {
+    return 0;
+  }
   const maxAgeDirective = directives.find((directive) => directive.startsWith("max-age="));
   if (!maxAgeDirective) {
     return null;
@@ -278,6 +284,7 @@ export function shouldRetryJwksVerification(error: unknown) {
 
   const normalizedMessage = error.message.toLowerCase();
   return (
+    normalizedMessage.includes("cannot fetch key") ||
     normalizedMessage.includes("signature") ||
     normalizedMessage.includes("jwks") ||
     normalizedMessage.includes("public key") ||

@@ -203,6 +203,42 @@ describe("OIDC helpers", () => {
   );
 
   it(
+    "does not cache JWKS entries when cache-control forbids it",
+    async () => {
+      const metadataServer = await createOidcMetadataServer();
+      const signingKey = createSigningKey("no-store-key");
+      metadataServer.setJwks([signingKey.publicJwk], "private, no-store");
+
+      const discoveryDocument = await resolveOidcDiscoveryDocument(
+        metadataServer.issuerUrl
+      );
+      const signerApp = await createJwtSigner(signingKey);
+      const validIdToken = createSignedIdToken(signerApp, discoveryDocument, {
+        kid: signingKey.kid,
+        sub: "no-store-user"
+      });
+      const { verifierApp } = await createJwtVerifier(discoveryDocument);
+
+      await expect(
+        Promise.resolve(
+          verifierApp.jwt.verify<{
+            sub: string;
+          }>(validIdToken)
+        )
+      ).resolves.toMatchObject({
+        sub: "no-store-user"
+      });
+
+      metadataServer.setJwks([], "private, no-store");
+
+      await expect(
+        Promise.resolve().then(() => verifierApp.jwt.verify(validIdToken))
+      ).rejects.toThrow(/Cannot fetch key|JWKS did not contain a signing key/i);
+    },
+    15_000
+  );
+
+  it(
     "expires cached JWKS keys after their cache header TTL",
     async () => {
       let nowMs = 0;
@@ -251,6 +287,42 @@ describe("OIDC helpers", () => {
       ).rejects.toThrow(/Cannot fetch key|JWKS did not contain a signing key/i);
     },
     15_000
+  );
+
+  it(
+    "retries a transient key-fetch failure once",
+    async () => {
+      let clearCacheCalls = 0;
+      let verifyCalls = 0;
+
+      await expect(
+        verifyOidcIdToken({
+          idToken: "test-id-token",
+          jwtVerifier: {
+            async verify() {
+              verifyCalls += 1;
+              if (verifyCalls === 1) {
+                throw new Error("Cannot fetch key.");
+              }
+
+              return {
+                sub: "retry-user"
+              };
+            }
+          },
+          jwksSecretResolver: {
+            clearCache() {
+              clearCacheCalls += 1;
+            }
+          }
+        })
+      ).resolves.toMatchObject({
+        sub: "retry-user"
+      });
+
+      expect(clearCacheCalls).toBe(1);
+      expect(verifyCalls).toBe(2);
+    }
   );
 
   it(
