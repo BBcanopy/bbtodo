@@ -642,6 +642,59 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(laneDeleteToast).toContainText("Ready for QA was deleted. Cards moved to Done.");
 });
 
+test("board page previews a dragged task at the top of Done before drop", async ({ page }) => {
+  const tasksWithDoneCards = structuredClone(tasks);
+
+  tasksWithDoneCards.push(
+    {
+      body: "",
+      createdAt: "2026-03-18T07:00:00.000Z",
+      id: "task-5",
+      laneId: laneId("project-1", "done"),
+      parentTaskId: null,
+      position: 2,
+      projectId: "project-1",
+      ticketId: "BILL-5",
+      tags: [],
+      title: "Archive roadmap",
+      updatedAt: "2026-03-18T07:40:00.000Z"
+    }
+  );
+
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks: tasksWithDoneCards
+  });
+
+  await page.goto("/projects/project-1");
+
+  const doneColumn = page.getByTestId(`board-column-${laneId("project-1", "done")}`);
+  const callbackLoggingCard = page.getByTestId("task-card-task-2");
+  const archivedRoadmapCard = page.getByTestId("task-card-task-5");
+
+  await expect(doneColumn.locator(".task-card__title")).toHaveText([
+    "[BILL-3] Remove healthcheck loop",
+    "[BILL-5] Archive roadmap"
+  ]);
+
+  await beginTaskDrag(page, taskCardSurface(callbackLoggingCard));
+  await hoverDraggedTaskOver(page, taskCardSurface(archivedRoadmapCard), 0.2);
+
+  await expect(doneColumn.locator(".task-card__title")).toHaveText([
+    "[BILL-2] Tighten callback logging",
+    "[BILL-3] Remove healthcheck loop",
+    "[BILL-5] Archive roadmap"
+  ]);
+
+  await finishTaskDrag(page);
+
+  await expect(doneColumn.locator(".task-card__title")).toHaveText([
+    "[BILL-2] Tighten callback logging",
+    "[BILL-3] Remove healthcheck loop",
+    "[BILL-5] Archive roadmap"
+  ]);
+});
+
 test("board page keeps Done ordered by newest update time and ignores drag reordering", async ({ page }) => {
   const tasksWithDoneCards = structuredClone(tasks);
 
