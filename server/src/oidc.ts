@@ -61,6 +61,11 @@ export interface JwtVerifier {
   verify(token: string): unknown | Promise<unknown>;
 }
 
+export interface JwksSecretResolver {
+  (tokenOrHeader: DecodedJwtLike): Promise<string>;
+  clearCache(): void;
+}
+
 export interface OidcAuthTestingOptions {
   discoveryDocument?: OidcDiscoveryDocument;
   jwtVerifier?: JwtVerifier;
@@ -79,6 +84,13 @@ interface DecodedJwtLike extends DecodedJwtHeaderLike {
     kid?: string;
   };
 }
+
+interface CachedJwksPublicKey {
+  expiresAt: number;
+  pem: string;
+}
+
+export const DEFAULT_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export function normalizeIssuer(issuer: string) {
   return new URL(issuer).toString();
@@ -108,7 +120,7 @@ export async function resolveOidcDiscoveryDocument(
 
   const parsed = oidcDiscoverySchema.parse(await response.json());
   return {
-    issuer: normalizeIssuer(parsed.issuer),
+    issuer: parsed.issuer,
     jwksUri: parsed.jwks_uri
   };
 }
@@ -117,13 +129,15 @@ async function resolveJwksPublicKeyPem(
   jwksUri: string,
   alg: string,
   kid: string,
-  cache: Map<string, string>,
-  fetchFn: typeof fetch
+  cache: Map<string, CachedJwksPublicKey>,
+  fetchFn: typeof fetch,
+  defaultCacheTtlMs: number,
+  now: () => number
 ) {
   const cacheKey = `${alg}:${kid}:${jwksUri}`;
   const cachedKey = cache.get(cacheKey);
-  if (cachedKey) {
-    return cachedKey;
+  if (cachedKey && cachedKey.expiresAt > now()) {
+    return cachedKey.pem;
   }
 
   const response = await fetchFn(jwksUri, {
@@ -159,21 +173,77 @@ async function resolveJwksPublicKeyPem(
     })
     .toString();
 
-  cache.set(cacheKey, pemString);
+  cache.set(cacheKey, {
+    expiresAt: now() + resolveJwksCacheTtlMs(response.headers, now(), defaultCacheTtlMs),
+    pem: pemString
+  });
   return pemString;
+}
+
+function parseCacheControlMaxAgeMs(cacheControlHeader: string | null) {
+  if (!cacheControlHeader) {
+    return null;
+  }
+
+  const directives = cacheControlHeader
+    .split(",")
+    .map((directive) => directive.trim().toLowerCase());
+  if (
+    directives.includes("no-store") ||
+    directives.includes("no-cache")
+  ) {
+    return 0;
+  }
+  const maxAgeDirective = directives.find((directive) => directive.startsWith("max-age="));
+  if (!maxAgeDirective) {
+    return null;
+  }
+
+  const seconds = Number.parseInt(maxAgeDirective.slice("max-age=".length), 10);
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+
+  return seconds * 1000;
+}
+
+function resolveJwksCacheTtlMs(
+  headers: Pick<Headers, "get">,
+  nowMs: number,
+  defaultCacheTtlMs: number
+) {
+  const cacheControlMaxAgeMs = parseCacheControlMaxAgeMs(headers.get("cache-control"));
+  if (cacheControlMaxAgeMs !== null) {
+    return cacheControlMaxAgeMs;
+  }
+
+  const expiresHeader = headers.get("expires");
+  if (expiresHeader) {
+    const expiresAt = Date.parse(expiresHeader);
+    if (Number.isFinite(expiresAt)) {
+      return Math.max(0, expiresAt - nowMs);
+    }
+  }
+
+  return defaultCacheTtlMs;
 }
 
 export function createJwksSecretResolver(
   options: {
     clientSecret: string;
+    defaultCacheTtlMs?: number;
     jwksUri: string;
     fetchFn?: typeof fetch;
+    now?: () => number;
   }
-) {
-  const cache = new Map<string, string>();
+) : JwksSecretResolver {
+  const cache = new Map<string, CachedJwksPublicKey>();
+  const defaultCacheTtlMs =
+    options.defaultCacheTtlMs ?? DEFAULT_JWKS_CACHE_TTL_MS;
   const fetchFn = options.fetchFn ?? fetch;
+  const now = options.now ?? Date.now;
 
-  return async (tokenOrHeader: DecodedJwtLike) => {
+  const resolver = async (tokenOrHeader: DecodedJwtLike) => {
     const header = tokenOrHeader.header ?? tokenOrHeader;
     const alg = header.alg;
     if (!alg) {
@@ -194,9 +264,50 @@ export function createJwksSecretResolver(
       alg,
       kid,
       cache,
-      fetchFn
+      fetchFn,
+      defaultCacheTtlMs,
+      now
     );
   };
+
+  resolver.clearCache = () => {
+    cache.clear();
+  };
+
+  return resolver;
+}
+
+export function shouldRetryJwksVerification(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const normalizedMessage = error.message.toLowerCase();
+  return (
+    normalizedMessage.includes("cannot fetch key") ||
+    normalizedMessage.includes("signature") ||
+    normalizedMessage.includes("jwks") ||
+    normalizedMessage.includes("public key") ||
+    normalizedMessage.includes("secret or public key") ||
+    normalizedMessage.includes("kid")
+  );
+}
+
+export async function verifyOidcIdToken(options: {
+  idToken: string;
+  jwtVerifier: JwtVerifier;
+  jwksSecretResolver?: Pick<JwksSecretResolver, "clearCache">;
+}) {
+  try {
+    return await options.jwtVerifier.verify(options.idToken);
+  } catch (error) {
+    if (!options.jwksSecretResolver || !shouldRetryJwksVerification(error)) {
+      throw error;
+    }
+
+    options.jwksSecretResolver.clearCache();
+    return options.jwtVerifier.verify(options.idToken);
+  }
 }
 
 export function createOidcNonce() {

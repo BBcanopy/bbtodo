@@ -31,6 +31,7 @@ import {
   OIDC_VERIFIER_COOKIE,
   createJwksSecretResolver,
   resolveOidcDiscoveryDocument,
+  type JwksSecretResolver,
   type OidcAuthTestingOptions
 } from "./oidc.js";
 
@@ -144,14 +145,19 @@ export function buildApp(options: {
       const discoveryDocument =
         authTesting?.discoveryDocument ??
         (await resolveOidcDiscoveryDocument(options.config.oidcIssuer));
+      const jwksSecretResolver = createJwksSecretResolver({
+        clientSecret: options.config.oidcClientSecret,
+        jwksUri: discoveryDocument.jwksUri
+      });
+      authApp.decorate(
+        "oidcJwksSecretResolver",
+        jwksSecretResolver as JwksSecretResolver
+      );
       await authApp.register(jwt as never, {
         decode: {
           complete: true
         },
-        secret: createJwksSecretResolver({
-          clientSecret: options.config.oidcClientSecret,
-          jwksUri: discoveryDocument.jwksUri
-        }),
+        secret: jwksSecretResolver,
         verify: {
           allowedAud: options.config.oidcClientId,
           allowedIss: discoveryDocument.issuer
