@@ -218,6 +218,19 @@ function compareTasksInLane(left: Task, right: Task, isDoneLane: boolean) {
   return left.id.localeCompare(right.id);
 }
 
+function getTaskPreviewUpdatedAt(tasks: Task[]) {
+  const latestUpdatedAt = tasks.reduce((currentLatest, task) => {
+    const parsedUpdatedAt = Date.parse(task.updatedAt);
+    if (Number.isNaN(parsedUpdatedAt)) {
+      return currentLatest;
+    }
+
+    return Math.max(currentLatest, parsedUpdatedAt);
+  }, Date.now());
+
+  return new Date(latestUpdatedAt + 1).toISOString();
+}
+
 function listSiblingTasks(
   tasks: Task[],
   laneId: string,
@@ -350,7 +363,8 @@ function applyTaskMove(
   targetLaneId: string,
   targetParentTaskId: string | null,
   targetIndex: number,
-  lanesById: Map<string, BoardLane>
+  lanesById: Map<string, BoardLane>,
+  previewUpdatedAt?: string | null
 ) {
   const sourceTask = tasks.find((task) => task.id === taskId);
   if (!sourceTask || !sourceTask.laneId) {
@@ -366,11 +380,16 @@ function applyTaskMove(
   const sourceIndex = sourceSiblings.findIndex((task) => task.id === taskId);
   const sameGroup =
     sourceTask.laneId === targetLaneId && sourceTask.parentTaskId === targetParentTaskId;
+  const targetUsesDoneOrdering = isDoneLaneName(lanesById.get(targetLaneId)?.name ?? "");
+  const donePreviewUpdatedAt =
+    sourceTask.laneId !== targetLaneId && targetUsesDoneOrdering
+      ? previewUpdatedAt ?? getTaskPreviewUpdatedAt(tasks)
+      : null;
   const nextSiblingTasks = listSiblingTasks(
     tasks,
     targetLaneId,
     targetParentTaskId,
-    isDoneLaneName(lanesById.get(targetLaneId)?.name ?? ""),
+    targetUsesDoneOrdering,
     taskId
   );
   const normalizedTargetIndex =
@@ -413,6 +432,12 @@ function applyTaskMove(
         laneId: targetLaneId,
         parentTaskId: targetParentTaskId
       };
+      if (donePreviewUpdatedAt !== null && nextTask.updatedAt !== donePreviewUpdatedAt) {
+        nextTask = {
+          ...nextTask,
+          updatedAt: donePreviewUpdatedAt
+        };
+      }
     } else if (
       sourceTask.parentTaskId === null &&
       task.parentTaskId === sourceTask.id &&
@@ -422,6 +447,12 @@ function applyTaskMove(
         ...nextTask,
         laneId: targetLaneId
       };
+      if (donePreviewUpdatedAt !== null && nextTask.updatedAt !== donePreviewUpdatedAt) {
+        nextTask = {
+          ...nextTask,
+          updatedAt: donePreviewUpdatedAt
+        };
+      }
     }
 
     const nextPosition = nextTaskPositions.get(task.id);
@@ -1555,6 +1586,7 @@ export function BoardPage() {
   const laneDragPreviewRef = useRef<HTMLElement | null>(null);
   const pointerClientYRef = useRef<number | null>(null);
   const previewTasksRef = useRef<Task[] | null>(null);
+  const taskDragPreviewUpdatedAtRef = useRef<string | null>(null);
 
   const projectsQuery = useQuery({
     queryKey: ["projects"],
@@ -1719,16 +1751,25 @@ export function BoardPage() {
       laneId: string;
       parentTaskId: string | null;
       position: number;
+      previewUpdatedAt?: string | null;
       taskId: string;
     }) => api.updateTask(projectId ?? "", taskId, { laneId, parentTaskId, position }),
-    onMutate: async ({ laneId, parentTaskId, position, taskId }) => {
+    onMutate: async ({ laneId, parentTaskId, position, previewUpdatedAt, taskId }) => {
       if (!projectId) {
         return { previousTasks: undefined };
       }
 
       await queryClient.cancelQueries({ queryKey: ["tasks", projectId] });
       const previousTasks = queryClient.getQueryData<Task[]>(["tasks", projectId]) ?? tasks;
-      const optimisticTasks = applyTaskMove(previousTasks, taskId, laneId, parentTaskId, position, lanesById);
+      const optimisticTasks = applyTaskMove(
+        previousTasks,
+        taskId,
+        laneId,
+        parentTaskId,
+        position,
+        lanesById,
+        previewUpdatedAt
+      );
 
       queryClient.setQueryData(["tasks", projectId], optimisticTasks);
       return { previousTasks };
@@ -1938,6 +1979,7 @@ export function BoardPage() {
     setPreviewTasks(null);
     setTaskDragPreviewWidth(null);
     previewTasksRef.current = null;
+    taskDragPreviewUpdatedAtRef.current = null;
   }
 
   function handleLaneDragStart(event: DragEvent<HTMLElement>, laneId: string) {
@@ -2059,6 +2101,7 @@ export function BoardPage() {
       );
     });
     previewTasksRef.current = tasks;
+    taskDragPreviewUpdatedAtRef.current = getTaskPreviewUpdatedAt(tasks);
   }
 
   function handleTaskDragOver(event: DragOverEvent) {
@@ -2226,7 +2269,8 @@ export function BoardPage() {
           nextDropTarget.laneId,
           nextDropTarget.parentTaskId,
           nextDropTarget.position,
-          lanesById
+          lanesById,
+          taskDragPreviewUpdatedAtRef.current
         );
         const nextLocation = findTaskLocation(nextPreviewTasks, activeTaskId);
         if (!nextLocation) {
@@ -2292,7 +2336,8 @@ export function BoardPage() {
       nextDropTarget.laneId,
       nextDropTarget.parentTaskId,
       nextDropTarget.position,
-      lanesById
+      lanesById,
+      taskDragPreviewUpdatedAtRef.current
     );
     const nextLocation = findTaskLocation(nextPreviewTasks, activeTaskId);
     if (!nextLocation) {
@@ -2347,6 +2392,7 @@ export function BoardPage() {
       laneId: destination.laneId,
       parentTaskId: destination.parentTaskId,
       position: destination.position,
+      previewUpdatedAt: taskDragPreviewUpdatedAtRef.current,
       taskId: activeTaskId
     });
     clearTaskDrag();
