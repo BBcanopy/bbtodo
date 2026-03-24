@@ -507,6 +507,89 @@ function mergeUniqueTags(currentTags: TaskTag[], nextValue: string, color: TaskT
   return additions.length > 0 ? [...currentTags, ...additions] : currentTags;
 }
 
+type TaskEditorDraft = {
+  body: string;
+  tags: TaskTag[];
+  title: string;
+};
+
+type TaskEditorSaveStatus = "dirty" | "error" | "saved" | "saving";
+
+type TaskEditorSaveWaiter = {
+  reject: (error: unknown) => void;
+  resolve: (task: Task) => void;
+};
+
+type TaskEditorSaveRequest = {
+  draft: TaskEditorDraft;
+  waiters: TaskEditorSaveWaiter[];
+};
+
+function cloneTaskTags(tags: TaskTag[]) {
+  return tags.map((tag) => ({ ...tag }));
+}
+
+function toTaskEditorDraft(task: Pick<Task, "body" | "tags" | "title">): TaskEditorDraft {
+  return {
+    body: task.body,
+    tags: cloneTaskTags(task.tags),
+    title: task.title.trim()
+  };
+}
+
+function areTaskTagsEqual(left: TaskTag[], right: TaskTag[]) {
+  return (
+    left.length === right.length &&
+    left.every(
+      (tag, index) => tag.color === right[index]?.color && tag.label === right[index]?.label
+    )
+  );
+}
+
+function areTaskEditorDraftsEqual(left: TaskEditorDraft, right: TaskEditorDraft) {
+  return left.body === right.body && left.title === right.title && areTaskTagsEqual(left.tags, right.tags);
+}
+
+function mergeSavedTaskIntoTasks(tasks: Task[], updatedTask: Task) {
+  const colorByTagKey = new Map(
+    updatedTask.tags.map((tag) => [normalizeTagKey(tag.label), tag.color] as const)
+  );
+  let hasChanges = false;
+
+  const nextTasks = tasks.map((task) => {
+    if (task.id === updatedTask.id) {
+      hasChanges = true;
+      return updatedTask;
+    }
+
+    let tagColorsChanged = false;
+    const nextTags = task.tags.map((taskTag) => {
+      const nextColor = colorByTagKey.get(normalizeTagKey(taskTag.label));
+      if (!nextColor || nextColor === taskTag.color) {
+        return taskTag;
+      }
+
+      tagColorsChanged = true;
+      return {
+        ...taskTag,
+        color: nextColor
+      };
+    });
+
+    if (!tagColorsChanged) {
+      return task;
+    }
+
+    hasChanges = true;
+    return {
+      ...task,
+      tags: nextTags
+    };
+  });
+
+  return hasChanges ? nextTasks : tasks;
+}
+
 function listSuggestedTags(tasks: Task[]) {
   const tagsByKey = new Map<string, TaskTag>();
 

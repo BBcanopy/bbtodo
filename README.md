@@ -15,7 +15,7 @@
 
 Use `https://<hostname>/auth/callback` as the redirect URI.
 
-For local run, you can use `http://localhost:8080`.
+For local run, you can use `http://localhost:8081/auth/callback`.
 
 2. Run docker compose 
 
@@ -32,7 +32,7 @@ mkdir data
 docker compose up -d
 ```
 
-The app is available at `http://localhost:8080` by default.
+The app is available at `http://localhost:8081` by default.
 
 
 ## Skills for AI Agents.
