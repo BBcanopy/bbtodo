@@ -49,9 +49,14 @@ export const laneResponseSchema = z.object({
   updatedAt: z.string()
 });
 
+export const projectTicketPrefixSchema = z
+  .string()
+  .regex(/^[A-Z]{2,4}$/, "Invalid project ticket prefix.");
+
 export const projectResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
+  ticketPrefix: projectTicketPrefixSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
   laneSummaries: z.array(laneResponseSchema)
@@ -109,6 +114,10 @@ export const createApiTokenBodySchema = z.object({
 
 export const projectParamsSchema = z.object({
   projectId: z.string().uuid()
+});
+
+export const projectTicketPrefixParamsSchema = z.object({
+  ticketPrefix: projectTicketPrefixSchema
 });
 
 export const laneParamsSchema = z.object({
@@ -195,6 +204,7 @@ export function toProjectResponse(
   return projectResponseSchema.parse({
     id: project.id,
     name: project.name,
+    ticketPrefix: project.ticketPrefix,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
     laneSummaries: laneSummaries.map((lane) => toLaneResponse(lane))

@@ -28,6 +28,7 @@ export interface Project {
   id: string;
   laneSummaries: BoardLane[];
   name: string;
+  ticketPrefix: string;
   updatedAt: string;
 }
 
@@ -151,6 +152,9 @@ export const api = {
   },
   getMe() {
     return request<User>("/api/v1/me");
+  },
+  getProjectByTicketPrefix(ticketPrefix: string) {
+    return request<Project>(`/api/v1/projects/by-ticket-prefix/${encodeURIComponent(ticketPrefix)}`);
   },
   listProjects() {
     return request<Project[]>("/api/v1/projects");

@@ -97,7 +97,7 @@ test("projects page lists boards and opens them from the switcher", async ({ pag
   await expect(page.getByRole("button", { name: "Open project Billing cleanup" })).toHaveCount(0);
   await page.getByRole("button", { name: "Open project Partner audit" }).click();
 
-  await expect(page).toHaveURL(/\/projects\/project-6$/);
+  await expect(page).toHaveURL(/\/projects\/PART$/);
   await expect(page.locator(".subnav__current-value")).toHaveText("Partner audit");
 });
 
@@ -111,7 +111,7 @@ test("project cards open on click and delete through a confirmation popover", as
   await expect(projectCard.locator(".project-card__timestamp")).toHaveCount(0);
 
   await projectCard.click();
-  await expect(page).toHaveURL(/\/projects\/project-1$/);
+  await expect(page).toHaveURL(/\/projects\/BILL$/);
   await expect(page.getByTestId("board-grid")).toBeVisible();
 
   await page.goto("/");
@@ -126,4 +126,18 @@ test("project cards open on click and delete through a confirmation popover", as
   await page.getByRole("button", { exact: true, name: "Delete" }).click();
   await expect(projectCard).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "No boards yet." })).toBeVisible();
+});
+
+test("missing board routes return to projects with a toast", async ({ page }) => {
+  await mockAuthenticated(page);
+
+  await page.goto("/projects/NOPE");
+
+  const toast = page.getByTestId("toast-notice");
+
+  await expect(page).toHaveURL("/");
+  await expect(page.locator(".subnav__current-value")).toHaveText("All projects");
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Board not found");
+  await expect(toast).toContainText("Board NOPE does not exist.");
 });

@@ -51,6 +51,7 @@ describe("projects and tasks API", () => {
 
     expect(createProjectResponse.statusCode).toBe(201);
     const project = createProjectResponse.json();
+    expect(project.ticketPrefix).toBe("LAUN");
     expect(project.laneSummaries.map((lane: { name: string }) => lane.name)).toEqual([
       "Todo",
       "In Progress",
@@ -83,7 +84,8 @@ describe("projects and tasks API", () => {
     expect(updateProjectResponse.statusCode).toBe(200);
     expect(updateProjectResponse.json()).toMatchObject({
       id: project.id,
-      name: "Launch board v2"
+      name: "Launch board v2",
+      ticketPrefix: "LAUN"
     });
 
     const createTaskResponse = await app.inject({
@@ -144,7 +146,8 @@ describe("projects and tasks API", () => {
     expect(updatedProjectsResponse.json()).toHaveLength(1);
     expect(updatedProjectsResponse.json()[0]).toMatchObject({
       id: project.id,
-      name: "Launch board v2"
+      name: "Launch board v2",
+      ticketPrefix: "LAUN"
     });
     expect(updatedProjectsResponse.json()[0].laneSummaries).toEqual(
       expect.arrayContaining([
@@ -371,6 +374,111 @@ describe("projects and tasks API", () => {
       ticketId: createdTask.ticketId,
       title: "Lookup target"
     });
+  });
+
+  it("resolves projects by ticket prefix for the owning user", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const createProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Lookup board"
+      }
+    });
+    expect(createProjectResponse.statusCode).toBe(201);
+    const project = createProjectResponse.json();
+
+    const lookupResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/by-ticket-prefix/${project.ticketPrefix}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(lookupResponse.statusCode).toBe(200);
+    expect(lookupResponse.json()).toMatchObject({
+      id: project.id,
+      name: "Lookup board",
+      ticketPrefix: project.ticketPrefix
+    });
+    expect(lookupResponse.json().laneSummaries.map((lane: { name: string }) => lane.name)).toEqual([
+      "Todo",
+      "In Progress",
+      "In review",
+      "Done"
+    ]);
+  });
+
+  it("returns 404 when a project prefix lookup misses", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const lookupResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/projects/by-ticket-prefix/LOOK",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(lookupResponse.statusCode).toBe(404);
+    expect(lookupResponse.json()).toEqual({
+      message: "Project not found."
+    });
+  });
+
+  it("rejects invalid project prefix formats on lookup", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const lookupResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/projects/by-ticket-prefix/look-1",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(lookupResponse.statusCode).toBe(400);
   });
 
   it("returns 404 when a ticket lookup misses", async () => {
@@ -1168,6 +1276,19 @@ describe("projects and tasks API", () => {
       message: "Task not found."
     });
 
+    const otherProjectLookupResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/by-ticket-prefix/${project.ticketPrefix}`,
+      cookies: {
+        bbtodo_session: otherSession.sessionCookie
+      }
+    });
+
+    expect(otherProjectLookupResponse.statusCode).toBe(404);
+    expect(otherProjectLookupResponse.json()).toEqual({
+      message: "Project not found."
+    });
+
     const openApiResponse = await app.inject({
       method: "GET",
       url: "/docs/openapi.json"
@@ -1207,6 +1328,7 @@ describe("projects and tasks API", () => {
     );
     expect(openApi.paths["/api/v1/task-tags"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects"]).toBeDefined();
+    expect(openApi.paths["/api/v1/projects/by-ticket-prefix/{ticketPrefix}"]).toBeDefined();
     expect(openApi.paths["/api/v1/tasks/by-ticket/{ticketId}"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/lanes"]).toBeDefined();
     expect(openApi.paths["/api/v1/projects/{projectId}/lanes/{laneId}"]).toBeDefined();
@@ -1229,6 +1351,10 @@ describe("projects and tasks API", () => {
     ).toEqual({
       $ref: "#/components/schemas/TaskTagInput"
     });
+    expect(openApi.components.schemas.Project.properties.ticketPrefix).toEqual({
+      pattern: "^[A-Z]{2,4}$",
+      type: "string"
+    });
     expect(openApi.components.schemas.Task.properties.ticketId).toEqual({
       type: "string"
     });
@@ -1247,6 +1373,16 @@ describe("projects and tasks API", () => {
         "application/json": {
           schema: {
             $ref: "#/components/schemas/Task"
+          }
+        }
+      },
+      description: "Default Response"
+    });
+    expect(openApi.paths["/api/v1/projects/by-ticket-prefix/{ticketPrefix}"].get.responses["200"]).toEqual({
+      content: {
+        "application/json": {
+          schema: {
+            $ref: "#/components/schemas/Project"
           }
         }
       },

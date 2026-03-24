@@ -9,6 +9,7 @@ import {
   laneParamsSchema,
   laneResponseSchema,
   projectParamsSchema,
+  projectTicketPrefixParamsSchema,
   projectResponseSchema,
   taskParamsSchema,
   taskResponseSchema,
@@ -29,6 +30,7 @@ import {
   deleteOwnedProject,
   deleteOwnedTask,
   getOwnedProject,
+  getOwnedProjectByTicketPrefix,
   getOwnedTaskByTicketId,
   listLanesForProject,
   listProjectsForUser,
@@ -90,6 +92,45 @@ export function registerBoardController(
       return listProjectsForUser(database, user.id).map((project) =>
         toProjectResponse(project, project.laneSummaries)
       );
+    }
+  });
+
+  app.route({
+    method: "GET",
+    url: "/api/v1/projects/by-ticket-prefix/:ticketPrefix",
+    schema: {
+      params: projectTicketPrefixParamsSchema,
+      security: apiDocsSecurity,
+      response: {
+        200: projectResponseSchema,
+        400: errorResponseSchema,
+        401: errorResponseSchema,
+        404: errorResponseSchema
+      },
+      tags: ["projects"]
+    },
+    handler: async (request, reply) => {
+      const user = await requireApiUser(app, database, request, reply);
+      if (!user) {
+        return;
+      }
+
+      const project = getOwnedProjectByTicketPrefix(database, {
+        ticketPrefix: request.params.ticketPrefix,
+        userId: user.id
+      });
+      if (!project) {
+        return reply.status(404).send({
+          message: "Project not found."
+        });
+      }
+
+      const laneSummaries = listLanesForProject(database, {
+        userId: user.id,
+        projectId: project.id
+      });
+
+      return toProjectResponse(project, laneSummaries ?? []);
     }
   });
 

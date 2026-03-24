@@ -1,11 +1,17 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { api, type Project } from "../api";
 import { itemStyle } from "../app/utils";
-import { EmptyState, ErrorBanner, ProjectGridSkeleton, TrashIcon } from "../components/ui";
+import { EmptyState, ErrorBanner, ProjectGridSkeleton, ToastNotice, TrashIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
+
+type PageToast = {
+  message: string;
+  title: string;
+  tone: "danger" | "success";
+};
 
 function ProjectCard({
   index,
@@ -15,7 +21,7 @@ function ProjectCard({
 }: {
   index: number;
   onDelete: (projectId: string) => void;
-  onOpen: (projectId: string) => void;
+  onOpen: (projectTicketPrefix: string) => void;
   project: Project;
 }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -27,11 +33,11 @@ function ProjectCard({
     <article
       className={`project-card${isConfirmOpen ? " is-confirm-open" : ""}`}
       data-testid={`project-card-${project.id}`}
-      onClick={() => onOpen(project.id)}
+      onClick={() => onOpen(project.ticketPrefix)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          onOpen(project.id);
+          onOpen(project.ticketPrefix);
         }
       }}
       role="link"
@@ -104,8 +110,11 @@ function ProjectCard({
 }
 
 export function ProjectsPage() {
+  const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const locationToast = ((location.state as { toast?: PageToast } | null) ?? null)?.toast ?? null;
+  const [toast, setToast] = useState<PageToast | null>(locationToast);
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects()
@@ -119,9 +128,46 @@ export function ProjectsPage() {
     }
   });
 
+  useEffect(() => {
+    if (!locationToast) {
+      return;
+    }
+
+    setToast(locationToast);
+    navigate(
+      {
+        pathname: location.pathname,
+        search: location.search
+      },
+      { replace: true, state: null }
+    );
+  }, [location.pathname, location.search, locationToast, navigate]);
+
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setToast(null);
+    }, 4000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [toast]);
+
   return (
     <main className="page-shell page-shell--projects">
       <title>Projects | BBTodo</title>
+      {toast ? (
+        <ToastNotice
+          message={toast.message}
+          onDismiss={() => setToast(null)}
+          title={toast.title}
+          tone={toast.tone}
+        />
+      ) : null}
       {projectsQuery.error ? <ErrorBanner error={projectsQuery.error} /> : null}
       {deleteProjectMutation.error ? <ErrorBanner error={deleteProjectMutation.error} /> : null}
 
@@ -142,7 +188,7 @@ export function ProjectsPage() {
               key={project.id}
               index={index}
               onDelete={(projectId) => deleteProjectMutation.mutate(projectId)}
-              onOpen={(projectId) => navigate(`/projects/${projectId}`)}
+              onOpen={(projectTicketPrefix) => navigate(`/projects/${projectTicketPrefix}`)}
               project={project}
             />
           ))}

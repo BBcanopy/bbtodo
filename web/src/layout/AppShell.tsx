@@ -25,7 +25,7 @@ import { useDismissableLayer } from "../hooks/useDismissableLayer";
 export function AppShell({ user }: { user: User }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const boardMatch = useMatch("/projects/:projectId/:ticketId?");
+  const boardMatch = useMatch("/projects/:projectTicketPrefix/:ticketId?");
   const isProjectsRoute = location.pathname === "/";
   const [searchParams, setSearchParams] = useSearchParams();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -54,7 +54,7 @@ export function AppShell({ user }: { user: User }) {
       setProjectSwitcherInput("");
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       startTransition(() => {
-        navigate(`/projects/${project.id}`);
+        navigate(`/projects/${project.ticketPrefix}`);
       });
     }
   });
@@ -107,7 +107,9 @@ export function AppShell({ user }: { user: User }) {
   );
   const activeProject =
     boardMatch && projectsQuery.data
-      ? projectsQuery.data.find((project) => project.id === boardMatch.params.projectId) ?? null
+      ? projectsQuery.data.find(
+          (project) => project.ticketPrefix === boardMatch.params.projectTicketPrefix
+        ) ?? null
       : null;
   const projectSwitcherLabel = activeProject?.name ?? "All projects";
   const deferredProjectSwitcherInput = useDeferredValue(projectSwitcherInput.trim().toLowerCase());
@@ -153,11 +155,11 @@ export function AppShell({ user }: { user: User }) {
     setSearchParams(nextParams, { replace: true });
   }
 
-  function openProject(projectId: string) {
+  function openProject(projectTicketPrefix: string) {
     setIsProjectSwitcherOpen(false);
     setProjectSwitcherInput("");
     startTransition(() => {
-      navigate(`/projects/${projectId}`);
+      navigate(`/projects/${projectTicketPrefix}`);
     });
   }
 
@@ -283,7 +285,7 @@ export function AppShell({ user }: { user: User }) {
                                 aria-label={`Open project ${project.name}`}
                                 className={`project-switcher__item${project.id === activeProject?.id ? " is-active" : ""}`}
                                 key={project.id}
-                                onClick={() => openProject(project.id)}
+                                onClick={() => openProject(project.ticketPrefix)}
                                 type="button"
                               >
                                 <span className="project-switcher__item-name">{project.name}</span>

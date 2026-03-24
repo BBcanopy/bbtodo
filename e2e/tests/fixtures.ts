@@ -198,6 +198,7 @@ export const projects: Project[] = [
       done: 1
     }),
     name: "Billing cleanup",
+    ticketPrefix: "BILL",
     updatedAt: "2026-03-18T07:30:00.000Z"
   }
 ];
@@ -214,6 +215,7 @@ export const projectsForGrid: Project[] = [
       done: 0
     }),
     name: "Roadmap review",
+    ticketPrefix: "ROAD",
     updatedAt: "2026-03-18T08:10:00.000Z"
   },
   {
@@ -226,6 +228,7 @@ export const projectsForGrid: Project[] = [
       done: 0
     }),
     name: "Release prep",
+    ticketPrefix: "RELE",
     updatedAt: "2026-03-18T08:20:00.000Z"
   },
   {
@@ -238,6 +241,7 @@ export const projectsForGrid: Project[] = [
       done: 3
     }),
     name: "Customer follow-up",
+    ticketPrefix: "CUST",
     updatedAt: "2026-03-18T08:30:00.000Z"
   },
   {
@@ -250,6 +254,7 @@ export const projectsForGrid: Project[] = [
       done: 0
     }),
     name: "Support triage",
+    ticketPrefix: "SUPP",
     updatedAt: "2026-03-18T08:40:00.000Z"
   },
   {
@@ -262,6 +267,7 @@ export const projectsForGrid: Project[] = [
       done: 2
     }),
     name: "Partner audit",
+    ticketPrefix: "PART",
     updatedAt: "2026-03-18T08:50:00.000Z"
   }
 ];
@@ -418,8 +424,9 @@ export async function mockAuthenticated(
     [...projectState]
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
       .forEach((project) => {
-        const existingPrefix = projectTicketPrefixes.get(project.id);
+        const existingPrefix = project.ticketPrefix ?? projectTicketPrefixes.get(project.id);
         if (existingPrefix) {
+          projectTicketPrefixes.set(project.id, existingPrefix);
           usedPrefixes.add(existingPrefix);
           return;
         }
@@ -441,6 +448,7 @@ export async function mockAuthenticated(
             : allocateFixtureTicketPrefix(project.name, usedPrefixes);
 
         projectTicketPrefixes.set(project.id, resolvedPrefix);
+        project.ticketPrefix = resolvedPrefix;
         usedPrefixes.add(resolvedPrefix);
       });
 
@@ -449,6 +457,8 @@ export async function mockAuthenticated(
       if (!prefix) {
         throw new Error(`Expected ticket prefix state for project ${project.id}.`);
       }
+
+      project.ticketPrefix = prefix;
 
       let highestTicketNumber = 0;
 
@@ -473,6 +483,10 @@ export async function mockAuthenticated(
 
   function getProject(projectId: string) {
     return projectState.find((project) => project.id === projectId) ?? null;
+  }
+
+  function getProjectByTicketPrefix(ticketPrefix: string) {
+    return projectState.find((project) => project.ticketPrefix === ticketPrefix) ?? null;
   }
 
   function syncProject(projectId: string) {
@@ -797,6 +811,7 @@ export async function mockAuthenticated(
             done: 0
           }),
           name: projectName,
+          ticketPrefix: resolvedPrefix,
           updatedAt: "2026-03-18T08:00:00.000Z"
         };
         projectState.unshift(createdProject);
@@ -836,6 +851,19 @@ export async function mockAuthenticated(
 
       syncProject(projectId);
       await fulfillJson(route, 200, project.laneSummaries);
+      return;
+    }
+
+    if (request.method() === "GET" && url.pathname.startsWith("/api/v1/projects/by-ticket-prefix/")) {
+      const ticketPrefix = url.pathname.split("/").pop() ?? "";
+      const project = getProjectByTicketPrefix(ticketPrefix);
+      if (!project) {
+        await fulfillJson(route, 404, { message: "Project not found." });
+        return;
+      }
+
+      syncProject(project.id);
+      await fulfillJson(route, 200, project);
       return;
     }
 

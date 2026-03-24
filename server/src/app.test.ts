@@ -73,7 +73,7 @@ describe("static client bundle serving", () => {
 
     const appRouteResponse = await app.inject({
       method: "GET",
-      url: "/projects/project-1"
+      url: "/projects/BILL"
     });
     expect(appRouteResponse.statusCode).toBe(200);
     expect(appRouteResponse.body).toContain("<div id=\"root\">bbtodo</div>");

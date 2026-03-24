@@ -844,6 +844,20 @@ export function getOwnedProject(db: DatabaseClient, userId: string, projectId: s
     .get();
 }
 
+export function getOwnedProjectByTicketPrefix(
+  db: DatabaseClient,
+  input: {
+    ticketPrefix: string;
+    userId: string;
+  }
+) {
+  return db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.ticketPrefix, input.ticketPrefix), eq(projects.userId, input.userId)))
+    .get();
+}
+
 export function deleteOwnedProject(db: DatabaseClient, userId: string, projectId: string) {
   const project = getOwnedProject(db, userId, projectId);
   if (!project) {

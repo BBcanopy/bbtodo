@@ -3,6 +3,7 @@ import { devices, expect, test, type Locator, type Page } from "@playwright/test
 import { laneId, mockAuthenticated, projectsForGrid, tag, tasks } from "./fixtures";
 
 const { defaultBrowserType: _ignoredDefaultBrowserType, ...iPhone13 } = devices["iPhone 13"];
+const billingBoardPath = "/projects/BILL";
 
 async function isTaskDragActive(dragOverlay: Locator, taskCard: Locator) {
   if ((await dragOverlay.count()) > 0) {
@@ -237,7 +238,7 @@ test("board page autosaves cards and filters tasks", async ({ page }) => {
     tasks: tasksWithReusableGlobalTag
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   await expect(page).toHaveTitle("Billing cleanup | BBTodo");
   await expect(page.locator(".subnav__current-value")).toHaveText("Billing cleanup");
@@ -273,7 +274,7 @@ test("board page autosaves cards and filters tasks", async ({ page }) => {
   await page.getByLabel("Open account menu").click();
 
   await firstTaskCard.click();
-  await expect(page).toHaveURL(/\/projects\/project-1\/BILL-1$/);
+  await expect(page).toHaveURL(/\/projects\/BILL\/BILL-1$/);
 
   const editDialog = page.getByRole("dialog", { name: /Edit BILL-/ });
   const dialogPanel = page.locator(".dialog-panel--task-editor");
@@ -403,7 +404,7 @@ test("board page autosaves cards and filters tasks", async ({ page }) => {
   await expect(recoloredBackendSuggestion).toHaveCSS("background-color", "rgb(255, 241, 217)");
   await editDialog.getByLabel("Close edit task dialog").click();
   await expect(editDialog).toHaveCount(0);
-  await expect(page).toHaveURL(/\/projects\/project-1$/);
+  await expect(page).toHaveURL(/\/projects\/BILL$/);
 
   await page.getByLabel("Search cards").fill("callback");
   await expect(page.getByText("Review retry scope")).toBeVisible();
@@ -433,7 +434,7 @@ test("board page autosaves cards and filters tasks", async ({ page }) => {
   await expect(page.getByText("Tighten callback logging")).toHaveCount(0);
   await expect(page.getByText("Queue copy pass")).toHaveCount(0);
 
-  await page.goto("/projects/project-1?tags=ops,backend");
+  await page.goto(`${billingBoardPath}?tags=ops,backend`);
   const routedOpsTagFilterChip = tagFilterField.locator(".subnav__tag-filter-chip", { hasText: "ops" });
   await expect(routedOpsTagFilterChip).toBeVisible();
   await expect(page.getByText("Remove healthcheck loop")).toBeVisible();
@@ -447,7 +448,7 @@ test("board page flushes pending task edits when closing the dialog", async ({ p
     tasks
   });
 
-  await page.goto("/projects/project-1/BILL-2");
+  await page.goto(`${billingBoardPath}/BILL-2`);
 
   const editDialog = page.getByRole("dialog", { name: "Edit BILL-2" });
   const saveStatus = editDialog.getByTestId("task-editor-save-status");
@@ -462,9 +463,9 @@ test("board page flushes pending task edits when closing the dialog", async ({ p
   await expect(editDialog).toBeVisible();
   await expect(saveStatus).toHaveText("Saving...");
   await expect(editDialog).toHaveCount(0);
-  await expect(page).toHaveURL(/\/projects\/project-1$/);
+  await expect(page).toHaveURL(/\/projects\/BILL$/);
 
-  await page.goto("/projects/project-1/BILL-2");
+  await page.goto(`${billingBoardPath}/BILL-2`);
   await expect(editDialog).toBeVisible();
   await expect(editDialog.getByLabel("Title")).toHaveValue("Tighten callback traces");
   await expect(editDialog.getByRole("button", { name: "Remove tag urgent" })).toBeVisible();
@@ -479,7 +480,7 @@ test("board page keeps autosave failures open and allows manual retry", async ({
     tasks
   });
 
-  await page.goto("/projects/project-1/BILL-1");
+  await page.goto(`${billingBoardPath}/BILL-1`);
 
   const editDialog = page.getByRole("dialog", { name: "Edit BILL-1" });
   const saveStatus = editDialog.getByTestId("task-editor-save-status");
@@ -507,12 +508,12 @@ test("board page opens a task dialog from a ticket deep link", async ({ page }) 
     tasks
   });
 
-  await page.goto("/projects/project-1/BILL-2?q=callback");
+  await page.goto(`${billingBoardPath}/BILL-2?q=callback`);
 
   const editDialog = page.getByRole("dialog", { name: "Edit BILL-2" });
 
   await expect(editDialog).toBeVisible();
-  await expect(page).toHaveURL(/\/projects\/project-1\/BILL-2\?q=callback$/);
+  await expect(page).toHaveURL(/\/projects\/BILL\/BILL-2\?q=callback$/);
   await expect(editDialog.getByRole("heading", { name: "Edit BILL-2" })).toBeVisible();
   await expect(editDialog.getByLabel("Title")).toHaveValue("Tighten callback logging");
   await expect(page.getByLabel("Search cards")).toHaveValue("callback");
@@ -520,7 +521,7 @@ test("board page opens a task dialog from a ticket deep link", async ({ page }) 
   await editDialog.getByLabel("Close edit task dialog").click();
 
   await expect(editDialog).toHaveCount(0);
-  await expect(page).toHaveURL(/\/projects\/project-1\?q=callback$/);
+  await expect(page).toHaveURL(/\/projects\/BILL\?q=callback$/);
 });
 
 test("board page shows a toast when a ticket deep link misses", async ({ page }) => {
@@ -529,16 +530,33 @@ test("board page shows a toast when a ticket deep link misses", async ({ page })
     tasks
   });
 
-  await page.goto("/projects/project-1/BILL-99?q=callback");
+  await page.goto(`${billingBoardPath}/BILL-99?q=callback`);
 
-  const toast = page.getByTestId("board-toast");
+  const toast = page.getByTestId("toast-notice");
 
-  await expect(page).toHaveURL(/\/projects\/project-1\?q=callback$/);
+  await expect(page).toHaveURL(/\/projects\/BILL\?q=callback$/);
   await expect(toast).toBeVisible();
   await expect(toast).toContainText("Ticket not found");
   await expect(toast).toContainText("Ticket BILL-99 does not exist.");
   await expect(page.getByRole("dialog", { name: /Edit BILL-/ })).toHaveCount(0);
   await expect(page.getByLabel("Search cards")).toHaveValue("callback");
+});
+
+test("board page redirects home with a toast when the board route is invalid", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto("/projects/project-1");
+
+  const toast = page.getByTestId("toast-notice");
+
+  await expect(page).toHaveURL("/");
+  await expect(page.locator(".subnav__current-value")).toHaveText("All projects");
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Board not found");
+  await expect(toast).toContainText("Board project-1 does not exist.");
 });
 
 test("board page deletes tasks from the lane header trash target", async ({ page }) => {
@@ -547,7 +565,7 @@ test("board page deletes tasks from the lane header trash target", async ({ page
     tasks
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const firstTaskCard = page.getByTestId("task-card-task-1");
   const todoLaneHeader = page.getByTestId(`lane-header-${laneId("project-1", "todo")}`);
@@ -595,7 +613,7 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(firstTaskCard).toHaveCount(0);
   await expect(page.getByTestId("task-card-task-4")).toBeVisible();
   await expect(todoLaneTrashTarget).toBeHidden();
-  const taskDeleteToast = page.getByTestId("board-toast");
+  const taskDeleteToast = page.getByTestId("toast-notice");
   await expect(taskDeleteToast).toBeVisible();
   await expect(taskDeleteToast).toContainText("Task deleted");
   await expect(taskDeleteToast).toContainText("Review retry settings (BILL-1) was deleted.");
@@ -651,7 +669,7 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
     tasks: tasksWithQaCard
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const todoColumn = page.getByTestId(`board-column-${laneId("project-1", "todo")}`);
   const retryCard = page.getByTestId("task-card-task-1");
@@ -720,7 +738,7 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(createdCardInDone).toBeVisible();
   await expect(createdCardInDone.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
   await expect(doneColumn.getByText("Review retry settings")).toBeVisible();
-  const laneDeleteToast = page.getByTestId("board-toast");
+  const laneDeleteToast = page.getByTestId("toast-notice");
   await expect(laneDeleteToast).toBeVisible();
   await expect(laneDeleteToast).toContainText("Lane deleted");
   await expect(laneDeleteToast).toContainText("Ready for QA was deleted. Cards moved to Done.");
@@ -750,7 +768,7 @@ test("board page previews a dragged task at the top of Done before drop", async 
     tasks: tasksWithDoneCards
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const doneColumn = page.getByTestId(`board-column-${laneId("project-1", "done")}`);
   const callbackLoggingCard = page.getByTestId("task-card-task-2");
@@ -816,7 +834,7 @@ test("board page keeps Done ordered by newest update time and ignores drag reord
     tasks: tasksWithDoneCards
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const doneColumn = page.getByTestId(`board-column-${laneId("project-1", "done")}`);
   const archivedRoadmapCard = page.getByTestId("task-card-task-5");
@@ -889,7 +907,7 @@ test("board page moves a dragged subtask under another empty parent", async ({ p
     tasks: tasksWithQaCards
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const shipNoteCard = page.getByTestId("task-card-task-5");
   const releaseChecklistCard = page.getByTestId("task-card-task-6");
@@ -965,7 +983,7 @@ test("board page keeps subtask drags inside the parent group", async ({ page }) 
     tasks: tasksWithQaCard
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const shipNoteCard = page.getByTestId("task-card-task-5");
   const retrySubtask = shipNoteCard.locator(".task-card__subtasks").getByTestId("task-card-task-1");
@@ -1038,7 +1056,7 @@ test("board page resets a subtask preview when dragged back over its current par
     tasks: tasksWithQaCards
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const shipNoteCard = page.getByTestId("task-card-task-5");
   const releaseChecklistCard = page.getByTestId("task-card-task-6");
@@ -1060,7 +1078,7 @@ test("board page adds tasks from the lane header action and keeps the double-cli
 
   await mockAuthenticated(page, { projects: projectsForGrid });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const addTaskButton = page.getByTestId(`add-task-button-${todoLaneId}`);
   const composer = page.getByTestId(`lane-composer-${todoLaneId}`);
@@ -1088,7 +1106,7 @@ test("board page adds tasks from the lane header action and keeps the double-cli
 test("board page creates lanes from the gap between columns", async ({ page }) => {
   await mockAuthenticated(page, { projects: projectsForGrid });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   await expect(page.getByRole("button", { exact: true, name: "Create Lane" })).toHaveCount(0);
 
@@ -1155,7 +1173,7 @@ test("board page keeps a tall lane gap marker in the first screen", async ({ pag
     tasks: tasksWithTallTodo
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const createLaneGap = page.getByTestId(`create-lane-gap-after-${laneId("project-1", "todo")}`);
   const createLaneGapMarker = createLaneGap.locator(".board-lane-gap__marker");
@@ -1223,7 +1241,7 @@ test.describe("mobile board page", () => {
       tasks: tasksWithTallTodo
     });
 
-    await page.goto("/projects/project-1");
+    await page.goto(billingBoardPath);
 
     const topbarShell = page.getByTestId("app-topbar-shell");
 
@@ -1250,7 +1268,7 @@ test.describe("mobile board page", () => {
 
     await mockAuthenticated(page, { projects: projectsForGrid });
 
-    await page.goto("/projects/project-1");
+    await page.goto(billingBoardPath);
 
     const addTaskButton = page.getByTestId(`add-task-button-${todoLaneId}`);
     const composer = page.getByTestId(`lane-composer-${todoLaneId}`);
@@ -1271,7 +1289,7 @@ test.describe("mobile board page", () => {
 
     await mockAuthenticated(page, { projects: projectsForGrid });
 
-    await page.goto("/projects/project-1");
+    await page.goto(billingBoardPath);
 
     const mobileCreateLaneButton = page.getByTestId(`create-lane-mobile-after-${todoLaneId}`);
     const firstLaneSpacing = await page.locator(".board-column-shell").first().evaluate((element) => {
@@ -1312,7 +1330,7 @@ test("board page switcher renames and creates projects while guarding protected 
     projects: projectsForGrid
   });
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
 
   const switcherButton = page.getByRole("button", { name: "Open project switcher" });
   await switcherButton.click();
@@ -1323,20 +1341,21 @@ test("board page switcher renames and creates projects while guarding protected 
   await expect(page.getByRole("button", { name: "Open project Billing cleanup" })).toHaveCount(0);
   await page.getByRole("button", { name: "Open project Roadmap review" }).click();
 
-  await expect(page).toHaveURL(/\/projects\/project-2$/);
+  await expect(page).toHaveURL(/\/projects\/ROAD$/);
   await expect(page.locator(".subnav__current-value")).toHaveText("Roadmap review");
 
-  await page.goto("/projects/project-1");
+  await page.goto(billingBoardPath);
   await switcherButton.click();
   await switcherInput.fill("Billing relaunch");
   await page.getByRole("button", { name: "Rename Project" }).click();
+  await expect(page).toHaveURL(/\/projects\/BILL$/);
   await expect(page.locator(".subnav__current-value")).toHaveText("Billing relaunch");
 
   await switcherButton.click();
   await switcherInput.fill("Program rollout");
   await page.getByRole("button", { name: "Create Project" }).click();
 
-  await expect(page).toHaveURL(/\/projects\/project-7$/);
+  await expect(page).toHaveURL(/\/projects\/PROG$/);
   await expect(page.locator(".subnav__current-value")).toHaveText("Program rollout");
   await expect(page.locator(".board-column__header h2")).toHaveText([
     "Todo",
@@ -1366,7 +1385,7 @@ test("board page switcher renames and creates projects while guarding protected 
   await switcherInput.fill("12345");
   await page.getByRole("button", { name: "Create Project" }).click();
 
-  await expect(page).toHaveURL(/\/projects\/project-8$/);
+  await expect(page).toHaveURL(/\/projects\/AAAA$/);
   await expect(page.locator(".subnav__current-value")).toHaveText("12345");
   await expect(page.locator(".board-column__header h2")).toHaveText([
     "Todo",

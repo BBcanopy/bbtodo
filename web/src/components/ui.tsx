@@ -171,6 +171,41 @@ export function ErrorBanner({ error }: { error: unknown }) {
   return <p className="error-banner">{getErrorMessage(error)}</p>;
 }
 
+export function ToastNotice({
+  message,
+  onDismiss,
+  title,
+  tone
+}: {
+  message: string;
+  onDismiss: () => void;
+  title: string;
+  tone: "danger" | "success";
+}) {
+  return (
+    <div aria-live="polite" className="toast-stack">
+      <div
+        className={`toast-notice toast-notice--${tone}`}
+        data-testid="toast-notice"
+        role="status"
+      >
+        <div className="toast-notice__copy">
+          <strong>{title}</strong>
+          <p>{message}</p>
+        </div>
+        <button
+          aria-label="Dismiss notification"
+          className="icon-button toast-notice__dismiss"
+          onClick={onDismiss}
+          type="button"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function EmptyState({
   eyebrow,
   title,

@@ -21,7 +21,7 @@ import ReactMarkdown from "react-markdown";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CSS } from "@dnd-kit/utilities";
 
-import { api, type BoardLane, type Task, type TaskTag, type TaskTagColor } from "../api";
+import { api, isApiError, type BoardLane, type Task, type TaskTag, type TaskTagColor } from "../api";
 import {
   getRandomTaskTagColor,
   getTaskTagStyle,
@@ -41,10 +41,10 @@ import {
   BoardSkeleton,
   CloseIcon,
   ContractIcon,
-  EmptyState,
   ErrorBanner,
   ExpandIcon,
   PlusIcon,
+  ToastNotice,
   TrashIcon
 } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
@@ -78,10 +78,12 @@ const taskMeasuring = {
   }
 } as const;
 
-function buildBoardPath(projectId: string, ticketId?: string) {
+const projectTicketPrefixPattern = /^[A-Z]{2,4}$/;
+
+function buildBoardPath(projectTicketPrefix: string, ticketId?: string) {
   return ticketId
-    ? `/projects/${projectId}/${encodeURIComponent(ticketId)}`
-    : `/projects/${projectId}`;
+    ? `/projects/${projectTicketPrefix}/${encodeURIComponent(ticketId)}`
+    : `/projects/${projectTicketPrefix}`;
 }
 
 function toSearchString(searchParams: URLSearchParams) {
@@ -1965,43 +1967,8 @@ function TaskEditorDialog({
   );
 }
 
-function ToastNotice({
-  message,
-  onDismiss,
-  title,
-  tone
-}: {
-  message: string;
-  onDismiss: () => void;
-  title: string;
-  tone: BoardToast["tone"];
-}) {
-  return (
-    <div aria-live="polite" className="toast-stack">
-      <div
-        className={`toast-notice toast-notice--${tone}`}
-        data-testid="board-toast"
-        role="status"
-      >
-        <div className="toast-notice__copy">
-          <strong>{title}</strong>
-          <p>{message}</p>
-        </div>
-        <button
-          aria-label="Dismiss notification"
-          className="icon-button toast-notice__dismiss"
-          onClick={onDismiss}
-          type="button"
-        >
-          <CloseIcon />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function BoardPage() {
-  const { projectId, ticketId } = useParams();
+  const { projectTicketPrefix, ticketId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -2026,19 +1993,24 @@ export function BoardPage() {
   const previewTasksRef = useRef<Task[] | null>(null);
   const taskDragPreviewUpdatedAtRef = useRef<string | null>(null);
 
-  const projectsQuery = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => api.listProjects()
+  const isValidProjectTicketPrefix =
+    typeof projectTicketPrefix === "string" && projectTicketPrefixPattern.test(projectTicketPrefix);
+  const projectQuery = useQuery({
+    enabled: isValidProjectTicketPrefix,
+    queryKey: ["project", projectTicketPrefix],
+    queryFn: () => api.getProjectByTicketPrefix(projectTicketPrefix ?? "")
   });
+  const project = projectQuery.data ?? null;
+  const resolvedProjectId = project?.id ?? null;
   const lanesQuery = useQuery({
-    enabled: Boolean(projectId),
-    queryKey: ["lanes", projectId],
-    queryFn: () => api.listLanes(projectId ?? "")
+    enabled: Boolean(resolvedProjectId),
+    queryKey: ["lanes", resolvedProjectId],
+    queryFn: () => api.listLanes(resolvedProjectId ?? "")
   });
   const tasksQuery = useQuery({
-    enabled: Boolean(projectId),
-    queryKey: ["tasks", projectId],
-    queryFn: () => api.listTasks(projectId ?? "")
+    enabled: Boolean(resolvedProjectId),
+    queryKey: ["tasks", resolvedProjectId],
+    queryFn: () => api.listTasks(resolvedProjectId ?? "")
   });
   const taskTagsQuery = useQuery({
     queryKey: ["task-tags"],
@@ -2049,9 +2021,10 @@ export function BoardPage() {
   const boardSearch = searchParams.get("q")?.trim().toLowerCase() ?? "";
   const activeTagFilter = parseSingleTagInput(searchParams.get("tags") ?? "");
   const activeTagKey = activeTagFilter ? normalizeTagKey(activeTagFilter) : null;
-  const project = projectsQuery.data?.find((candidate) => candidate.id === projectId);
   const lanes = lanesQuery.data ?? project?.laneSummaries ?? [];
   const tasks = tasksQuery.data ?? [];
+  const isMissingBoard = !isValidProjectTicketPrefix || isApiError(projectQuery.error, 404);
+  const isProjectLoading = isValidProjectTicketPrefix && projectQuery.isPending;
   const activeTasks = previewTasks ?? tasks;
   const lanesById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane])), [lanes]);
   const draggedLane = draggedLaneId ? lanes.find((lane) => lane.id === draggedLaneId) ?? null : null;
@@ -2150,16 +2123,27 @@ export function BoardPage() {
   }, [lanesById, pendingDeleteTask, pendingDeleteTaskId, pendingDeleteTaskLaneId]);
 
   async function invalidateBoardData() {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["tasks", projectId] }),
+    const invalidations = [
       queryClient.invalidateQueries({ queryKey: ["task-tags"] }),
-      queryClient.invalidateQueries({ queryKey: ["projects"] }),
-      queryClient.invalidateQueries({ queryKey: ["lanes", projectId] })
-    ]);
+      queryClient.invalidateQueries({ queryKey: ["projects"] })
+    ];
+
+    if (projectTicketPrefix) {
+      invalidations.push(queryClient.invalidateQueries({ queryKey: ["project", projectTicketPrefix] }));
+    }
+
+    if (resolvedProjectId) {
+      invalidations.push(
+        queryClient.invalidateQueries({ queryKey: ["tasks", resolvedProjectId] }),
+        queryClient.invalidateQueries({ queryKey: ["lanes", resolvedProjectId] })
+      );
+    }
+
+    await Promise.all(invalidations);
   }
 
   const createLaneMutation = useMutation({
-    mutationFn: (name: string) => api.createLane(projectId ?? "", name),
+    mutationFn: (name: string) => api.createLane(resolvedProjectId ?? "", name),
     onSuccess: async () => {
       closeCreateLaneDialog();
       await invalidateBoardData();
@@ -2168,7 +2152,7 @@ export function BoardPage() {
 
   const createTaskMutation = useMutation({
     mutationFn: ({ laneId, title }: { laneId: string; title: string }) =>
-      api.createTask(projectId ?? "", {
+      api.createTask(resolvedProjectId ?? "", {
         laneId,
         title
       }),
@@ -2191,14 +2175,14 @@ export function BoardPage() {
       position: number;
       previewUpdatedAt?: string | null;
       taskId: string;
-    }) => api.updateTask(projectId ?? "", taskId, { laneId, parentTaskId, position }),
+    }) => api.updateTask(resolvedProjectId ?? "", taskId, { laneId, parentTaskId, position }),
     onMutate: async ({ laneId, parentTaskId, position, previewUpdatedAt, taskId }) => {
-      if (!projectId) {
+      if (!resolvedProjectId) {
         return { previousTasks: undefined };
       }
 
-      await queryClient.cancelQueries({ queryKey: ["tasks", projectId] });
-      const previousTasks = queryClient.getQueryData<Task[]>(["tasks", projectId]) ?? tasks;
+      await queryClient.cancelQueries({ queryKey: ["tasks", resolvedProjectId] });
+      const previousTasks = queryClient.getQueryData<Task[]>(["tasks", resolvedProjectId]) ?? tasks;
       const optimisticTasks = applyTaskMove(
         previousTasks,
         taskId,
@@ -2209,15 +2193,15 @@ export function BoardPage() {
         previewUpdatedAt
       );
 
-      queryClient.setQueryData(["tasks", projectId], optimisticTasks);
+      queryClient.setQueryData(["tasks", resolvedProjectId], optimisticTasks);
       return { previousTasks };
     },
     onError: (_error, _variables, context) => {
-      if (!projectId || !context?.previousTasks) {
+      if (!resolvedProjectId || !context?.previousTasks) {
         return;
       }
 
-      queryClient.setQueryData(["tasks", projectId], context.previousTasks);
+      queryClient.setQueryData(["tasks", resolvedProjectId], context.previousTasks);
     },
     onSettled: async () => {
       await invalidateBoardData();
@@ -2225,7 +2209,7 @@ export function BoardPage() {
   });
   const moveLaneMutation = useMutation({
     mutationFn: ({ laneId, position }: { laneId: string; position: number }) =>
-      api.updateLane(projectId ?? "", laneId, { position }),
+      api.updateLane(resolvedProjectId ?? "", laneId, { position }),
     onSuccess: async () => {
       await invalidateBoardData();
     }
@@ -2239,7 +2223,7 @@ export function BoardPage() {
       laneId: string;
     }) =>
       api.deleteLane(
-        projectId ?? "",
+        resolvedProjectId ?? "",
         laneId,
         destinationLaneId ? { destinationLaneId } : undefined
       ),
@@ -2283,13 +2267,13 @@ export function BoardPage() {
       tags: TaskTag[];
       taskId: string;
       title: string;
-    }) => api.updateTask(projectId ?? "", taskId, { body, tags, title }),
+    }) => api.updateTask(resolvedProjectId ?? "", taskId, { body, tags, title }),
     onSuccess: (updatedTask) => {
-      if (!projectId) {
+      if (!resolvedProjectId) {
         return;
       }
 
-      queryClient.setQueryData<Task[]>(["tasks", projectId], (currentTasks) =>
+      queryClient.setQueryData<Task[]>(["tasks", resolvedProjectId], (currentTasks) =>
         currentTasks ? mergeSavedTaskIntoTasks(currentTasks, updatedTask) : currentTasks
       );
       void queryClient.invalidateQueries({ queryKey: ["task-tags"] });
@@ -2298,7 +2282,7 @@ export function BoardPage() {
   });
 
   const deleteTaskMutation = useMutation({
-    mutationFn: (taskId: string) => api.deleteTask(projectId ?? "", taskId),
+    mutationFn: (taskId: string) => api.deleteTask(resolvedProjectId ?? "", taskId),
     onSuccess: async (_, taskId) => {
       const deletedTask = tasks.find((task) => task.id === taskId) ?? null;
 
@@ -2363,13 +2347,14 @@ export function BoardPage() {
   }
 
   function openTaskDialog(task: Task) {
-    if (!projectId) {
+    const boardPathPrefix = project?.ticketPrefix ?? projectTicketPrefix;
+    if (!boardPathPrefix) {
       return;
     }
 
     navigate(
       {
-        pathname: buildBoardPath(projectId, task.ticketId),
+        pathname: buildBoardPath(boardPathPrefix, task.ticketId),
         search: toSearchString(searchParams)
       },
       { replace: true }
@@ -2378,13 +2363,14 @@ export function BoardPage() {
   }
 
   function closeTaskDialog() {
-    if (!projectId) {
+    const boardPathPrefix = project?.ticketPrefix ?? projectTicketPrefix;
+    if (!boardPathPrefix) {
       return;
     }
 
     navigate(
       {
-        pathname: buildBoardPath(projectId),
+        pathname: buildBoardPath(boardPathPrefix),
         search: toSearchString(searchParams)
       },
       { replace: true }
@@ -2888,10 +2874,10 @@ export function BoardPage() {
     if (
       !ticketId ||
       editingTask ||
-      projectsQuery.isPending ||
+      isProjectLoading ||
       tasksQuery.isPending ||
       tasksQuery.error ||
-      !projectId ||
+      !resolvedProjectId ||
       !project
     ) {
       return;
@@ -2904,25 +2890,41 @@ export function BoardPage() {
     });
     navigate(
       {
-        pathname: buildBoardPath(projectId),
+        pathname: buildBoardPath(project.ticketPrefix),
         search: toSearchString(searchParams)
       },
       { replace: true }
     );
   }, [
     editingTask,
+    isProjectLoading,
     navigate,
     project,
-    projectId,
-    projectsQuery.isPending,
+    resolvedProjectId,
     searchParams,
     tasksQuery.error,
     tasksQuery.isPending,
     ticketId
   ]);
 
-  if (!projectId) {
+  if (!projectTicketPrefix) {
     return <Navigate replace to="/" />;
+  }
+
+  if (isMissingBoard) {
+    return (
+      <Navigate
+        replace
+        state={{
+          toast: {
+            message: `Board ${projectTicketPrefix} does not exist.`,
+            title: "Board not found",
+            tone: "danger"
+          }
+        }}
+        to="/"
+      />
+    );
   }
 
   return (
@@ -3009,7 +3011,7 @@ export function BoardPage() {
         />
       ) : null}
 
-      {projectsQuery.error ? <ErrorBanner error={projectsQuery.error} /> : null}
+      {projectQuery.error && !isApiError(projectQuery.error, 404) ? <ErrorBanner error={projectQuery.error} /> : null}
       {lanesQuery.error ? <ErrorBanner error={lanesQuery.error} /> : null}
       {tasksQuery.error ? <ErrorBanner error={tasksQuery.error} /> : null}
       {createTaskMutation.error ? <ErrorBanner error={createTaskMutation.error} /> : null}
@@ -3018,17 +3020,11 @@ export function BoardPage() {
       {deleteLaneMutation.error ? <ErrorBanner error={deleteLaneMutation.error} /> : null}
       {deleteTaskMutation.error ? <ErrorBanner error={deleteTaskMutation.error} /> : null}
 
-      {projectsQuery.isPending || lanesQuery.isPending || tasksQuery.isPending ? <BoardSkeleton /> : null}
-
-      {!projectsQuery.isPending && projectsQuery.data && !project ? (
-        <EmptyState
-          copy="The project may have been removed. Head back to the project list and open another board."
-          eyebrow="Missing board"
-          title="That board is no longer available."
-        />
+      {isProjectLoading || (project !== null && (lanesQuery.isPending || tasksQuery.isPending)) ? (
+        <BoardSkeleton />
       ) : null}
 
-      {!projectsQuery.isPending && !lanesQuery.isPending && !tasksQuery.isPending && project ? (
+      {!isProjectLoading && !lanesQuery.isPending && !tasksQuery.isPending && project ? (
         <DndContext
           collisionDetection={taskCollisionDetection}
           measuring={taskMeasuring}
