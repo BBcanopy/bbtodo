@@ -1937,24 +1937,26 @@ function TaskEditorDialog({
                 </dd>
               </div>
             </dl>
-            <div
-              aria-atomic="true"
-              aria-live="polite"
-              className={`task-editor__save-status task-editor__save-status--${saveStatus}`}
-              data-state={saveStatus}
-              data-testid="task-editor-save-status"
-              role="status"
-            >
-              {saveStatus === "saving" ? <span aria-hidden="true" className="status-ping" /> : null}
-              <span>{saveStatusMessage}</span>
-            </div>
-            <div className="dialog-actions task-editor__actions">
-              <button className="text-button" onClick={() => requestCloseRef.current()} type="button">
-                Close
-              </button>
-              <button className="primary-button" disabled={saveStatus === "saving" || title.trim().length === 0} type="submit">
-                {saveStatus === "saving" ? "Saving..." : "Save card"}
-              </button>
+            <div className="task-editor__footer-actions">
+              <div
+                aria-atomic="true"
+                aria-live="polite"
+                className={`task-editor__save-status task-editor__save-status--${saveStatus}`}
+                data-state={saveStatus}
+                data-testid="task-editor-save-status"
+                role="status"
+              >
+                {saveStatus === "saving" ? <span aria-hidden="true" className="status-ping" /> : null}
+                <span>{saveStatusMessage}</span>
+              </div>
+              <div className="dialog-actions task-editor__actions">
+                <button className="text-button" onClick={() => requestCloseRef.current()} type="button">
+                  Close
+                </button>
+                <button className="primary-button" disabled={saveStatus === "saving" || title.trim().length === 0} type="submit">
+                  {saveStatus === "saving" ? "Saving..." : "Save card"}
+                </button>
+              </div>
             </div>
           </div>
         </form>

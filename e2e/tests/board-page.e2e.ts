@@ -286,6 +286,7 @@ test("board page autosaves cards and filters tasks", async ({ page }) => {
   const fullscreenButton = editDialog.getByRole("button", { name: "Enter full screen" });
   const tagInput = editDialog.getByLabel("Task tags");
   const taskEditorFooter = editDialog.locator(".task-editor__footer");
+  const footerActions = editDialog.locator(".task-editor__footer-actions");
   const createdMeta = editDialog.locator(".task-editor__meta-item", { hasText: "Created" });
   const updatedMeta = editDialog.locator(".task-editor__meta-item", { hasText: "Updated" });
   const saveButton = editDialog.getByRole("button", { name: "Save card" });
@@ -294,7 +295,9 @@ test("board page autosaves cards and filters tasks", async ({ page }) => {
   await expect(editDialog).toBeVisible();
   await expect(editDialog.getByRole("heading", { name: "Edit BILL-1" })).toBeVisible();
   await expect(taskEditorFooter.locator(".task-editor__meta")).toBeVisible();
-  await expect(taskEditorFooter.locator(".dialog-actions")).toBeVisible();
+  await expect(footerActions).toBeVisible();
+  await expect(footerActions.locator(".dialog-actions")).toBeVisible();
+  await expect(footerActions.getByTestId("task-editor-save-status")).toBeVisible();
   await expect(taskEditorFooter.getByRole("button", { name: "Close" })).toBeVisible();
   await expect(taskEditorFooter.getByRole("button", { name: "Save card" })).toBeVisible();
   await expect(saveStatus).toHaveText("All changes saved");
@@ -313,12 +316,14 @@ test("board page autosaves cards and filters tasks", async ({ page }) => {
   const footerMetaBox = await taskEditorFooter.locator(".task-editor__meta").boundingBox();
   const initialDialogBox = await dialogPanel.boundingBox();
   const initialTextareaBox = await bodyTextarea.boundingBox();
+  const saveStatusBox = await saveStatus.boundingBox();
   const saveButtonBox = await saveButton.boundingBox();
   expect(bodyLabelBox).not.toBeNull();
   expect(viewTabsBox).not.toBeNull();
   expect(footerMetaBox).not.toBeNull();
   expect(initialDialogBox).not.toBeNull();
   expect(initialTextareaBox).not.toBeNull();
+  expect(saveStatusBox).not.toBeNull();
   expect(saveButtonBox).not.toBeNull();
   expect(
     Math.abs(
@@ -328,6 +333,9 @@ test("board page autosaves cards and filters tasks", async ({ page }) => {
   ).toBeLessThanOrEqual(2);
   expect(Math.abs((footerMetaBox?.y ?? 0) - (saveButtonBox?.y ?? 0))).toBeLessThanOrEqual(32);
   expect((footerMetaBox?.x ?? 0)).toBeLessThan((saveButtonBox?.x ?? 0));
+  expect((saveStatusBox?.y ?? 0) + (saveStatusBox?.height ?? 0)).toBeLessThanOrEqual(
+    (saveButtonBox?.y ?? 0) + 2
+  );
   await expect(editDialog.getByLabel("Title")).toHaveValue("Review retry settings");
   await expect(editDialog.getByRole("button", { name: "Remove tag backend" })).toBeVisible();
   await expect(editDialog.getByRole("button", { name: "Remove tag retry" })).toBeVisible();

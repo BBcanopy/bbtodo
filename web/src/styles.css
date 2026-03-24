@@ -2474,6 +2474,14 @@ textarea:focus {
   flex-wrap: wrap;
 }
 
+.task-editor__footer-actions {
+  display: grid;
+  justify-items: end;
+  gap: 0.35rem;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
 .task-editor__meta {
   display: flex;
   flex-wrap: wrap;
@@ -2530,7 +2538,7 @@ textarea:focus {
 }
 
 .task-editor__actions {
-  margin-left: auto;
+  margin-left: 0;
   flex: 0 0 auto;
 }
 
@@ -2538,14 +2546,16 @@ textarea:focus {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
-  min-height: 2.75rem;
-  padding: 0.7rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-muted);
+  min-height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--ink-soft);
-  font-size: 0.85rem;
+  font-size: 0.74rem;
   font-weight: 600;
+  line-height: 1.3;
+  text-align: right;
 }
 
 .task-editor__save-status--dirty {
