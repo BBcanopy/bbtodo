@@ -385,6 +385,8 @@ export async function mockAuthenticated(
     nextApiTokenId?: number;
     nextProjectId?: number;
     projects?: Project[];
+    taskPatchDelayMs?: number;
+    taskPatchFailuresById?: Record<string, number>;
     taskMoveDelayMs?: number;
     tasks?: Task[];
   }
@@ -394,6 +396,13 @@ export async function mockAuthenticated(
   let nextProjectId = options?.nextProjectId ?? 2;
   let nextLaneId = 1;
   let nextTaskId = 5;
+  const taskPatchDelayMs = options?.taskPatchDelayMs ?? 0;
+  const taskPatchFailuresById = new Map(
+    Object.entries(options?.taskPatchFailuresById ?? {}).map(([taskId, remaining]) => [
+      taskId,
+      remaining
+    ])
+  );
   const taskMoveDelayMs = options?.taskMoveDelayMs ?? 0;
   let isAuthenticated = true;
   const currentUser = structuredClone(user);
@@ -1102,6 +1111,13 @@ export async function mockAuthenticated(
       const isTaskMoveRequest =
         body?.laneId !== undefined || body?.parentTaskId !== undefined || body?.position !== undefined;
 
+      const remainingFailures = taskPatchFailuresById.get(taskId) ?? 0;
+      if (remainingFailures > 0) {
+        taskPatchFailuresById.set(taskId, remainingFailures - 1);
+        await fulfillJson(route, 500, { message: "Task save failed." });
+        return;
+      }
+
       if (isTaskMoveRequest) {
         moveTask(
           task,
@@ -1120,9 +1136,10 @@ export async function mockAuthenticated(
       task.updatedAt = "2026-03-18T08:05:00.000Z";
       syncProject(projectId);
 
-      if (isTaskMoveRequest && taskMoveDelayMs > 0) {
+      const taskPatchResponseDelayMs = isTaskMoveRequest ? taskMoveDelayMs : taskPatchDelayMs;
+      if (taskPatchResponseDelayMs > 0) {
         await new Promise((resolve) => {
-          setTimeout(resolve, taskMoveDelayMs);
+          setTimeout(resolve, taskPatchResponseDelayMs);
         });
       }
 

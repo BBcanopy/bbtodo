@@ -216,7 +216,7 @@ function taskCardNestTarget(card: Locator) {
   return card.locator(":scope > .task-card__surface-wrap > .task-card__nest-target");
 }
 
-test("board page edits cards and filters tasks", async ({ page }) => {
+test("board page autosaves cards and filters tasks", async ({ page }) => {
   const tasksWithReusableGlobalTag = structuredClone(tasks);
   tasksWithReusableGlobalTag.push({
     body: "Homepage refresh backlog.",
@@ -289,13 +289,15 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   const createdMeta = editDialog.locator(".task-editor__meta-item", { hasText: "Created" });
   const updatedMeta = editDialog.locator(".task-editor__meta-item", { hasText: "Updated" });
   const saveButton = editDialog.getByRole("button", { name: "Save card" });
+  const saveStatus = editDialog.getByTestId("task-editor-save-status");
 
   await expect(editDialog).toBeVisible();
   await expect(editDialog.getByRole("heading", { name: "Edit BILL-1" })).toBeVisible();
   await expect(taskEditorFooter.locator(".task-editor__meta")).toBeVisible();
   await expect(taskEditorFooter.locator(".dialog-actions")).toBeVisible();
-  await expect(taskEditorFooter.getByRole("button", { name: "Cancel" })).toBeVisible();
+  await expect(taskEditorFooter.getByRole("button", { name: "Close" })).toBeVisible();
   await expect(taskEditorFooter.getByRole("button", { name: "Save card" })).toBeVisible();
+  await expect(saveStatus).toHaveText("All changes saved");
   await expect(viewTabs).toHaveCSS("border-top-width", "0px");
   await expect(sourceTab).toHaveCSS("border-top-width", "0px");
   await expect(previewTab).toHaveCSS("border-top-width", "0px");
@@ -365,7 +367,10 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await previewTab.click();
   await expect(editDialog.locator(".markdown-preview strong")).toHaveText("scope");
   await expect(editDialog.locator(".markdown-preview li")).toHaveCount(2);
-  await editDialog.getByRole("button", { name: "Save card" }).click();
+  await expect(saveStatus).toHaveText("Unsaved changes");
+  await expect(saveButton).toHaveText("Save card");
+  await expect(saveStatus).toHaveText("All changes saved");
+  await taskEditorFooter.getByRole("button", { name: "Close" }).click();
 
   await expect(editDialog).toHaveCount(0);
   await expect(firstTaskCard.locator(".task-card__title")).toHaveText("[BILL-1] Review retry scope");
@@ -415,6 +420,67 @@ test("board page edits cards and filters tasks", async ({ page }) => {
   await expect(routedOpsTagFilterChip).toBeVisible();
   await expect(page.getByText("Remove healthcheck loop")).toBeVisible();
   await expect(page.getByText("Review retry scope")).toHaveCount(0);
+});
+
+test("board page flushes pending task edits when closing the dialog", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    taskPatchDelayMs: 250,
+    tasks
+  });
+
+  await page.goto("/projects/project-1/BILL-2");
+
+  const editDialog = page.getByRole("dialog", { name: "Edit BILL-2" });
+  const saveStatus = editDialog.getByTestId("task-editor-save-status");
+
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByLabel("Title").fill("Tighten callback traces");
+  await editDialog.getByLabel("Task tags").fill("urgent");
+  await expect(saveStatus).toHaveText("Unsaved changes");
+
+  await editDialog.getByRole("button", { exact: true, name: "Close" }).click();
+
+  await expect(editDialog).toBeVisible();
+  await expect(saveStatus).toHaveText("Saving...");
+  await expect(editDialog).toHaveCount(0);
+  await expect(page).toHaveURL(/\/projects\/project-1$/);
+
+  await page.goto("/projects/project-1/BILL-2");
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByLabel("Title")).toHaveValue("Tighten callback traces");
+  await expect(editDialog.getByRole("button", { name: "Remove tag urgent" })).toBeVisible();
+});
+
+test("board page keeps autosave failures open and allows manual retry", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    taskPatchFailuresById: {
+      "task-1": 1
+    },
+    tasks
+  });
+
+  await page.goto("/projects/project-1/BILL-1");
+
+  const editDialog = page.getByRole("dialog", { name: "Edit BILL-1" });
+  const saveStatus = editDialog.getByTestId("task-editor-save-status");
+
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByLabel("Title").fill("Review retry rollout");
+  await expect(saveStatus).toHaveText("Unsaved changes");
+  await expect(saveStatus).toHaveText("Save failed");
+  await expect(editDialog.getByText("Task save failed.")).toBeVisible();
+  await expect(editDialog).toBeVisible();
+
+  await editDialog.getByRole("button", { name: "Save card" }).click();
+  await expect(saveStatus).toHaveText("All changes saved");
+
+  await editDialog.getByRole("button", { exact: true, name: "Close" }).click();
+  await expect(editDialog).toHaveCount(0);
+  await expect(page.getByTestId("task-card-task-1").locator(".task-card__title")).toHaveText(
+    "[BILL-1] Review retry rollout"
+  );
 });
 
 test("board page opens a task dialog from a ticket deep link", async ({ page }) => {

@@ -2534,6 +2534,33 @@ textarea:focus {
   flex: 0 0 auto;
 }
 
+.task-editor__save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.task-editor__save-status--dirty {
+  color: var(--ink);
+}
+
+.task-editor__save-status--error {
+  border-color: rgba(191, 83, 62, 0.26);
+  color: var(--danger);
+}
+
+.task-editor__save-status--saving {
+  color: var(--accent-strong);
+}
+
 .field--editor {
   min-height: 100%;
   gap: 0.5rem;
