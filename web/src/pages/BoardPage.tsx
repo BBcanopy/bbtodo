@@ -507,6 +507,89 @@ function mergeUniqueTags(currentTags: TaskTag[], nextValue: string, color: TaskT
   return additions.length > 0 ? [...currentTags, ...additions] : currentTags;
 }
 
+type TaskEditorDraft = {
+  body: string;
+  tags: TaskTag[];
+  title: string;
+};
+
+type TaskEditorSaveStatus = "dirty" | "error" | "saved" | "saving";
+
+type TaskEditorSaveWaiter = {
+  reject: (error: unknown) => void;
+  resolve: (task: Task) => void;
+};
+
+type TaskEditorSaveRequest = {
+  draft: TaskEditorDraft;
+  waiters: TaskEditorSaveWaiter[];
+};
+
+function cloneTaskTags(tags: TaskTag[]) {
+  return tags.map((tag) => ({ ...tag }));
+}
+
+function toTaskEditorDraft(task: Pick<Task, "body" | "tags" | "title">): TaskEditorDraft {
+  return {
+    body: task.body,
+    tags: cloneTaskTags(task.tags),
+    title: task.title.trim()
+  };
+}
+
+function areTaskTagsEqual(left: TaskTag[], right: TaskTag[]) {
+  return (
+    left.length === right.length &&
+    left.every(
+      (tag, index) => tag.color === right[index]?.color && tag.label === right[index]?.label
+    )
+  );
+}
+
+function areTaskEditorDraftsEqual(left: TaskEditorDraft, right: TaskEditorDraft) {
+  return left.body === right.body && left.title === right.title && areTaskTagsEqual(left.tags, right.tags);
+}
+
+function mergeSavedTaskIntoTasks(tasks: Task[], updatedTask: Task) {
+  const colorByTagKey = new Map(
+    updatedTask.tags.map((tag) => [normalizeTagKey(tag.label), tag.color] as const)
+  );
+  let hasChanges = false;
+
+  const nextTasks = tasks.map((task) => {
+    if (task.id === updatedTask.id) {
+      hasChanges = true;
+      return updatedTask;
+    }
+
+    let tagColorsChanged = false;
+    const nextTags = task.tags.map((taskTag) => {
+      const nextColor = colorByTagKey.get(normalizeTagKey(taskTag.label));
+      if (!nextColor || nextColor === taskTag.color) {
+        return taskTag;
+      }
+
+      tagColorsChanged = true;
+      return {
+        ...taskTag,
+        color: nextColor
+      };
+    });
+
+    if (!tagColorsChanged) {
+      return task;
+    }
+
+    hasChanges = true;
+    return {
+      ...task,
+      tags: nextTags
+    };
+  });
+
+  return hasChanges ? nextTasks : tasks;
+}
+
 function listSuggestedTags(tasks: Task[]) {
   const tagsByKey = new Map<string, TaskTag>();
 
@@ -1348,39 +1431,336 @@ function TaskTagEditor({
 
 function TaskEditorDialog({
   availableTags,
-  error,
-  isPending,
   onClose,
-  onSave,
+  onPersist,
   task
 }: {
   availableTags: TaskTag[];
-  error: Error | null;
-  isPending: boolean;
   onClose: () => void;
-  onSave: (input: { body: string; tags: TaskTag[]; title: string }) => void;
+  onPersist: (input: { body: string; tags: TaskTag[]; title: string }) => Promise<Task>;
   task: Task;
 }) {
   const [title, setTitle] = useState(task.title);
   const [body, setBody] = useState(task.body);
-  const [selectedTags, setSelectedTags] = useState(task.tags);
+  const [selectedTags, setSelectedTags] = useState(() => cloneTaskTags(task.tags));
   const [tagInputColor, setTagInputColor] = useState<TaskTagColor>(() => getRandomTaskTagColor());
   const [tagInputValue, setTagInputValue] = useState("");
   const [activeView, setActiveView] = useState<TaskEditorView>("source");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [persistedTask, setPersistedTask] = useState(task);
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const [saveStatus, setSaveStatus] = useState<TaskEditorSaveStatus>("saved");
+
+  const autosaveTimeoutRef = useRef<number | null>(null);
+  const closeRequestPendingRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const pendingSaveRequestRef = useRef<TaskEditorSaveRequest | null>(null);
+  const persistedDraftRef = useRef(toTaskEditorDraft(task));
+  const requestCloseRef = useRef<() => void>(() => {});
+  const saveLoopPromiseRef = useRef<Promise<void> | null>(null);
+
+  const bodyRef = useRef(body);
+  const persistedTaskRef = useRef(persistedTask);
+  const selectedTagsRef = useRef(selectedTags);
+  const tagInputColorRef = useRef(tagInputColor);
+  const tagInputValueRef = useRef(tagInputValue);
+  const titleRef = useRef(title);
+
+  bodyRef.current = body;
+  persistedTaskRef.current = persistedTask;
+  selectedTagsRef.current = selectedTags;
+  tagInputColorRef.current = tagInputColor;
+  tagInputValueRef.current = tagInputValue;
+  titleRef.current = title;
+
+  function clearAutosaveTimer() {
+    if (autosaveTimeoutRef.current !== null) {
+      window.clearTimeout(autosaveTimeoutRef.current);
+      autosaveTimeoutRef.current = null;
+    }
+  }
+
+  function getCommittedDraft(): TaskEditorDraft {
+    return {
+      body: bodyRef.current,
+      tags: cloneTaskTags(selectedTagsRef.current),
+      title: titleRef.current.trim()
+    };
+  }
+
+  function hasTransientTagDraft() {
+    return (
+      mergeUniqueTags(selectedTagsRef.current, tagInputValueRef.current, tagInputColorRef.current) !==
+      selectedTagsRef.current
+    );
+  }
+
+  function hasAnyUnsavedChanges() {
+    return !areTaskEditorDraftsEqual(getCommittedDraft(), persistedDraftRef.current) || hasTransientTagDraft();
+  }
+
+  function commitTransientTagDraft() {
+    const nextTags = mergeUniqueTags(selectedTagsRef.current, tagInputValueRef.current, tagInputColorRef.current);
+
+    if (nextTags !== selectedTagsRef.current) {
+      setSelectedTags(nextTags);
+    }
+
+    if (tagInputValueRef.current.length > 0) {
+      setTagInputValue("");
+      setTagInputColor(getRandomTaskTagColor());
+    }
+
+    return {
+      body: bodyRef.current,
+      tags: cloneTaskTags(nextTags),
+      title: titleRef.current.trim()
+    };
+  }
+
+  function scheduleAutosave(draft: TaskEditorDraft) {
+    clearAutosaveTimer();
+
+    if (draft.title.length === 0 || areTaskEditorDraftsEqual(draft, persistedDraftRef.current)) {
+      return;
+    }
+
+    autosaveTimeoutRef.current = window.setTimeout(() => {
+      void enqueueSave(draft);
+    }, 800);
+  }
+
+  async function runSaveLoop() {
+    while (pendingSaveRequestRef.current) {
+      const request = pendingSaveRequestRef.current;
+      pendingSaveRequestRef.current = null;
+
+      if (areTaskEditorDraftsEqual(request.draft, persistedDraftRef.current)) {
+        request.waiters.forEach((waiter) => waiter.resolve(persistedTaskRef.current));
+        continue;
+      }
+
+      if (!isMountedRef.current) {
+        const error = new Error("Task editor closed.");
+        request.waiters.forEach((waiter) => waiter.reject(error));
+        break;
+      }
+
+      setSaveError(null);
+      setSaveStatus("saving");
+
+      try {
+        const updatedTask = await onPersist(request.draft);
+        if (!isMountedRef.current) {
+          return;
+        }
+
+        persistedDraftRef.current = toTaskEditorDraft(updatedTask);
+        persistedTaskRef.current = updatedTask;
+        setPersistedTask(updatedTask);
+        request.waiters.forEach((waiter) => waiter.resolve(updatedTask));
+
+        if (!pendingSaveRequestRef.current) {
+          setSaveStatus(hasAnyUnsavedChanges() ? "dirty" : "saved");
+        }
+      } catch (error) {
+        if (!isMountedRef.current) {
+          return;
+        }
+
+        setSaveError(error);
+        setSaveStatus("error");
+        request.waiters.forEach((waiter) => waiter.reject(error));
+
+        const pendingRequest = pendingSaveRequestRef.current as TaskEditorSaveRequest | null;
+        if (pendingRequest) {
+          pendingRequest.waiters.forEach((waiter) => waiter.reject(error));
+          pendingSaveRequestRef.current = null;
+        }
+      }
+    }
+
+    saveLoopPromiseRef.current = null;
+  }
+
+  function enqueueSave(draft: TaskEditorDraft, options?: { waitForResult?: boolean }) {
+    clearAutosaveTimer();
+
+    if (draft.title.length === 0) {
+      const error = new Error("Task title is required to save changes.");
+      setSaveError(error);
+      setSaveStatus("error");
+      return options?.waitForResult ? Promise.reject(error) : Promise.resolve(persistedTaskRef.current);
+    }
+
+    if (areTaskEditorDraftsEqual(draft, persistedDraftRef.current)) {
+      if (isMountedRef.current) {
+        setSaveError(null);
+        setSaveStatus(hasAnyUnsavedChanges() ? "dirty" : "saved");
+      }
+
+      return Promise.resolve(persistedTaskRef.current);
+    }
+
+    const waiter =
+      options?.waitForResult
+        ? (() => {
+            let resolve!: (task: Task) => void;
+            let reject!: (error: unknown) => void;
+            const promise = new Promise<Task>((promiseResolve, promiseReject) => {
+              resolve = promiseResolve;
+              reject = promiseReject;
+            });
+
+            return {
+              promise,
+              reject,
+              resolve
+            };
+          })()
+        : null;
+
+    if (pendingSaveRequestRef.current) {
+      pendingSaveRequestRef.current.draft = draft;
+      if (waiter) {
+        pendingSaveRequestRef.current.waiters.push({
+          reject: waiter.reject,
+          resolve: waiter.resolve
+        });
+      }
+    } else {
+      pendingSaveRequestRef.current = {
+        draft,
+        waiters:
+          waiter === null
+            ? []
+            : [
+                {
+                  reject: waiter.reject,
+                  resolve: waiter.resolve
+                }
+              ]
+      };
+    }
+
+    if (!saveLoopPromiseRef.current) {
+      saveLoopPromiseRef.current = runSaveLoop();
+    }
+
+    return waiter?.promise ?? Promise.resolve(persistedTaskRef.current);
+  }
+
+  async function handleManualSave() {
+    const nextDraft = commitTransientTagDraft();
+
+    try {
+      await enqueueSave(nextDraft, { waitForResult: true });
+    } catch {
+      return;
+    }
+  }
+
+  async function requestClose() {
+    const committedDraft = {
+      body,
+      tags: cloneTaskTags(selectedTags),
+      title: title.trim()
+    };
+    const hasTransientDraft = mergeUniqueTags(selectedTags, tagInputValue, tagInputColor) !== selectedTags;
+
+    if (!hasTransientDraft && areTaskEditorDraftsEqual(committedDraft, persistedDraftRef.current)) {
+      setSaveError(null);
+      setSaveStatus("saved");
+      onClose();
+      return;
+    }
+
+    if (closeRequestPendingRef.current) {
+      return;
+    }
+
+    closeRequestPendingRef.current = true;
+
+    try {
+      const nextDraft = commitTransientTagDraft();
+
+      if (!areTaskEditorDraftsEqual(nextDraft, persistedDraftRef.current)) {
+        try {
+          await enqueueSave(nextDraft, { waitForResult: true });
+        } catch {
+          return;
+        }
+      } else {
+        setSaveError(null);
+        setSaveStatus("saved");
+      }
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      onClose();
+    } finally {
+      closeRequestPendingRef.current = false;
+    }
+  }
+
+  requestCloseRef.current = () => {
+    void requestClose();
+  };
 
   useEffect(() => {
-    setTitle(task.title);
-    setBody(task.body);
-    setSelectedTags(task.tags);
-    setTagInputColor(getRandomTaskTagColor());
-    setTagInputValue("");
-    setActiveView("source");
-    setIsFullscreen(false);
-  }, [task.body, task.id, task.tags, task.title]);
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+      requestCloseRef.current();
+    }
+
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (saveStatus === "saving" || saveError !== null) {
+      return;
+    }
+
+    setSaveStatus(hasAnyUnsavedChanges() ? "dirty" : "saved");
+  }, [body, saveError, saveStatus, selectedTags, tagInputColor, tagInputValue, title]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      clearAutosaveTimer();
+
+      const pendingRequest = pendingSaveRequestRef.current as TaskEditorSaveRequest | null;
+      if (pendingRequest) {
+        const error = new Error("Task editor closed.");
+        pendingRequest.waiters.forEach((waiter) => waiter.reject(error));
+        pendingSaveRequestRef.current = null;
+      }
+    };
+  }, []);
+
+  const saveStatusMessage =
+    saveStatus === "dirty"
+      ? "Unsaved changes"
+      : saveStatus === "saving"
+        ? "Saving..."
+        : saveStatus === "error"
+          ? "Save failed"
+          : "All changes saved";
 
   return (
-    <div className="dialog-scrim" onClick={onClose}>
+    <div className="dialog-scrim" onClick={() => requestCloseRef.current()}>
       <section
         aria-labelledby="edit-task-title"
         aria-modal="true"
@@ -1403,7 +1783,7 @@ function TaskEditorDialog({
             <button
               aria-label="Close edit task dialog"
               className="icon-button"
-              onClick={onClose}
+              onClick={() => requestCloseRef.current()}
               type="button"
             >
               <CloseIcon />
@@ -1414,14 +1794,7 @@ function TaskEditorDialog({
           className="dialog-form task-editor"
           onSubmit={(event) => {
             event.preventDefault();
-            const tags = mergeUniqueTags(selectedTags, tagInputValue, tagInputColor);
-            setSelectedTags(tags);
-            setTagInputValue("");
-            onSave({
-              body,
-              tags,
-              title: title.trim()
-            });
+            void handleManualSave();
           }}
         >
           <div className="task-editor__grid">
@@ -1430,7 +1803,15 @@ function TaskEditorDialog({
               <input
                 autoFocus
                 maxLength={240}
-                onChange={(event) => setTitle(event.target.value)}
+                onChange={(event) => {
+                  setSaveError(null);
+                  setTitle(event.target.value);
+                  scheduleAutosave({
+                    body: bodyRef.current,
+                    tags: cloneTaskTags(selectedTagsRef.current),
+                    title: event.target.value.trim()
+                  });
+                }}
                 placeholder="Task title"
                 required
                 value={title}
@@ -1440,9 +1821,23 @@ function TaskEditorDialog({
               availableTags={availableTags}
               inputColor={tagInputColor}
               inputValue={tagInputValue}
-              onInputColorChange={setTagInputColor}
-              onInputValueChange={setTagInputValue}
-              onSelectedTagsChange={setSelectedTags}
+              onInputColorChange={(color) => {
+                setSaveError(null);
+                setTagInputColor(color);
+              }}
+              onInputValueChange={(value) => {
+                setSaveError(null);
+                setTagInputValue(value);
+              }}
+              onSelectedTagsChange={(tags) => {
+                setSaveError(null);
+                setSelectedTags(tags);
+                scheduleAutosave({
+                  body: bodyRef.current,
+                  tags: cloneTaskTags(tags),
+                  title: titleRef.current.trim()
+                });
+              }}
               selectedTags={selectedTags}
             />
             <div className="field field--editor">
@@ -1489,7 +1884,15 @@ function TaskEditorDialog({
                   <textarea
                     aria-label="Task body"
                     maxLength={12000}
-                    onChange={(event) => setBody(event.target.value)}
+                    onChange={(event) => {
+                      setSaveError(null);
+                      setBody(event.target.value);
+                      scheduleAutosave({
+                        body: event.target.value,
+                        tags: cloneTaskTags(selectedTagsRef.current),
+                        title: titleRef.current.trim()
+                      });
+                    }}
                     placeholder="Write markdown here"
                     rows={12}
                     value={body}
@@ -1518,29 +1921,42 @@ function TaskEditorDialog({
               ) : null}
             </div>
           </div>
-          {error ? <ErrorBanner error={error} /> : null}
+          {saveError ? <ErrorBanner error={saveError} /> : null}
           <div className="task-editor__footer">
             <dl aria-label="Card timing" className="task-editor__meta task-editor__meta--footer">
               <div className="task-editor__meta-item">
                 <dt>Created</dt>
                 <dd>
-                  <time dateTime={task.createdAt}>{task.createdAt}</time>
+                  <time dateTime={persistedTask.createdAt}>{persistedTask.createdAt}</time>
                 </dd>
               </div>
               <div className="task-editor__meta-item">
                 <dt>Updated</dt>
                 <dd>
-                  <time dateTime={task.updatedAt}>{task.updatedAt}</time>
+                  <time dateTime={persistedTask.updatedAt}>{persistedTask.updatedAt}</time>
                 </dd>
               </div>
             </dl>
-            <div className="dialog-actions task-editor__actions">
-              <button className="text-button" onClick={onClose} type="button">
-                Cancel
-              </button>
-              <button className="primary-button" disabled={isPending || title.trim().length === 0} type="submit">
-                {isPending ? "Saving..." : "Save card"}
-              </button>
+            <div className="task-editor__footer-actions">
+              <div
+                aria-atomic="true"
+                aria-live="polite"
+                className={`task-editor__save-status task-editor__save-status--${saveStatus}`}
+                data-state={saveStatus}
+                data-testid="task-editor-save-status"
+                role="status"
+              >
+                {saveStatus === "saving" ? <span aria-hidden="true" className="status-ping" /> : null}
+                <span>{saveStatusMessage}</span>
+              </div>
+              <div className="dialog-actions task-editor__actions">
+                <button className="primary-button task-editor__close-button" onClick={() => requestCloseRef.current()} type="button">
+                  Close
+                </button>
+                <button className="primary-button" disabled={saveStatus === "saving" || title.trim().length === 0} type="submit">
+                  {saveStatus === "saving" ? "Saving..." : "Save card"}
+                </button>
+              </div>
             </div>
           </div>
         </form>
@@ -1868,9 +2284,16 @@ export function BoardPage() {
       taskId: string;
       title: string;
     }) => api.updateTask(projectId ?? "", taskId, { body, tags, title }),
-    onSuccess: async () => {
-      closeTaskDialog();
-      await invalidateBoardData();
+    onSuccess: (updatedTask) => {
+      if (!projectId) {
+        return;
+      }
+
+      queryClient.setQueryData<Task[]>(["tasks", projectId], (currentTasks) =>
+        currentTasks ? mergeSavedTaskIntoTasks(currentTasks, updatedTask) : currentTasks
+      );
+      void queryClient.invalidateQueries({ queryKey: ["task-tags"] });
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
     }
   });
 
@@ -2421,17 +2844,12 @@ export function BoardPage() {
   }
 
   useEffect(() => {
-    if (!isCreateLaneDialogOpen && !editingTask) {
+    if (!isCreateLaneDialogOpen) {
       return;
     }
 
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") {
-        return;
-      }
-
-      if (editingTask) {
-        closeTaskDialog();
         return;
       }
 
@@ -2443,7 +2861,7 @@ export function BoardPage() {
     return () => {
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [editingTask, isCreateLaneDialogOpen]);
+  }, [isCreateLaneDialogOpen]);
 
   useEffect(() => {
     return () => {
@@ -2576,12 +2994,11 @@ export function BoardPage() {
 
       {editingTask ? (
         <TaskEditorDialog
+          key={editingTask.id}
           availableTags={availableTaskTags}
-          error={saveTaskMutation.error}
-          isPending={saveTaskMutation.isPending}
           onClose={closeTaskDialog}
-          onSave={({ body, tags, title }) =>
-            saveTaskMutation.mutate({
+          onPersist={({ body, tags, title }) =>
+            saveTaskMutation.mutateAsync({
               body,
               tags,
               taskId: editingTask.id,

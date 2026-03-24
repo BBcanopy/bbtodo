@@ -14,4 +14,4 @@ services:
     volumes:
       - ./data:/data
     ports:
-      - "${CLIENT_PORT:-8080}:3000"
+      - "${CLIENT_PORT:-8081}:3000"
