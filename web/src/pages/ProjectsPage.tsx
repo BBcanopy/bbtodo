@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, type Project } from "../api";
 import { itemStyle } from "../app/utils";
@@ -112,6 +112,7 @@ function ProjectCard({
 export function ProjectsPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const locationToast = ((location.state as { toast?: PageToast } | null) ?? null)?.toast ?? null;
   const [toast, setToast] = useState<PageToast | null>(locationToast);
@@ -120,6 +121,18 @@ export function ProjectsPage() {
     queryFn: () => api.listProjects()
   });
   const projects = projectsQuery.data ?? [];
+  const projectSearch = searchParams.get("q")?.trim() ?? "";
+  const deferredProjectSearch = useDeferredValue(projectSearch.toLowerCase());
+  const visibleProjects = useMemo(() => {
+    if (!deferredProjectSearch) {
+      return projects;
+    }
+
+    return projects.filter((project) => {
+      const normalizedSearchTarget = `${project.name} ${project.ticketPrefix}`.toLowerCase();
+      return normalizedSearchTarget.includes(deferredProjectSearch);
+    });
+  }, [deferredProjectSearch, projects]);
 
   const deleteProjectMutation = useMutation({
     mutationFn: (projectId: string) => api.deleteProject(projectId),
@@ -181,9 +194,17 @@ export function ProjectsPage() {
         />
       ) : null}
 
-      {!projectsQuery.isPending && projects.length > 0 ? (
+      {!projectsQuery.isPending && projects.length > 0 && visibleProjects.length === 0 ? (
+        <EmptyState
+          copy="Try a different board name or ticket prefix."
+          eyebrow="No matches"
+          title={`No boards match "${projectSearch}".`}
+        />
+      ) : null}
+
+      {!projectsQuery.isPending && visibleProjects.length > 0 ? (
         <section className="project-grid">
-          {projects.map((project, index) => (
+          {visibleProjects.map((project, index) => (
             <ProjectCard
               key={project.id}
               index={index}

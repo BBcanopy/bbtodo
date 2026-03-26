@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { mockAuthenticated, projectsForGrid } from "./fixtures";
 
-test("projects page lists boards and opens them from the switcher", async ({ page }) => {
+test("projects page lists boards, filters project cards, and opens them from the switcher", async ({ page }) => {
   const projectsWithQaLane = structuredClone(projectsForGrid);
   const billingCleanupProject = projectsWithQaLane.find((project) => project.id === "project-1");
   const compactProject = projectsWithQaLane.find((project) => project.id === "project-2");
@@ -43,6 +43,8 @@ test("projects page lists boards and opens them from the switcher", async ({ pag
   await expect(page.locator(".subnav__current-value")).toHaveText("All projects");
   await expect(page.getByRole("button", { name: "Create Lane" })).toHaveCount(0);
   await expect(page.getByLabel("Search cards")).toHaveCount(0);
+  const projectSearch = page.getByLabel("Search boards");
+  await expect(projectSearch).toBeVisible();
 
   const projectCard = page.getByTestId("project-card-project-1");
   const projectDeleteButton = projectCard.getByLabel("Delete board Billing cleanup");
@@ -57,6 +59,21 @@ test("projects page lists boards and opens them from the switcher", async ({ pag
   await expect(compactProjectCard.getByRole("heading", { name: "idc" })).toBeVisible();
   await expect(compactLanePill).toHaveCount(1);
   await expect(compactLanePill).toContainText("Done");
+
+  await projectSearch.fill("partner");
+  await expect(page.getByTestId("project-card-project-6")).toBeVisible();
+  await expect(projectCard).toHaveCount(0);
+
+  await projectSearch.fill("ROAD");
+  await expect(compactProjectCard).toBeVisible();
+  await expect(page.getByTestId("project-card-project-6")).toHaveCount(0);
+
+  await projectSearch.fill("missing");
+  await expect(page.getByRole("heading", { name: 'No boards match "missing".' })).toBeVisible();
+  await expect(page.getByText("Try a different board name or ticket prefix.")).toBeVisible();
+
+  await projectSearch.fill("");
+  await expect(projectCard).toBeVisible();
 
   const regularLanePillHeight = await regularLanePill.evaluate((element) =>
     Math.round(element.getBoundingClientRect().height)

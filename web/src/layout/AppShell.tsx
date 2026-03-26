@@ -80,7 +80,9 @@ export function AppShell({ user }: { user: User }) {
     }
   });
   const avatarLetter = getAvatarLetter(user);
-  const navSearch = boardMatch ? searchParams.get("q") ?? "" : "";
+  const showNavSearch = Boolean(boardMatch || isProjectsRoute);
+  const navSearch = showNavSearch ? searchParams.get("q") ?? "" : "";
+  const navSearchLabel = boardMatch ? "Search cards" : "Search boards";
   const navTagSearch = boardMatch ? searchParams.get("tags") ?? "" : "";
   const availableTagFilters = taskTagsQuery.data ?? [];
   const availableTagFilterMap = useMemo(
@@ -303,11 +305,11 @@ export function AppShell({ user }: { user: User }) {
                   </div>
                 ) : null}
               </div>
-              {boardMatch ? (
+              {showNavSearch ? (
                 <div className="subnav__cluster subnav__cluster--tools">
                   <label className="subnav__search">
                     <input
-                      aria-label="Search cards"
+                      aria-label={navSearchLabel}
                       onChange={(event) =>
                         updateRouteParams((params) => {
                           const value = event.target.value.trim();
@@ -318,7 +320,7 @@ export function AppShell({ user }: { user: User }) {
                           }
                         })
                       }
-                      placeholder="Search cards"
+                      placeholder={navSearchLabel}
                       type="search"
                       value={navSearch}
                     />
