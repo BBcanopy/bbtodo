@@ -6,7 +6,7 @@ export function LoginPage() {
         <article className="hero-panel hero-panel--landing hero-panel--simple">
           <div className="hero-panel__brand">
             <span aria-hidden="true" className="brand-mark__pill hero-panel__pill">
-              bb
+              BB
             </span>
           </div>
           <h1>BBTodo</h1>

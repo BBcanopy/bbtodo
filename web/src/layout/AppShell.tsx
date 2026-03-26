@@ -205,7 +205,7 @@ export function AppShell({ user }: { user: User }) {
           <header className="topbar">
           <div className="topbar__nav">
             <Link className="brand-mark" to="/">
-              <span className="brand-mark__pill">bb</span>
+              <span className="brand-mark__pill">BB</span>
               <span className="brand-mark__text">bbtodo</span>
             </Link>
             <nav className="subnav">

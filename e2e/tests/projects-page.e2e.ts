@@ -39,7 +39,17 @@ test("projects page lists boards, filters project cards, and opens them from the
 
   await page.goto("/");
 
+  const brandPill = page.locator(".brand-mark__pill").first();
+
   await expect(page).toHaveTitle("Projects | BBTodo");
+  await expect(brandPill).toHaveText("BB");
+  await expect(brandPill).toHaveCSS("font-family", /"IBM Plex Mono"|IBM Plex Mono/);
+  await expect
+    .poll(() => brandPill.evaluate((element) => getComputedStyle(element).backgroundImage))
+    .toContain("rgb(84, 143, 208)");
+  await expect
+    .poll(() => brandPill.evaluate((element) => getComputedStyle(element).backgroundImage))
+    .toContain("rgb(47, 91, 155)");
   await expect(page.locator(".subnav__current-value")).toHaveText("All projects");
   await expect(page.getByRole("button", { name: "Create Lane" })).toHaveCount(0);
   await expect(page.getByLabel("Search cards")).toHaveCount(0);
@@ -95,10 +105,22 @@ test("projects page lists boards, filters project cards, and opens them from the
   await page.getByLabel("Open account menu").click();
   await page.getByRole("button", { name: "Ember" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "ember");
+  await expect
+    .poll(() => brandPill.evaluate((element) => getComputedStyle(element).backgroundImage))
+    .toContain("rgb(144, 169, 216)");
+  await expect
+    .poll(() => brandPill.evaluate((element) => getComputedStyle(element).backgroundImage))
+    .toContain("rgb(94, 115, 159)");
   await expect(projectDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(projectDeleteButton).toHaveCSS("color", "rgb(184, 94, 63)");
   await page.getByRole("button", { name: "Midnight" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "midnight");
+  await expect
+    .poll(() => brandPill.evaluate((element) => getComputedStyle(element).backgroundImage))
+    .toContain("rgb(90, 162, 228)");
+  await expect
+    .poll(() => brandPill.evaluate((element) => getComputedStyle(element).backgroundImage))
+    .toContain("rgb(31, 77, 130)");
   await expect(projectDeleteButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(projectDeleteButton).toHaveCSS("color", "rgb(142, 229, 224)");
   await expect
