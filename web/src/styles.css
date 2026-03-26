@@ -2614,6 +2614,13 @@ textarea:focus {
     0 24px 42px -28px rgba(18, 34, 36, 0.42);
   align-content: start;
   overflow: hidden;
+  font-family: var(--task-font);
+}
+
+.task-editor__move-popover button,
+.task-editor__move-popover select,
+.task-editor__move-popover input {
+  font-family: var(--task-font);
 }
 
 .task-editor__move-popover .field {

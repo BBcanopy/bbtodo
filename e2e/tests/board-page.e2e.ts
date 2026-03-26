@@ -556,6 +556,9 @@ test("board page moves a card to another project from the editor and keeps the d
   const movePopover = editDialog.getByTestId("move-card-popover");
   await expect(movePopover).toBeVisible();
   await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("Select a board first");
+  await expect(movePopover.getByTestId("move-card-summary")).toHaveCount(0);
+  const movePopoverFont = await movePopover.evaluate((element) => window.getComputedStyle(element).fontFamily);
+  expect(movePopoverFont).toContain("Open Sans");
   const movePopoverBounds = await movePopover.evaluate((element) => {
     const popoverRect = element.getBoundingClientRect();
     const select = element.querySelector('select[aria-label="Destination board"]');
@@ -594,9 +597,7 @@ test("board page moves a card to another project from the editor and keeps the d
 
   await movePopover.getByLabel("Destination board").selectOption("project-2");
   await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("In Progress");
-  await expect(movePopover.getByTestId("move-card-summary")).toHaveText(
-    "Moves to Roadmap review in In Progress."
-  );
+  await expect(movePopover.getByTestId("move-card-summary")).toHaveCount(0);
 
   await movePopover.getByRole("button", { name: "Move card" }).click();
 
@@ -673,9 +674,7 @@ test("board page previews Todo fallback when moving a card to a project without 
   await expect(movePopover).toBeVisible();
   await movePopover.getByLabel("Destination board").selectOption("project-2");
   await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("Todo");
-  await expect(
-    movePopover.getByTestId("move-card-summary")
-  ).toHaveText("Moves to Roadmap review in Todo because Ready for QA is unavailable there.");
+  await expect(movePopover.getByTestId("move-card-summary")).toHaveCount(0);
 
   await movePopover.getByRole("button", { name: "Move card" }).click();
 

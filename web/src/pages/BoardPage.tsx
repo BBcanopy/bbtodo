@@ -1475,9 +1475,7 @@ function TaskEditorDialog({
   availableProjects,
   availableTags,
   currentLane,
-  hasSubtasks,
   isMovePending,
-  isSubtask,
   onClose,
   onMove,
   onPersist,
@@ -1486,9 +1484,7 @@ function TaskEditorDialog({
   availableProjects: Project[];
   availableTags: TaskTag[];
   currentLane: BoardLane | null;
-  hasSubtasks: boolean;
   isMovePending: boolean;
-  isSubtask: boolean;
   onClose: () => void;
   onMove: (destinationProjectId: string) => Promise<Task>;
   onPersist: (input: { body: string; tags: TaskTag[]; title: string }) => Promise<Task>;
@@ -1539,20 +1535,7 @@ function TaskEditorDialog({
       ? resolveDestinationLanePreview(destinationProject, currentLane?.name ?? null)
       : null;
   const destinationLaneName = destinationLanePreview?.lane.name ?? "Select a board first";
-  const lanePreviewCopy =
-    availableProjects.length === 0
-      ? "Create another board to move this card."
-      : destinationProject && destinationLanePreview
-        ? destinationLanePreview.usesFallback
-          ? `Moves to ${destinationProject.name} in ${destinationLanePreview.lane.name} because ${currentLane?.name ?? "the current lane"} is unavailable there.`
-          : `Moves to ${destinationProject.name} in ${destinationLanePreview.lane.name}.`
-        : "Select a board to preview the landing lane.";
-  const hierarchyCopy = hasSubtasks
-    ? "Subtasks move too."
-    : isSubtask
-      ? "This subtask becomes top-level."
-      : null;
-  const moveSummaryCopy = hierarchyCopy ? `${lanePreviewCopy} ${hierarchyCopy}` : lanePreviewCopy;
+  const noDestinationCopy = "Create another board to move this card.";
 
   useDismissableLayer(isMovePopoverOpen, movePopoverRef, () => {
     if (!isMovePending) {
@@ -2128,7 +2111,7 @@ function TaskEditorDialog({
                     >
                       {availableProjects.length === 0 ? (
                         <>
-                          <p className="field__hint task-editor__move-summary">{moveSummaryCopy}</p>
+                          <p className="field__hint task-editor__move-summary">{noDestinationCopy}</p>
                           <div className="task-delete-popover__actions">
                             <button
                               className="text-button"
@@ -2171,13 +2154,6 @@ function TaskEditorDialog({
                               {destinationLaneName}
                             </span>
                           </div>
-                          <p
-                            aria-live="polite"
-                            className="field__hint task-editor__move-summary"
-                            data-testid="move-card-summary"
-                          >
-                            {moveSummaryCopy}
-                          </p>
                           {moveError ? <ErrorBanner error={moveError} /> : null}
                           <div className="task-delete-popover__actions">
                             <button
@@ -3325,9 +3301,7 @@ export function BoardPage() {
           availableProjects={availableMoveProjects}
           availableTags={availableTaskTags}
           currentLane={editingTask.laneId ? lanesById.get(editingTask.laneId) ?? null : null}
-          hasSubtasks={taskHasSubtasks(tasks, editingTask.id)}
           isMovePending={moveTaskToProjectMutation.isPending}
-          isSubtask={editingTask.parentTaskId !== null}
           onClose={closeTaskDialog}
           onMove={(destinationProjectId) =>
             moveTaskToProjectMutation.mutateAsync({
