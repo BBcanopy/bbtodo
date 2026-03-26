@@ -2562,10 +2562,6 @@ export function BoardPage() {
     onSuccess: async (updatedTask) => {
       const destinationProjectTicketPrefix = updatedTask.ticketId.split("-")[0] ?? "";
 
-      await invalidateBoardData({
-        projectIds: [updatedTask.projectId],
-        projectTicketPrefixes: [destinationProjectTicketPrefix]
-      });
       await primeBoardData(destinationProjectTicketPrefix, updatedTask.projectId);
 
       const nextParams = new URLSearchParams();
@@ -2577,6 +2573,11 @@ export function BoardPage() {
         },
         { replace: true }
       );
+
+      void invalidateBoardData({
+        projectIds: [updatedTask.projectId],
+        projectTicketPrefixes: [destinationProjectTicketPrefix]
+      });
     }
   });
 

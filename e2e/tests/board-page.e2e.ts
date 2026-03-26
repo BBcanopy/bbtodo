@@ -602,6 +602,7 @@ test("board page moves a card to another project from the editor and keeps the d
   await movePopover.getByRole("button", { name: "Move card" }).click();
 
   await expect(page).toHaveURL(/\/projects\/ROAD\/ROAD-1\?q=ROAD-1$/);
+  await expect(page.getByTestId("toast-notice")).toHaveCount(0);
   await expect(editDialog).toBeVisible();
   await expect(editDialog.getByRole("heading", { name: "Edit ROAD-1" })).toBeVisible();
   await expect(editDialog.getByLabel("Title")).toHaveValue("Tighten callback logging");
