@@ -489,6 +489,16 @@ export async function mockAuthenticated(
     return projectState.find((project) => project.ticketPrefix === ticketPrefix) ?? null;
   }
 
+  function getProjectTicketPrefix(projectId: string) {
+    return projectTicketPrefixes.get(projectId) ?? getProject(projectId)?.ticketPrefix ?? "XX";
+  }
+
+  function allocateNextTicketId(projectId: string) {
+    const nextTicketNumber = nextTicketNumbers.get(projectId) ?? 1;
+    nextTicketNumbers.set(projectId, nextTicketNumber + 1);
+    return `${getProjectTicketPrefix(projectId)}-${nextTicketNumber}`;
+  }
+
   function syncProject(projectId: string) {
     const project = getProject(projectId);
     if (!project) {
@@ -607,10 +617,81 @@ export async function mockAuthenticated(
     });
   }
 
-  function reindexTaskGroup(projectId: string, laneIdValue: string, parentTaskId: string | null) {
-    listSiblingTasks(projectId, laneIdValue, parentTaskId).forEach((task, index) => {
+  function reindexTaskGroup(
+    projectId: string,
+    laneIdValue: string,
+    parentTaskId: string | null,
+    excludedTaskId?: string
+  ) {
+    listSiblingTasks(projectId, laneIdValue, parentTaskId, excludedTaskId).forEach((task, index) => {
       task.position = index;
     });
+  }
+
+  function resolveCrossProjectDestinationLane(destinationProjectId: string, sourceLaneName: string) {
+    const destinationProject = getProject(destinationProjectId);
+    if (!destinationProject) {
+      return null;
+    }
+
+    return (
+      destinationProject.laneSummaries.find(
+        (lane) => normalizeLaneName(lane.name) === normalizeLaneName(sourceLaneName)
+      ) ??
+      destinationProject.laneSummaries.find((lane) => normalizeLaneName(lane.name) === "todo") ??
+      destinationProject.laneSummaries[0] ??
+      null
+    );
+  }
+
+  function moveTaskToProject(task: Task, destinationProjectId: string) {
+    if (!task.laneId) {
+      return { status: "lane_not_found" as const };
+    }
+
+    const destinationProject = getProject(destinationProjectId);
+    if (!destinationProject) {
+      return { status: "destination_project_not_found" as const };
+    }
+
+    const sourceProjectId = task.projectId;
+    const sourceLane = getLane(sourceProjectId, task.laneId);
+    if (!sourceLane) {
+      return { status: "lane_not_found" as const };
+    }
+
+    const destinationLane = resolveCrossProjectDestinationLane(destinationProjectId, sourceLane.name);
+    if (!destinationLane) {
+      return { status: "lane_not_found" as const };
+    }
+
+    const updatedAt = "2026-03-18T08:05:00.000Z";
+    const movedChildTasks = task.parentTaskId === null ? listChildTasks(sourceProjectId, task.id) : [];
+
+    reindexTaskGroup(sourceProjectId, task.laneId, task.parentTaskId, task.id);
+
+    task.projectId = destinationProjectId;
+    task.laneId = destinationLane.id;
+    task.parentTaskId = null;
+    task.position = listSiblingTasks(destinationProjectId, destinationLane.id, null).length;
+    task.ticketId = allocateNextTicketId(destinationProjectId);
+    task.updatedAt = updatedAt;
+
+    movedChildTasks.forEach((childTask, index) => {
+      childTask.projectId = destinationProjectId;
+      childTask.laneId = destinationLane.id;
+      childTask.position = index;
+      childTask.ticketId = allocateNextTicketId(destinationProjectId);
+      childTask.updatedAt = updatedAt;
+    });
+
+    syncProject(sourceProjectId);
+    syncProject(destinationProjectId);
+
+    return {
+      status: "moved" as const,
+      task
+    };
   }
 
   function moveTask(
@@ -1026,13 +1107,12 @@ export async function mockAuthenticated(
         parentTaskId,
         position: listSiblingTasks(projectId, targetLane.id, parentTaskId).length,
         projectId,
-        ticketId: `${projectTicketPrefixes.get(projectId) ?? "XX"}-${nextTicketNumbers.get(projectId) ?? 1}`,
+        ticketId: allocateNextTicketId(projectId),
         tags: body?.tags ?? [],
         title: body?.title ?? "Untitled task",
         updatedAt: "2026-03-18T08:00:00.000Z"
       };
       taskState.push(createdTask);
-      nextTicketNumbers.set(projectId, (nextTicketNumbers.get(projectId) ?? 1) + 1);
       syncReusableTagColors(createdTask.tags);
       syncProject(projectId);
       await fulfillJson(route, 201, createdTask);
@@ -1111,6 +1191,47 @@ export async function mockAuthenticated(
         return;
       }
 
+      const remainingFailures = taskPatchFailuresById.get(taskId) ?? 0;
+      if (remainingFailures > 0) {
+        taskPatchFailuresById.set(taskId, remainingFailures - 1);
+        await fulfillJson(route, 500, { message: "Task save failed." });
+        return;
+      }
+
+      if (
+        typeof body?.destinationProjectId === "string" &&
+        body.destinationProjectId.length > 0 &&
+        body.destinationProjectId !== projectId
+      ) {
+        const movedTask = moveTaskToProject(task, body.destinationProjectId);
+        if (movedTask.status === "destination_project_not_found") {
+          await fulfillJson(route, 404, { message: "Destination project not found." });
+          return;
+        }
+
+        if (movedTask.status === "lane_not_found") {
+          await fulfillJson(route, 404, { message: "Task or lane not found." });
+          return;
+        }
+
+        task.body = body?.body ?? task.body;
+        if (body?.tags !== undefined) {
+          task.tags = body.tags;
+          syncReusableTagColors(task.tags);
+        }
+        task.title = body?.title ?? task.title;
+        task.updatedAt = "2026-03-18T08:05:00.000Z";
+
+        if (taskMoveDelayMs > 0) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, taskMoveDelayMs);
+          });
+        }
+
+        await fulfillJson(route, 200, task);
+        return;
+      }
+
       const nextParentTaskId =
         body?.parentTaskId === undefined && task.parentTaskId !== null && body?.laneId !== undefined
           ? null
@@ -1150,13 +1271,6 @@ export async function mockAuthenticated(
 
       const isTaskMoveRequest =
         body?.laneId !== undefined || body?.parentTaskId !== undefined || body?.position !== undefined;
-
-      const remainingFailures = taskPatchFailuresById.get(taskId) ?? 0;
-      if (remainingFailures > 0) {
-        taskPatchFailuresById.set(taskId, remainingFailures - 1);
-        await fulfillJson(route, 500, { message: "Task save failed." });
-        return;
-      }
 
       if (isTaskMoveRequest) {
         moveTask(

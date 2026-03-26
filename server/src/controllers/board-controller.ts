@@ -570,6 +570,7 @@ export function registerBoardController(
         taskId: request.params.taskId,
         title: request.body.title?.trim(),
         body: request.body.body,
+        destinationProjectId: request.body.destinationProjectId,
         laneId: request.body.laneId,
         parentTaskId: request.body.parentTaskId,
         tags: request.body.tags,
@@ -577,12 +578,17 @@ export function registerBoardController(
       });
       if (
         task.status === "task_not_found" ||
+        task.status === "destination_project_not_found" ||
         task.status === "lane_not_found" ||
         task.status === "parent_not_found"
       ) {
         return reply.status(404).send({
           message:
-            task.status === "parent_not_found" ? "Parent task not found." : "Task or lane not found."
+            task.status === "parent_not_found"
+              ? "Parent task not found."
+              : task.status === "destination_project_not_found"
+                ? "Destination project not found."
+                : "Task or lane not found."
         });
       }
 
@@ -596,7 +602,7 @@ export function registerBoardController(
         throw new Error(`Unexpected update task status: ${task.status}`);
       }
 
-      const project = getOwnedProject(database, user.id, request.params.projectId);
+      const project = getOwnedProject(database, user.id, task.task.projectId);
       if (!project) {
         return reply.status(404).send({
           message: "Task or lane not found."

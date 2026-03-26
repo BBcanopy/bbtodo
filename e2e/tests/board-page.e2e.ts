@@ -140,6 +140,31 @@ async function hoverDraggedTaskOver(page: Page, target: Locator, targetYRatio = 
   await page.waitForTimeout(140);
 }
 
+async function expectMoveLanePreviewCentered(preview: Locator) {
+  const metrics = await preview.evaluate((node) => {
+    const label = node.querySelector<HTMLElement>(".task-editor__move-preview-label");
+    const value = node.querySelector<HTMLElement>(".task-editor__move-preview-value");
+
+    if (!label || !value) {
+      throw new Error("Move lane preview label or value is missing.");
+    }
+
+    const previewRect = node.getBoundingClientRect();
+    const labelRect = label.getBoundingClientRect();
+    const valueRect = value.getBoundingClientRect();
+    const centerY = (rect: DOMRect) => rect.top + rect.height / 2;
+
+    return {
+      previewCenterY: centerY(previewRect),
+      labelCenterY: centerY(labelRect),
+      valueCenterY: centerY(valueRect)
+    };
+  });
+
+  expect(Math.abs(metrics.previewCenterY - metrics.labelCenterY)).toBeLessThanOrEqual(4);
+  expect(Math.abs(metrics.previewCenterY - metrics.valueCenterY)).toBeLessThanOrEqual(4);
+}
+
 async function hoverDraggedTaskDirectlyToTarget(page: Page, target: Locator, targetYRatio = 0.5) {
   await page.waitForTimeout(100);
   await expect(target).toBeAttached();
@@ -522,6 +547,285 @@ test("board page opens a task dialog from a ticket deep link", async ({ page }) 
 
   await expect(editDialog).toHaveCount(0);
   await expect(page).toHaveURL(/\/projects\/BILL\?q=callback$/);
+});
+
+test("board page moves a card to another project from the editor and keeps the dialog open", async ({
+  page
+}) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto(`${billingBoardPath}/BILL-2`);
+
+  const editDialog = page.getByRole("dialog");
+
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByLabel("Destination board")).toHaveCount(0);
+  await expect(editDialog.getByRole("button", { name: "Move card" })).toHaveCount(0);
+
+  const moveTrigger = editDialog.getByTestId("move-card-trigger");
+  const moveTriggerStyles = await moveTrigger.evaluate((element) => {
+    const styles = window.getComputedStyle(element);
+    return {
+      backgroundImage: styles.backgroundImage,
+      boxShadow: styles.boxShadow
+    };
+  });
+  expect(moveTriggerStyles.backgroundImage).not.toBe("none");
+  expect(moveTriggerStyles.boxShadow).not.toBe("none");
+
+  await moveTrigger.click();
+
+  const movePopover = editDialog.getByTestId("move-card-popover");
+  await expect(movePopover).toBeVisible();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveCount(0);
+  await expect(movePopover.getByTestId("move-card-summary")).toHaveCount(0);
+  const movePopoverFont = await movePopover.evaluate((element) => window.getComputedStyle(element).fontFamily);
+  expect(movePopoverFont).toContain("Open Sans");
+  const movePopoverBounds = await movePopover.evaluate((element) => {
+    const popoverRect = element.getBoundingClientRect();
+    const input = element.querySelector('input[aria-label="Destination board"]');
+    const actions = element.querySelector(".task-delete-popover__actions");
+    const projectList = element.querySelector('[data-testid="move-card-project-list"]');
+    const firstProjectCopy = element.querySelector(".task-editor__move-project-copy");
+
+    if (
+      !(input instanceof HTMLElement) ||
+      !(actions instanceof HTMLElement) ||
+      !(projectList instanceof HTMLElement) ||
+      !(firstProjectCopy instanceof HTMLElement)
+    ) {
+      throw new Error("Expected move popover content to exist");
+    }
+
+    const inputRect = input.getBoundingClientRect();
+    const actionsRect = actions.getBoundingClientRect();
+    const projectListRect = projectList.getBoundingClientRect();
+
+    return {
+      actionsBottom: actionsRect.bottom,
+      actionsLeft: actionsRect.left,
+      actionsRight: actionsRect.right,
+      actionsTop: actionsRect.top,
+      firstProjectCopyDisplay: window.getComputedStyle(firstProjectCopy).display,
+      popoverBottom: popoverRect.bottom,
+      popoverLeft: popoverRect.left,
+      popoverRight: popoverRect.right,
+      popoverTop: popoverRect.top,
+      inputBottom: inputRect.bottom,
+      inputLeft: inputRect.left,
+      inputRight: inputRect.right,
+      inputTop: inputRect.top,
+      projectListBottom: projectListRect.bottom,
+      projectListLeft: projectListRect.left,
+      projectListRight: projectListRect.right,
+      projectListTop: projectListRect.top
+    };
+  });
+  expect(movePopoverBounds.inputTop).toBeGreaterThanOrEqual(movePopoverBounds.popoverTop - 1);
+  expect(movePopoverBounds.inputLeft).toBeGreaterThanOrEqual(movePopoverBounds.popoverLeft - 1);
+  expect(movePopoverBounds.inputRight).toBeLessThanOrEqual(movePopoverBounds.popoverRight + 1);
+  expect(movePopoverBounds.inputBottom).toBeLessThanOrEqual(movePopoverBounds.popoverBottom + 1);
+  expect(movePopoverBounds.projectListTop).toBeGreaterThanOrEqual(movePopoverBounds.popoverTop - 1);
+  expect(movePopoverBounds.projectListLeft).toBeGreaterThanOrEqual(movePopoverBounds.popoverLeft - 1);
+  expect(movePopoverBounds.projectListRight).toBeLessThanOrEqual(movePopoverBounds.popoverRight + 1);
+  expect(movePopoverBounds.projectListBottom).toBeLessThanOrEqual(movePopoverBounds.popoverBottom + 1);
+  expect(movePopoverBounds.actionsTop).toBeGreaterThanOrEqual(movePopoverBounds.popoverTop - 1);
+  expect(movePopoverBounds.actionsLeft).toBeGreaterThanOrEqual(movePopoverBounds.popoverLeft - 1);
+  expect(movePopoverBounds.actionsRight).toBeLessThanOrEqual(movePopoverBounds.popoverRight + 1);
+  expect(movePopoverBounds.actionsBottom).toBeLessThanOrEqual(movePopoverBounds.popoverBottom + 1);
+  expect(movePopoverBounds.firstProjectCopyDisplay).toBe("flex");
+
+  await movePopover.getByLabel("Destination board").fill("road");
+  await movePopover.getByTestId("move-card-project-option-project-2").click();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toBeVisible();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("In Progress");
+  await expectMoveLanePreviewCentered(movePopover.locator(".task-editor__move-preview"));
+  await expect(movePopover.getByTestId("move-card-summary")).toHaveCount(0);
+
+  await movePopover.getByRole("button", { name: "Move card" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/ROAD\/ROAD-1$/);
+  const moveToast = page.getByTestId("toast-notice");
+  await expect(moveToast).toBeVisible();
+  await expect(moveToast).toContainText("Card moved");
+  await expect(moveToast).toContainText("BILL-2 has been moved to ROAD-1.");
+  await expect(moveToast).not.toContainText("Ticket not found");
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByRole("heading", { name: "Edit ROAD-1" })).toBeVisible();
+  await expect(editDialog.getByLabel("Title")).toHaveValue("Tighten callback logging");
+  await expect(page.getByLabel("Search cards")).toHaveValue("");
+
+  await editDialog.getByLabel("Close edit task dialog").click();
+  await expect(page).toHaveURL(/\/projects\/ROAD$/);
+  await expect(page.getByTestId("task-card-task-2").locator(".task-card__title")).toHaveText(
+    "[ROAD-1] Tighten callback logging"
+  );
+
+  await page.goto("/projects/BILL");
+  await expect(page.getByTestId("task-card-task-2")).toHaveCount(0);
+});
+
+test("board page previews Todo fallback when moving a card to a project without the same lane", async ({
+  page
+}) => {
+  const projectsWithQaLane = structuredClone(projectsForGrid);
+  const billingProject = projectsWithQaLane.find((project) => project.id === "project-1");
+  if (!billingProject) {
+    throw new Error("Expected project-1 test fixture to exist");
+  }
+
+  const qaLaneId = "project-1-lane-custom-qa";
+  billingProject.laneSummaries = [
+    ...billingProject.laneSummaries.map((laneSummary) =>
+      laneSummary.id === laneId("project-1", "todo")
+        ? {
+            ...laneSummary,
+            taskCount: 1
+          }
+        : laneSummary
+    ),
+    {
+      createdAt: "2026-03-18T08:00:00.000Z",
+      id: qaLaneId,
+      name: "Ready for QA",
+      position: 4,
+      projectId: "project-1",
+      taskCount: 1,
+      updatedAt: "2026-03-18T08:00:00.000Z"
+    }
+  ];
+
+  const tasksWithQaLane = structuredClone(tasks);
+  const qaTask = tasksWithQaLane.find((task) => task.id === "task-1");
+  if (!qaTask) {
+    throw new Error("Expected task-1 fixture to exist");
+  }
+
+  qaTask.laneId = qaLaneId;
+  qaTask.position = 0;
+
+  await mockAuthenticated(page, {
+    projects: projectsWithQaLane,
+    tasks: tasksWithQaLane
+  });
+
+  await page.goto(`${billingBoardPath}/BILL-1`);
+
+  const editDialog = page.getByRole("dialog");
+
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByLabel("Destination board")).toHaveCount(0);
+
+  await editDialog.getByRole("button", { exact: true, name: "Move" }).click();
+
+  const movePopover = editDialog.getByTestId("move-card-popover");
+  await expect(movePopover).toBeVisible();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveCount(0);
+  await movePopover.getByLabel("Destination board").fill("road");
+  await movePopover.getByTestId("move-card-project-option-project-2").click();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toBeVisible();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("Todo");
+  await expectMoveLanePreviewCentered(movePopover.locator(".task-editor__move-preview"));
+  await expect(movePopover.getByTestId("move-card-summary")).toHaveCount(0);
+
+  await movePopover.getByRole("button", { name: "Move card" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/ROAD\/ROAD-1$/);
+  const moveToast = page.getByTestId("toast-notice");
+  await expect(moveToast).toBeVisible();
+  await expect(moveToast).toContainText("Card moved");
+  await expect(moveToast).toContainText("BILL-1 has been moved to ROAD-1.");
+  await expect(moveToast).not.toContainText("Ticket not found");
+  const nextDialog = page.getByRole("dialog");
+  await expect(nextDialog).toBeVisible();
+  await nextDialog.getByLabel("Close edit task dialog").click();
+  await expect(page.getByTestId(`board-column-${laneId("project-2", "todo")}`)).toContainText(
+    "[ROAD-1] Review retry settings"
+  );
+});
+
+test("board page move picker shows five boards by default and searches the rest", async ({
+  page
+}) => {
+  const projectsWithManyBoards = structuredClone(projectsForGrid);
+  for (const [index, projectConfig] of [
+    { id: "project-3", name: "Backlog prep", ticketPrefix: "BPRE" },
+    { id: "project-4", name: "Client ops", ticketPrefix: "COPS" },
+    { id: "project-5", name: "Design system", ticketPrefix: "DSGN" },
+    { id: "project-6", name: "Fulfillment sweep", ticketPrefix: "FLFM" },
+    { id: "project-7", name: "Growth experiments", ticketPrefix: "GWTH" },
+    { id: "project-8", name: "Incident coordination", ticketPrefix: "IDCT" }
+  ].entries()) {
+    projectsWithManyBoards.push({
+      createdAt: `2026-03-17T1${index}:00:00.000Z`,
+      id: projectConfig.id,
+      laneSummaries: [
+        {
+          createdAt: "2026-03-17T09:00:00.000Z",
+          id: laneId(projectConfig.id, "todo"),
+          name: "Todo",
+          position: 0,
+          projectId: projectConfig.id,
+          taskCount: 0,
+          updatedAt: "2026-03-18T07:30:00.000Z"
+        },
+        {
+          createdAt: "2026-03-17T09:00:00.000Z",
+          id: laneId(projectConfig.id, "in_progress"),
+          name: "In Progress",
+          position: 1,
+          projectId: projectConfig.id,
+          taskCount: 0,
+          updatedAt: "2026-03-18T07:30:00.000Z"
+        },
+        {
+          createdAt: "2026-03-17T09:00:00.000Z",
+          id: laneId(projectConfig.id, "in_review"),
+          name: "In review",
+          position: 2,
+          projectId: projectConfig.id,
+          taskCount: 0,
+          updatedAt: "2026-03-18T07:30:00.000Z"
+        },
+        {
+          createdAt: "2026-03-17T09:00:00.000Z",
+          id: laneId(projectConfig.id, "done"),
+          name: "Done",
+          position: 3,
+          projectId: projectConfig.id,
+          taskCount: 0,
+          updatedAt: "2026-03-18T07:30:00.000Z"
+        }
+      ],
+      name: projectConfig.name,
+      ticketPrefix: projectConfig.ticketPrefix,
+      updatedAt: "2026-03-18T08:10:00.000Z"
+    });
+  }
+
+  await mockAuthenticated(page, {
+    projects: projectsWithManyBoards,
+    tasks
+  });
+
+  await page.goto(`${billingBoardPath}/BILL-2`);
+
+  const editDialog = page.getByRole("dialog");
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByRole("button", { exact: true, name: "Move" }).click();
+
+  const movePopover = editDialog.getByTestId("move-card-popover");
+  await expect(movePopover).toBeVisible();
+  await expect(movePopover.getByTestId("move-card-project-list").locator("button")).toHaveCount(5);
+  await expect(movePopover.getByTestId("move-card-project-option-project-8")).toHaveCount(0);
+
+  await movePopover.getByLabel("Destination board").fill("incident");
+  await expect(movePopover.getByTestId("move-card-project-list").locator("button")).toHaveCount(1);
+  await movePopover.getByTestId("move-card-project-option-project-8").click();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("In Progress");
 });
 
 test("board page search opens an exact ticket id across boards", async ({ page }) => {

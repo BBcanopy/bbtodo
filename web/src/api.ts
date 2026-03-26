@@ -58,6 +58,12 @@ export interface CreateApiTokenResponse {
   tokenInfo: ApiTokenSummary;
 }
 
+export type UpdateTaskInput = Partial<
+  Pick<Task, "body" | "laneId" | "parentTaskId" | "position" | "tags" | "title">
+> & {
+  destinationProjectId?: string;
+};
+
 export class ApiError extends Error {
   status: number;
 
@@ -194,7 +200,7 @@ export const api = {
   updateTask(
     projectId: string,
     taskId: string,
-    input: Partial<Pick<Task, "body" | "laneId" | "parentTaskId" | "position" | "tags" | "title">>
+    input: UpdateTaskInput
   ) {
     return request<Task>(`/api/v1/projects/${projectId}/tasks/${taskId}`, {
       body: JSON.stringify(input),
