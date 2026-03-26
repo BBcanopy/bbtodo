@@ -179,9 +179,12 @@ test("projects search opens an exact ticket id", async ({ page }) => {
   await searchInput.fill("bill-2");
 
   const editDialog = page.getByRole("dialog", { name: "Edit BILL-2" });
+  const noMatchesHeading = page.getByRole("heading", { name: 'No boards match "bill-2".' });
 
   await expect(page).toHaveURL(/\/\?q=bill-2$/);
   await expect(editDialog).toHaveCount(0);
+  await expect(noMatchesHeading).toHaveCount(0);
+  await expect(page.getByTestId("project-card-project-1")).toBeVisible();
 
   await searchInput.press("Enter");
 

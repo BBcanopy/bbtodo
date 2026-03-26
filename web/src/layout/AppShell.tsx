@@ -25,17 +25,11 @@ import {
   formatSingleTagInput,
   getAvatarLetter,
   normalizeTagKey,
+  parseExactTicketId,
   parseSingleTagInput
 } from "../app/utils";
 import { ChevronDownIcon, CloseIcon, ErrorBanner, PencilIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
-
-const exactTicketIdPattern = /^[A-Z]{2,4}-[1-9]\d*$/;
-
-function parseExactTicketId(value: string) {
-  const normalizedValue = value.trim().toUpperCase();
-  return exactTicketIdPattern.test(normalizedValue) ? normalizedValue : null;
-}
 
 export function AppShell({ user }: { user: User }) {
   const location = useLocation();

@@ -39,6 +39,13 @@ export function formatIsoDate(value: string) {
   return value.slice(0, 10);
 }
 
+const exactTicketIdPattern = /^[A-Z]{2,4}-[1-9]\d*$/;
+
+export function parseExactTicketId(value: string) {
+  const normalizedValue = value.trim().toUpperCase();
+  return exactTicketIdPattern.test(normalizedValue) ? normalizedValue : null;
+}
+
 export function getAvatarLetter(user: User) {
   const source = user.name?.trim() || user.email?.trim() || "bbtodo";
   return source.charAt(0).toUpperCase();
