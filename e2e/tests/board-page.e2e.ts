@@ -555,7 +555,7 @@ test("board page moves a card to another project from the editor and keeps the d
 
   const movePopover = editDialog.getByTestId("move-card-popover");
   await expect(movePopover).toBeVisible();
-  await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("Select a board first");
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveCount(0);
   await expect(movePopover.getByTestId("move-card-summary")).toHaveCount(0);
   const movePopoverFont = await movePopover.evaluate((element) => window.getComputedStyle(element).fontFamily);
   expect(movePopoverFont).toContain("Open Sans");
@@ -615,6 +615,7 @@ test("board page moves a card to another project from the editor and keeps the d
 
   await movePopover.getByLabel("Destination board").fill("road");
   await movePopover.getByTestId("move-card-project-option-project-2").click();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toBeVisible();
   await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("In Progress");
   await expect(movePopover.getByTestId("move-card-summary")).toHaveCount(0);
 
@@ -696,8 +697,10 @@ test("board page previews Todo fallback when moving a card to a project without 
 
   const movePopover = editDialog.getByTestId("move-card-popover");
   await expect(movePopover).toBeVisible();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveCount(0);
   await movePopover.getByLabel("Destination board").fill("road");
   await movePopover.getByTestId("move-card-project-option-project-2").click();
+  await expect(movePopover.getByTestId("move-card-lane-preview")).toBeVisible();
   await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("Todo");
   await expect(movePopover.getByTestId("move-card-summary")).toHaveCount(0);
 

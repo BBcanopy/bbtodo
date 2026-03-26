@@ -2221,16 +2221,18 @@ function TaskEditorDialog({
                               <p className="task-editor__move-project-empty">No boards match that search.</p>
                             )}
                           </div>
-                          <div aria-live="polite" className="task-editor__move-preview">
-                            <span className="task-editor__move-preview-label">Lane</span>
-                            <span
-                              aria-label="Destination lane"
-                              className="task-editor__move-preview-value"
-                              data-testid="move-card-lane-preview"
-                            >
-                              {destinationLaneName}
-                            </span>
-                          </div>
+                          {destinationProject && destinationLanePreview ? (
+                            <div aria-live="polite" className="task-editor__move-preview">
+                              <span className="task-editor__move-preview-label">Lane</span>
+                              <span
+                                aria-label="Destination lane"
+                                className="task-editor__move-preview-value"
+                                data-testid="move-card-lane-preview"
+                              >
+                                {destinationLaneName}
+                              </span>
+                            </div>
+                          ) : null}
                           {moveError ? <ErrorBanner error={moveError} /> : null}
                           <div className="task-delete-popover__actions">
                             <button
