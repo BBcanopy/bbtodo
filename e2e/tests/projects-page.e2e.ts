@@ -59,6 +59,9 @@ test("projects page lists boards, filters project cards, and opens them from the
   const projectCard = page.getByTestId("project-card-project-1");
   const projectDeleteButton = projectCard.getByLabel("Delete board Billing cleanup");
   await expect(projectCard.getByRole("heading", { name: "Billing cleanup" })).toBeVisible();
+  await expect
+    .poll(() => projectCard.evaluate((element) => getComputedStyle(element, "::after").backgroundImage))
+    .toBe("none");
   await expect(projectCard.locator(".project-card__lane-pill")).toHaveCount(5);
   for (const laneLabel of ["Todo 2", "In Progress 1", "In review 0", "Done 1", "Ready for QA 0"]) {
     await expect(projectCard.getByLabel(laneLabel)).toBeVisible();
