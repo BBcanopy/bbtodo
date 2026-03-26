@@ -540,11 +540,57 @@ test("board page moves a card to another project from the editor and keeps the d
   await expect(editDialog.getByLabel("Destination board")).toHaveCount(0);
   await expect(editDialog.getByRole("button", { name: "Move card" })).toHaveCount(0);
 
-  await editDialog.getByRole("button", { exact: true, name: "Move" }).click();
+  const moveTrigger = editDialog.getByTestId("move-card-trigger");
+  const moveTriggerStyles = await moveTrigger.evaluate((element) => {
+    const styles = window.getComputedStyle(element);
+    return {
+      backgroundImage: styles.backgroundImage,
+      boxShadow: styles.boxShadow
+    };
+  });
+  expect(moveTriggerStyles.backgroundImage).not.toBe("none");
+  expect(moveTriggerStyles.boxShadow).not.toBe("none");
+
+  await moveTrigger.click();
 
   const movePopover = editDialog.getByTestId("move-card-popover");
   await expect(movePopover).toBeVisible();
   await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("Select a board first");
+  const movePopoverBounds = await movePopover.evaluate((element) => {
+    const popoverRect = element.getBoundingClientRect();
+    const select = element.querySelector('select[aria-label="Destination board"]');
+    const actions = element.querySelector(".task-delete-popover__actions");
+
+    if (!(select instanceof HTMLElement) || !(actions instanceof HTMLElement)) {
+      throw new Error("Expected move popover content to exist");
+    }
+
+    const selectRect = select.getBoundingClientRect();
+    const actionsRect = actions.getBoundingClientRect();
+
+    return {
+      actionsBottom: actionsRect.bottom,
+      actionsLeft: actionsRect.left,
+      actionsRight: actionsRect.right,
+      actionsTop: actionsRect.top,
+      popoverBottom: popoverRect.bottom,
+      popoverLeft: popoverRect.left,
+      popoverRight: popoverRect.right,
+      popoverTop: popoverRect.top,
+      selectBottom: selectRect.bottom,
+      selectLeft: selectRect.left,
+      selectRight: selectRect.right,
+      selectTop: selectRect.top
+    };
+  });
+  expect(movePopoverBounds.selectTop).toBeGreaterThanOrEqual(movePopoverBounds.popoverTop - 1);
+  expect(movePopoverBounds.selectLeft).toBeGreaterThanOrEqual(movePopoverBounds.popoverLeft - 1);
+  expect(movePopoverBounds.selectRight).toBeLessThanOrEqual(movePopoverBounds.popoverRight + 1);
+  expect(movePopoverBounds.selectBottom).toBeLessThanOrEqual(movePopoverBounds.popoverBottom + 1);
+  expect(movePopoverBounds.actionsTop).toBeGreaterThanOrEqual(movePopoverBounds.popoverTop - 1);
+  expect(movePopoverBounds.actionsLeft).toBeGreaterThanOrEqual(movePopoverBounds.popoverLeft - 1);
+  expect(movePopoverBounds.actionsRight).toBeLessThanOrEqual(movePopoverBounds.popoverRight + 1);
+  expect(movePopoverBounds.actionsBottom).toBeLessThanOrEqual(movePopoverBounds.popoverBottom + 1);
 
   await movePopover.getByLabel("Destination board").selectOption("project-2");
   await expect(movePopover.getByTestId("move-card-lane-preview")).toHaveText("In Progress");

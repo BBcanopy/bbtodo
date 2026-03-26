@@ -2536,21 +2536,50 @@ textarea:focus {
 
 .task-editor__move-shell {
   position: relative;
+  min-width: 0;
+}
+
+.task-editor__move-trigger {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent-soft) 96%, var(--surface-strong)) 0%,
+    color-mix(in srgb, var(--accent-soft) 54%, var(--surface-muted)) 100%
+  );
+  color: var(--accent-strong);
+  box-shadow:
+    inset 0 1px 0 var(--surface-highlight-strong),
+    0 16px 28px -24px color-mix(in srgb, var(--accent-strong) 42%, transparent);
+}
+
+.task-editor__move-trigger:hover,
+.task-editor__move-trigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent-soft) 100%, var(--surface-strong)) 0%,
+    color-mix(in srgb, var(--accent-soft) 70%, var(--surface-muted)) 100%
+  );
+  color: var(--ink);
 }
 
 .task-editor__move-preview {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
   min-height: 2rem;
-  padding: 0.28rem 0.72rem;
+  padding: 0.5rem 0.72rem;
   border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
-  border-radius: 999px;
+  border-radius: 1rem;
   background: var(--surface-muted);
   color: var(--ink-soft);
 }
 
 .task-editor__move-preview-label {
+  flex: 0 0 auto;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -2558,26 +2587,48 @@ textarea:focus {
 }
 
 .task-editor__move-preview-value {
+  min-width: 0;
   color: var(--ink);
   font-size: 0.84rem;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .task-editor__move-popover {
   position: absolute;
+  top: auto;
   right: 0;
+  left: auto;
   bottom: calc(100% + 0.65rem);
-  width: min(22rem, calc(100vw - 4rem));
+  width: min(22rem, calc(100vw - 2.5rem));
+  min-width: min(18rem, calc(100vw - 2.5rem));
+  max-width: calc(100vw - 2.5rem);
+  padding: 0.95rem;
   gap: 0.8rem;
+  border-radius: 1.2rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-popover) 90%, white 10%), var(--surface-popover)),
+    var(--surface-popover);
+  box-shadow:
+    inset 0 1px 0 var(--surface-highlight-strong),
+    0 24px 42px -28px rgba(18, 34, 36, 0.42);
+  align-content: start;
+  overflow: hidden;
 }
 
 .task-editor__move-popover .field {
   gap: 0.45rem;
 }
 
+.task-editor__move-popover .task-delete-popover__actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .task-editor__move-summary {
   margin: 0;
   max-width: none;
+  overflow-wrap: anywhere;
 }
 
 .dialog-panel--task-editor.is-fullscreen .task-editor__grid {

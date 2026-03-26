@@ -2105,7 +2105,8 @@ function TaskEditorDialog({
                     aria-controls={isMovePopoverOpen ? "task-editor-move-popover" : undefined}
                     aria-expanded={isMovePopoverOpen}
                     aria-haspopup="dialog"
-                    className="ghost-button"
+                    className="ghost-button task-editor__move-trigger"
+                    data-testid="move-card-trigger"
                     disabled={isMovePending}
                     onClick={() => {
                       setMoveError(null);
