@@ -1535,19 +1535,21 @@ function TaskEditorDialog({
     destinationProject !== null
       ? resolveDestinationLanePreview(destinationProject, currentLane?.name ?? null)
       : null;
+  const destinationLaneName = destinationLanePreview?.lane.name ?? "Select a board first";
   const lanePreviewCopy =
     availableProjects.length === 0
-      ? "Create another board to move this card elsewhere."
+      ? "Create another board to move this card."
       : destinationProject && destinationLanePreview
         ? destinationLanePreview.usesFallback
-          ? `This card will fall back to ${destinationLanePreview.lane.name} in ${destinationProject.name} because ${currentLane?.name ?? "its current lane"} is not available there.`
-          : `This card will stay in ${destinationLanePreview.lane.name} when it moves to ${destinationProject.name}.`
-        : "Choose a destination board to preview where this card will land.";
+          ? `Moves to ${destinationProject.name} in ${destinationLanePreview.lane.name} because ${currentLane?.name ?? "the current lane"} is unavailable there.`
+          : `Moves to ${destinationProject.name} in ${destinationLanePreview.lane.name}.`
+        : "Select a board to preview the landing lane.";
   const hierarchyCopy = hasSubtasks
-    ? "Subtasks will move with this card and keep their hierarchy."
+    ? "Subtasks move too."
     : isSubtask
-      ? "Moving this subtask to another board will promote it to a top-level card."
-      : "Only this card will move.";
+      ? "This subtask becomes top-level."
+      : null;
+  const moveSummaryCopy = hierarchyCopy ? `${lanePreviewCopy} ${hierarchyCopy}` : lanePreviewCopy;
 
   function clearAutosaveTimer() {
     if (autosaveTimeoutRef.current !== null) {
@@ -2047,16 +2049,23 @@ function TaskEditorDialog({
               ) : null}
             </div>
             <section aria-labelledby="move-card-title" className="task-editor__move-card">
-              <div className="task-editor__move-copy">
+              <div className="task-editor__move-heading">
                 <span className="field__label" id="move-card-title">
                   Move card
                 </span>
-                <p className="field__hint">
-                  Move this card to another board without leaving the editor.
-                </p>
+                <div aria-live="polite" className="task-editor__move-preview">
+                  <span className="task-editor__move-preview-label">Lane</span>
+                  <span
+                    aria-label="Destination lane"
+                    className="task-editor__move-preview-value"
+                    data-testid="move-card-lane-preview"
+                  >
+                    {destinationLaneName}
+                  </span>
+                </div>
               </div>
-              <div className="task-editor__move-grid">
-                <label className="field">
+              <div className="task-editor__move-controls">
+                <label className="field task-editor__move-field">
                   <span className="field__label">Destination board</span>
                   <select
                     aria-label="Destination board"
@@ -2075,23 +2084,8 @@ function TaskEditorDialog({
                     ))}
                   </select>
                 </label>
-                <label className="field">
-                  <span className="field__label">Destination lane</span>
-                  <input
-                    aria-label="Destination lane"
-                    readOnly
-                    value={destinationLanePreview?.lane.name ?? "Select a board first"}
-                  />
-                </label>
-              </div>
-              <div className="task-editor__move-hint-stack">
-                <p className="field__hint">{lanePreviewCopy}</p>
-                <p className="field__hint">{hierarchyCopy}</p>
-              </div>
-              {moveError ? <ErrorBanner error={moveError} /> : null}
-              <div className="dialog-actions task-editor__move-actions">
                 <button
-                  className="ghost-button"
+                  className="ghost-button task-editor__move-button"
                   disabled={
                     destinationProject === null ||
                     destinationLanePreview === null ||
@@ -2106,6 +2100,14 @@ function TaskEditorDialog({
                   {isMovePending ? "Moving card..." : "Move card"}
                 </button>
               </div>
+              <p
+                aria-live="polite"
+                className="field__hint task-editor__move-summary"
+                data-testid="move-card-summary"
+              >
+                {moveSummaryCopy}
+              </p>
+              {moveError ? <ErrorBanner error={moveError} /> : null}
             </section>
           </div>
           {saveError ? <ErrorBanner error={saveError} /> : null}

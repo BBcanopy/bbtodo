@@ -2536,34 +2536,62 @@ textarea:focus {
 
 .task-editor__move-card {
   display: grid;
+  gap: 0.65rem;
+  padding-top: 0.2rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+}
+
+.task-editor__move-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.task-editor__move-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.85rem;
-  padding: 0.95rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 1rem;
-  background:
-    linear-gradient(180deg, var(--surface-input), var(--surface-muted)),
-    var(--surface-muted);
-  box-shadow: inset 0 1px 0 var(--surface-highlight);
+  align-items: end;
 }
 
-.task-editor__move-copy {
-  display: grid;
-  gap: 0.35rem;
+.task-editor__move-field {
+  min-width: 0;
 }
 
-.task-editor__move-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.85rem;
+.task-editor__move-button {
+  min-width: 8.75rem;
 }
 
-.task-editor__move-hint-stack {
-  display: grid;
-  gap: 0.35rem;
+.task-editor__move-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2rem;
+  padding: 0.28rem 0.72rem;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
 }
 
-.task-editor__move-actions {
-  justify-content: flex-end;
+.task-editor__move-preview-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.task-editor__move-preview-value {
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.task-editor__move-summary {
+  margin: 0;
+  max-width: 60ch;
 }
 
 .dialog-panel--task-editor.is-fullscreen .task-editor__grid {
@@ -3429,7 +3457,7 @@ textarea:focus {
   .metric-ribbon,
   .board-grid,
   .task-editor__grid,
-  .task-editor__move-grid,
+  .task-editor__move-controls,
   .empty-state {
     grid-template-columns: 1fr;
   }
@@ -3457,6 +3485,10 @@ textarea:focus {
   .token-row,
   .token-row__meta {
     align-items: flex-start;
+  }
+
+  .task-editor__move-button {
+    width: 100%;
   }
 }
 
