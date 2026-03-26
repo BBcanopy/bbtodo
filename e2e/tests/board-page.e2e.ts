@@ -563,19 +563,28 @@ test("board page moves a card to another project from the editor and keeps the d
     const popoverRect = element.getBoundingClientRect();
     const input = element.querySelector('input[aria-label="Destination board"]');
     const actions = element.querySelector(".task-delete-popover__actions");
+    const projectList = element.querySelector('[data-testid="move-card-project-list"]');
+    const firstProjectCopy = element.querySelector(".task-editor__move-project-copy");
 
-    if (!(input instanceof HTMLElement) || !(actions instanceof HTMLElement)) {
+    if (
+      !(input instanceof HTMLElement) ||
+      !(actions instanceof HTMLElement) ||
+      !(projectList instanceof HTMLElement) ||
+      !(firstProjectCopy instanceof HTMLElement)
+    ) {
       throw new Error("Expected move popover content to exist");
     }
 
     const inputRect = input.getBoundingClientRect();
     const actionsRect = actions.getBoundingClientRect();
+    const projectListRect = projectList.getBoundingClientRect();
 
     return {
       actionsBottom: actionsRect.bottom,
       actionsLeft: actionsRect.left,
       actionsRight: actionsRect.right,
       actionsTop: actionsRect.top,
+      firstProjectCopyDisplay: window.getComputedStyle(firstProjectCopy).display,
       popoverBottom: popoverRect.bottom,
       popoverLeft: popoverRect.left,
       popoverRight: popoverRect.right,
@@ -583,17 +592,26 @@ test("board page moves a card to another project from the editor and keeps the d
       inputBottom: inputRect.bottom,
       inputLeft: inputRect.left,
       inputRight: inputRect.right,
-      inputTop: inputRect.top
+      inputTop: inputRect.top,
+      projectListBottom: projectListRect.bottom,
+      projectListLeft: projectListRect.left,
+      projectListRight: projectListRect.right,
+      projectListTop: projectListRect.top
     };
   });
   expect(movePopoverBounds.inputTop).toBeGreaterThanOrEqual(movePopoverBounds.popoverTop - 1);
   expect(movePopoverBounds.inputLeft).toBeGreaterThanOrEqual(movePopoverBounds.popoverLeft - 1);
   expect(movePopoverBounds.inputRight).toBeLessThanOrEqual(movePopoverBounds.popoverRight + 1);
   expect(movePopoverBounds.inputBottom).toBeLessThanOrEqual(movePopoverBounds.popoverBottom + 1);
+  expect(movePopoverBounds.projectListTop).toBeGreaterThanOrEqual(movePopoverBounds.popoverTop - 1);
+  expect(movePopoverBounds.projectListLeft).toBeGreaterThanOrEqual(movePopoverBounds.popoverLeft - 1);
+  expect(movePopoverBounds.projectListRight).toBeLessThanOrEqual(movePopoverBounds.popoverRight + 1);
+  expect(movePopoverBounds.projectListBottom).toBeLessThanOrEqual(movePopoverBounds.popoverBottom + 1);
   expect(movePopoverBounds.actionsTop).toBeGreaterThanOrEqual(movePopoverBounds.popoverTop - 1);
   expect(movePopoverBounds.actionsLeft).toBeGreaterThanOrEqual(movePopoverBounds.popoverLeft - 1);
   expect(movePopoverBounds.actionsRight).toBeLessThanOrEqual(movePopoverBounds.popoverRight + 1);
   expect(movePopoverBounds.actionsBottom).toBeLessThanOrEqual(movePopoverBounds.popoverBottom + 1);
+  expect(movePopoverBounds.firstProjectCopyDisplay).toBe("flex");
 
   await movePopover.getByLabel("Destination board").fill("road");
   await movePopover.getByTestId("move-card-project-option-project-2").click();
