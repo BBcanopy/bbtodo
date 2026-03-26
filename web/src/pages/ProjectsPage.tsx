@@ -123,9 +123,14 @@ export function ProjectsPage() {
   const projects = projectsQuery.data ?? [];
   const projectSearch = searchParams.get("q")?.trim() ?? "";
   const exactTicketIdSearch = parseExactTicketId(projectSearch);
+  const exactTicketPrefixSearch = exactTicketIdSearch?.split("-")[0] ?? null;
   const deferredProjectSearch = useDeferredValue(projectSearch.toLowerCase());
   const visibleProjects = useMemo(() => {
-    if (!deferredProjectSearch || exactTicketIdSearch) {
+    if (exactTicketPrefixSearch) {
+      return projects.filter((project) => project.ticketPrefix === exactTicketPrefixSearch);
+    }
+
+    if (!deferredProjectSearch) {
       return projects;
     }
 
@@ -133,7 +138,7 @@ export function ProjectsPage() {
       const normalizedSearchTarget = `${project.name} ${project.ticketPrefix}`.toLowerCase();
       return normalizedSearchTarget.includes(deferredProjectSearch);
     });
-  }, [deferredProjectSearch, exactTicketIdSearch, projects]);
+  }, [deferredProjectSearch, exactTicketPrefixSearch, projects]);
 
   const deleteProjectMutation = useMutation({
     mutationFn: (projectId: string) => api.deleteProject(projectId),

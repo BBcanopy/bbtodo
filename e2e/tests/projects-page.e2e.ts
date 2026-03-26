@@ -185,6 +185,7 @@ test("projects search opens an exact ticket id", async ({ page }) => {
   await expect(editDialog).toHaveCount(0);
   await expect(noMatchesHeading).toHaveCount(0);
   await expect(page.getByTestId("project-card-project-1")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-2")).toHaveCount(0);
 
   await searchInput.press("Enter");
 
