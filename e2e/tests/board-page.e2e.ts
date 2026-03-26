@@ -524,6 +524,51 @@ test("board page opens a task dialog from a ticket deep link", async ({ page }) 
   await expect(page).toHaveURL(/\/projects\/BILL\?q=callback$/);
 });
 
+test("board page search opens an exact ticket id across boards", async ({ page }) => {
+  const tasksWithRoadmapCard = structuredClone(tasks);
+  tasksWithRoadmapCard.push({
+    body: "Lock the launch sequence before the next review.",
+    createdAt: "2026-03-18T08:05:00.000Z",
+    id: "task-5",
+    laneId: laneId("project-2", "todo"),
+    parentTaskId: null,
+    position: 0,
+    projectId: "project-2",
+    ticketId: "ROAD-1",
+    tags: [tag("planning", "amber")],
+    title: "Confirm launch timeline",
+    updatedAt: "2026-03-18T08:20:00.000Z"
+  });
+
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks: tasksWithRoadmapCard
+  });
+
+  await page.goto(billingBoardPath);
+
+  const searchInput = page.getByLabel("Search cards");
+  await searchInput.fill("road-1");
+
+  const editDialog = page.getByRole("dialog", { name: "Edit ROAD-1" });
+
+  await expect(page).toHaveURL(/\/projects\/BILL\?q=road-1$/);
+  await expect(editDialog).toHaveCount(0);
+
+  await searchInput.press("Enter");
+
+  await expect(page).toHaveURL(/\/projects\/ROAD\/ROAD-1\?q=ROAD-1$/);
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByLabel("Title")).toHaveValue("Confirm launch timeline");
+  await expect(page.getByLabel("Search cards")).toHaveValue("ROAD-1");
+
+  await page.getByLabel("Close edit task dialog").click();
+
+  await expect(page).toHaveURL(/\/projects\/ROAD\?q=ROAD-1$/);
+  await expect(page.getByTestId("task-card-task-5")).toBeVisible();
+  await expect(page.getByTestId("task-card-task-1")).toHaveCount(0);
+});
+
 test("board page shows a toast when a ticket deep link misses", async ({ page }) => {
   await mockAuthenticated(page, {
     projects: projectsForGrid,

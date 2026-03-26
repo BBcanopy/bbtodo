@@ -156,6 +156,9 @@ export const api = {
   getProjectByTicketPrefix(ticketPrefix: string) {
     return request<Project>(`/api/v1/projects/by-ticket-prefix/${encodeURIComponent(ticketPrefix)}`);
   },
+  getTaskByTicketId(ticketId: string) {
+    return request<Task>(`/api/v1/tasks/by-ticket/${encodeURIComponent(ticketId)}`);
+  },
   listProjects() {
     return request<Project[]>("/api/v1/projects");
   },

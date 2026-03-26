@@ -2058,7 +2058,8 @@ export function BoardPage() {
   );
 
   function taskMatchesBoardFilters(task: Task) {
-    const haystack = `${task.title}\n${task.body}\n${task.tags.map((tag) => tag.label).join("\n")}`.toLowerCase();
+    const haystack =
+      `${task.ticketId}\n${task.title}\n${task.body}\n${task.tags.map((tag) => tag.label).join("\n")}`.toLowerCase();
     const matchesSearch = !boardSearch || haystack.includes(boardSearch);
     if (!matchesSearch) {
       return false;

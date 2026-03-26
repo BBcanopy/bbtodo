@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, type Project } from "../api";
-import { itemStyle } from "../app/utils";
+import { itemStyle, parseExactTicketId } from "../app/utils";
 import { EmptyState, ErrorBanner, ProjectGridSkeleton, ToastNotice, TrashIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
@@ -122,8 +122,14 @@ export function ProjectsPage() {
   });
   const projects = projectsQuery.data ?? [];
   const projectSearch = searchParams.get("q")?.trim() ?? "";
+  const exactTicketIdSearch = parseExactTicketId(projectSearch);
+  const exactTicketPrefixSearch = exactTicketIdSearch?.split("-")[0] ?? null;
   const deferredProjectSearch = useDeferredValue(projectSearch.toLowerCase());
   const visibleProjects = useMemo(() => {
+    if (exactTicketPrefixSearch) {
+      return projects.filter((project) => project.ticketPrefix === exactTicketPrefixSearch);
+    }
+
     if (!deferredProjectSearch) {
       return projects;
     }
@@ -132,7 +138,7 @@ export function ProjectsPage() {
       const normalizedSearchTarget = `${project.name} ${project.ticketPrefix}`.toLowerCase();
       return normalizedSearchTarget.includes(deferredProjectSearch);
     });
-  }, [deferredProjectSearch, projects]);
+  }, [deferredProjectSearch, exactTicketPrefixSearch, projects]);
 
   const deleteProjectMutation = useMutation({
     mutationFn: (projectId: string) => api.deleteProject(projectId),

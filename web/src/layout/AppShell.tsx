@@ -1,4 +1,12 @@
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Link,
@@ -17,6 +25,7 @@ import {
   formatSingleTagInput,
   getAvatarLetter,
   normalizeTagKey,
+  parseExactTicketId,
   parseSingleTagInput
 } from "../app/utils";
 import { ChevronDownIcon, CloseIcon, ErrorBanner, PencilIcon } from "../components/ui";
@@ -37,6 +46,7 @@ export function AppShell({ user }: { user: User }) {
   const projectSwitcherRef = useRef<HTMLDivElement | null>(null);
   const tagFilterRef = useRef<HTMLDivElement | null>(null);
   const tagFilterInputRef = useRef<HTMLInputElement | null>(null);
+  const navSearchLookupRequestRef = useRef(0);
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
@@ -155,6 +165,58 @@ export function AppShell({ user }: { user: User }) {
     const nextParams = new URLSearchParams(searchParams);
     updater(nextParams);
     setSearchParams(nextParams, { replace: true });
+  }
+
+  async function lookupTicketAndNavigate(ticketId: string) {
+    const requestId = ++navSearchLookupRequestRef.current;
+
+    try {
+      const task = await api.getTaskByTicketId(ticketId);
+      if (navSearchLookupRequestRef.current !== requestId) {
+        return;
+      }
+
+      const nextParams = new URLSearchParams();
+      nextParams.set("q", task.ticketId);
+
+      startTransition(() => {
+        navigate({
+          pathname: `/projects/${task.ticketId.split("-")[0]}/${encodeURIComponent(task.ticketId)}`,
+          search: `?${nextParams.toString()}`
+        });
+      });
+    } catch {
+      if (navSearchLookupRequestRef.current !== requestId) {
+        return;
+      }
+    }
+  }
+
+  function updateNavSearch(value: string) {
+    const trimmedValue = value.trim();
+    updateRouteParams((params) => {
+      if (trimmedValue) {
+        params.set("q", trimmedValue);
+      } else {
+        params.delete("q");
+      }
+    });
+
+    navSearchLookupRequestRef.current += 1;
+  }
+
+  function handleNavSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    const exactTicketId = parseExactTicketId(event.currentTarget.value);
+    if (!exactTicketId) {
+      return;
+    }
+
+    event.preventDefault();
+    void lookupTicketAndNavigate(exactTicketId);
   }
 
   function openProject(projectTicketPrefix: string) {
@@ -310,16 +372,8 @@ export function AppShell({ user }: { user: User }) {
                   <label className="subnav__search">
                     <input
                       aria-label={navSearchLabel}
-                      onChange={(event) =>
-                        updateRouteParams((params) => {
-                          const value = event.target.value.trim();
-                          if (value) {
-                            params.set("q", value);
-                          } else {
-                            params.delete("q");
-                          }
-                        })
-                      }
+                      onChange={(event) => updateNavSearch(event.target.value)}
+                      onKeyDown={handleNavSearchKeyDown}
                       placeholder={navSearchLabel}
                       type="search"
                       value={navSearch}

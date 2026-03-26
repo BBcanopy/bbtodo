@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { mockAuthenticated, projectsForGrid } from "./fixtures";
+import { mockAuthenticated, projectsForGrid, tasks } from "./fixtures";
 
 test("projects page lists boards, filters project cards, and opens them from the switcher", async ({ page }) => {
   const projectsWithQaLane = structuredClone(projectsForGrid);
@@ -165,6 +165,58 @@ test("project cards open on click and delete through a confirmation popover", as
   await page.getByRole("button", { exact: true, name: "Delete" }).click();
   await expect(projectCard).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "No boards yet." })).toBeVisible();
+});
+
+test("projects search opens an exact ticket id", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto("/");
+
+  const searchInput = page.getByLabel("Search boards");
+  await searchInput.fill("bill-2");
+
+  const editDialog = page.getByRole("dialog", { name: "Edit BILL-2" });
+  const noMatchesHeading = page.getByRole("heading", { name: 'No boards match "bill-2".' });
+
+  await expect(page).toHaveURL(/\/\?q=bill-2$/);
+  await expect(editDialog).toHaveCount(0);
+  await expect(noMatchesHeading).toHaveCount(0);
+  await expect(page.getByTestId("project-card-project-1")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-2")).toHaveCount(0);
+
+  await searchInput.press("Enter");
+
+  await expect(page).toHaveURL(/\/projects\/BILL\/BILL-2\?q=BILL-2$/);
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByLabel("Title")).toHaveValue("Tighten callback logging");
+  await expect(page.getByLabel("Search cards")).toHaveValue("BILL-2");
+
+  await page.getByLabel("Close edit task dialog").click();
+
+  await expect(page).toHaveURL(/\/projects\/BILL\?q=BILL-2$/);
+  await expect(page.getByTestId("task-card-task-2")).toBeVisible();
+  await expect(page.getByTestId("task-card-task-1")).toHaveCount(0);
+});
+
+test("projects search shows no matches for an exact ticket id with no matching board prefix", async ({
+  page
+}) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto("/");
+
+  await page.getByLabel("Search boards").fill("MISS-1");
+
+  await expect(page).toHaveURL(/\/\?q=MISS-1$/);
+  await expect(page.getByRole("heading", { name: 'No boards match "MISS-1".' })).toBeVisible();
+  await expect(page.getByText("Try a different board name or ticket prefix.")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-1")).toHaveCount(0);
 });
 
 test("missing board routes return to projects with a toast", async ({ page }) => {

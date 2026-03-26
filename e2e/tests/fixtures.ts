@@ -867,6 +867,18 @@ export async function mockAuthenticated(
       return;
     }
 
+    if (request.method() === "GET" && url.pathname.startsWith("/api/v1/tasks/by-ticket/")) {
+      const ticketId = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+      const task = taskState.find((candidate) => candidate.ticketId === ticketId);
+      if (!task) {
+        await fulfillJson(route, 404, { message: "Task not found." });
+        return;
+      }
+
+      await fulfillJson(route, 200, task);
+      return;
+    }
+
     if (request.method() === "POST" && url.pathname.startsWith("/api/v1/projects/") && url.pathname.endsWith("/lanes")) {
       const projectId = url.pathname.split("/")[4];
       const project = getProject(projectId);
