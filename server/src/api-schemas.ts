@@ -151,6 +151,7 @@ export const updateTaskBodySchema = z
     title: z.string().trim().min(1).max(240).optional(),
     body: z.string().max(40_000).optional(),
     laneId: z.string().uuid().optional(),
+    destinationProjectId: z.string().uuid().optional(),
     parentTaskId: z.string().uuid().nullable().optional(),
     tags: taskTagsInputSchema.optional(),
     position: z.number().int().nonnegative().optional()
@@ -160,6 +161,7 @@ export const updateTaskBodySchema = z
       value.title !== undefined ||
       value.body !== undefined ||
       value.laneId !== undefined ||
+      value.destinationProjectId !== undefined ||
       value.parentTaskId !== undefined ||
       value.tags !== undefined ||
       value.position !== undefined,

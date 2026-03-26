@@ -315,6 +315,334 @@ describe("projects and tasks API", () => {
     });
   });
 
+  it("moves a top-level task with subtasks to another project and allocates destination ticket ids", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const createSourceProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Release prep"
+      }
+    });
+    expect(createSourceProjectResponse.statusCode).toBe(201);
+    const sourceProject = createSourceProjectResponse.json();
+
+    const createDestinationProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Roadmap review"
+      }
+    });
+    expect(createDestinationProjectResponse.statusCode).toBe(201);
+    const destinationProject = createDestinationProjectResponse.json();
+
+    const sourceInProgressLane = sourceProject.laneSummaries[1];
+    const destinationInProgressLane = destinationProject.laneSummaries[1];
+
+    const existingDestinationTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${destinationProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        laneId: destinationInProgressLane.id,
+        title: "Existing destination task"
+      }
+    });
+    expect(existingDestinationTaskResponse.statusCode).toBe(201);
+
+    const createParentTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${sourceProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        laneId: sourceInProgressLane.id,
+        title: "Move release checklist"
+      }
+    });
+    expect(createParentTaskResponse.statusCode).toBe(201);
+    const parentTask = createParentTaskResponse.json();
+
+    const createFirstChildResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${sourceProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        parentTaskId: parentTask.id,
+        title: "Update launch notes"
+      }
+    });
+    expect(createFirstChildResponse.statusCode).toBe(201);
+    const firstChildTask = createFirstChildResponse.json();
+
+    const createSecondChildResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${sourceProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        parentTaskId: parentTask.id,
+        title: "Confirm rollout owners"
+      }
+    });
+    expect(createSecondChildResponse.statusCode).toBe(201);
+    const secondChildTask = createSecondChildResponse.json();
+
+    const moveTaskResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${sourceProject.id}/tasks/${parentTask.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        destinationProjectId: destinationProject.id
+      }
+    });
+
+    expect(moveTaskResponse.statusCode).toBe(200);
+    expect(moveTaskResponse.json()).toMatchObject({
+      id: parentTask.id,
+      laneId: destinationInProgressLane.id,
+      parentTaskId: null,
+      projectId: destinationProject.id,
+      ticketId: "ROAD-2",
+      title: "Move release checklist"
+    });
+
+    const sourceTasksResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${sourceProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+    expect(sourceTasksResponse.statusCode).toBe(200);
+    expect(sourceTasksResponse.json()).toEqual([]);
+
+    const destinationTasksResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${destinationProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(destinationTasksResponse.statusCode).toBe(200);
+    expect(
+      destinationTasksResponse.json().map((task: { id: string; ticketId: string }) => ({
+        id: task.id,
+        ticketId: task.ticketId
+      }))
+    ).toEqual([
+      {
+        id: existingDestinationTaskResponse.json().id,
+        ticketId: "ROAD-1"
+      },
+      {
+        id: parentTask.id,
+        ticketId: "ROAD-2"
+      },
+      {
+        id: firstChildTask.id,
+        ticketId: "ROAD-3"
+      },
+      {
+        id: secondChildTask.id,
+        ticketId: "ROAD-4"
+      }
+    ]);
+    expect(destinationTasksResponse.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: firstChildTask.id,
+          laneId: destinationInProgressLane.id,
+          parentTaskId: parentTask.id,
+          projectId: destinationProject.id,
+          ticketId: "ROAD-3"
+        }),
+        expect.objectContaining({
+          id: secondChildTask.id,
+          laneId: destinationInProgressLane.id,
+          parentTaskId: parentTask.id,
+          projectId: destinationProject.id,
+          ticketId: "ROAD-4"
+        })
+      ])
+    );
+  });
+
+  it("promotes a moved subtask to a top-level task in the destination project", async () => {
+    const oidc = createMutableMockOidcProvider({
+      subject: "user-1",
+      email: "one@example.com",
+      displayName: "User One"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath: ":memory:"
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+
+    const createSourceProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Billing cleanup"
+      }
+    });
+    expect(createSourceProjectResponse.statusCode).toBe(201);
+    const sourceProject = createSourceProjectResponse.json();
+
+    const createDestinationProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        name: "Partner audit"
+      }
+    });
+    expect(createDestinationProjectResponse.statusCode).toBe(201);
+    const destinationProject = createDestinationProjectResponse.json();
+
+    const parentTaskResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${sourceProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        title: "Prepare billing updates"
+      }
+    });
+    expect(parentTaskResponse.statusCode).toBe(201);
+    const parentTask = parentTaskResponse.json();
+
+    const movedChildResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${sourceProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        parentTaskId: parentTask.id,
+        title: "Draft changelog"
+      }
+    });
+    expect(movedChildResponse.statusCode).toBe(201);
+    const movedChild = movedChildResponse.json();
+
+    const remainingChildResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${sourceProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        parentTaskId: parentTask.id,
+        title: "Review support notes"
+      }
+    });
+    expect(remainingChildResponse.statusCode).toBe(201);
+    const remainingChild = remainingChildResponse.json();
+
+    const moveTaskResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${sourceProject.id}/tasks/${movedChild.id}`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      },
+      payload: {
+        destinationProjectId: destinationProject.id
+      }
+    });
+
+    expect(moveTaskResponse.statusCode).toBe(200);
+    expect(moveTaskResponse.json()).toMatchObject({
+      id: movedChild.id,
+      laneId: destinationProject.laneSummaries[0].id,
+      parentTaskId: null,
+      projectId: destinationProject.id,
+      ticketId: "PART-1",
+      title: "Draft changelog"
+    });
+
+    const sourceTasksResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${sourceProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+    expect(sourceTasksResponse.statusCode).toBe(200);
+    expect(sourceTasksResponse.json()).toEqual([
+      expect.objectContaining({
+        id: parentTask.id,
+        parentTaskId: null,
+        position: 0,
+        ticketId: "BILL-1"
+      }),
+      expect.objectContaining({
+        id: remainingChild.id,
+        parentTaskId: parentTask.id,
+        position: 0,
+        ticketId: "BILL-3"
+      })
+    ]);
+
+    const destinationTasksResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${destinationProject.id}/tasks`,
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+    expect(destinationTasksResponse.statusCode).toBe(200);
+    expect(destinationTasksResponse.json()).toEqual([
+      expect.objectContaining({
+        id: movedChild.id,
+        laneId: destinationProject.laneSummaries[0].id,
+        parentTaskId: null,
+        position: 0,
+        projectId: destinationProject.id,
+        ticketId: "PART-1"
+      })
+    ]);
+  });
+
   it("looks up a task by ticket id for the current user", async () => {
     const oidc = createMutableMockOidcProvider({
       subject: "user-1",
@@ -1350,6 +1678,13 @@ describe("projects and tasks API", () => {
         .tags.items.anyOf[1]
     ).toEqual({
       $ref: "#/components/schemas/TaskTagInput"
+    });
+    expect(
+      openApi.paths["/api/v1/projects/{projectId}/tasks/{taskId}"].patch.requestBody.content["application/json"]
+        .schema.properties.destinationProjectId
+    ).toMatchObject({
+      format: "uuid",
+      type: "string"
     });
     expect(openApi.components.schemas.Project.properties.ticketPrefix).toEqual({
       pattern: "^[A-Z]{2,4}$",

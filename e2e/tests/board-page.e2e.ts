@@ -524,6 +524,109 @@ test("board page opens a task dialog from a ticket deep link", async ({ page }) 
   await expect(page).toHaveURL(/\/projects\/BILL\?q=callback$/);
 });
 
+test("board page moves a card to another project from the editor and keeps the dialog open", async ({
+  page
+}) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto(`${billingBoardPath}/BILL-2`);
+
+  const editDialog = page.getByRole("dialog");
+
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByLabel("Destination lane")).toHaveValue("Select a board first");
+
+  await editDialog.getByLabel("Destination board").selectOption("project-2");
+  await expect(editDialog.getByLabel("Destination lane")).toHaveValue("In Progress");
+  await expect(editDialog.getByText("This card will stay in In Progress when it moves to Roadmap review.")).toBeVisible();
+
+  await editDialog.getByRole("button", { name: "Move card" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/ROAD\/ROAD-1\?q=ROAD-1$/);
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByRole("heading", { name: "Edit ROAD-1" })).toBeVisible();
+  await expect(editDialog.getByLabel("Title")).toHaveValue("Tighten callback logging");
+  await expect(page.getByLabel("Search cards")).toHaveValue("ROAD-1");
+
+  await editDialog.getByLabel("Close edit task dialog").click();
+  await expect(page).toHaveURL(/\/projects\/ROAD\?q=ROAD-1$/);
+  await expect(page.getByTestId("task-card-task-2").locator(".task-card__title")).toHaveText(
+    "[ROAD-1] Tighten callback logging"
+  );
+
+  await page.goto("/projects/BILL");
+  await expect(page.getByTestId("task-card-task-2")).toHaveCount(0);
+});
+
+test("board page previews Todo fallback when moving a card to a project without the same lane", async ({
+  page
+}) => {
+  const projectsWithQaLane = structuredClone(projectsForGrid);
+  const billingProject = projectsWithQaLane.find((project) => project.id === "project-1");
+  if (!billingProject) {
+    throw new Error("Expected project-1 test fixture to exist");
+  }
+
+  const qaLaneId = "project-1-lane-custom-qa";
+  billingProject.laneSummaries = [
+    ...billingProject.laneSummaries.map((laneSummary) =>
+      laneSummary.id === laneId("project-1", "todo")
+        ? {
+            ...laneSummary,
+            taskCount: 1
+          }
+        : laneSummary
+    ),
+    {
+      createdAt: "2026-03-18T08:00:00.000Z",
+      id: qaLaneId,
+      name: "Ready for QA",
+      position: 4,
+      projectId: "project-1",
+      taskCount: 1,
+      updatedAt: "2026-03-18T08:00:00.000Z"
+    }
+  ];
+
+  const tasksWithQaLane = structuredClone(tasks);
+  const qaTask = tasksWithQaLane.find((task) => task.id === "task-1");
+  if (!qaTask) {
+    throw new Error("Expected task-1 fixture to exist");
+  }
+
+  qaTask.laneId = qaLaneId;
+  qaTask.position = 0;
+
+  await mockAuthenticated(page, {
+    projects: projectsWithQaLane,
+    tasks: tasksWithQaLane
+  });
+
+  await page.goto(`${billingBoardPath}/BILL-1`);
+
+  const editDialog = page.getByRole("dialog");
+
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByLabel("Destination board").selectOption("project-2");
+  await expect(editDialog.getByLabel("Destination lane")).toHaveValue("Todo");
+  await expect(
+    editDialog.getByText(
+      "This card will fall back to Todo in Roadmap review because Ready for QA is not available there."
+    )
+  ).toBeVisible();
+
+  await editDialog.getByRole("button", { name: "Move card" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/ROAD\/ROAD-1\?q=ROAD-1$/);
+  await editDialog.getByLabel("Close edit task dialog").click();
+  await expect(page.getByTestId(`board-column-${laneId("project-2", "todo")}`)).toContainText(
+    "[ROAD-1] Review retry settings"
+  );
+});
+
 test("board page search opens an exact ticket id across boards", async ({ page }) => {
   const tasksWithRoadmapCard = structuredClone(tasks);
   tasksWithRoadmapCard.push({

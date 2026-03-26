@@ -1295,10 +1295,184 @@ export function getOwnedTaskByTicketId(
   };
 }
 
+function reindexTaskGroup(
+  db: DatabaseClient,
+  input: {
+    excludedTaskId?: string;
+    laneId: string;
+    parentTaskId: string | null;
+    projectId: string;
+  }
+) {
+  listSiblingTaskIds(db, input).forEach((taskId, index) => {
+    db
+      .update(tasks)
+      .set({ position: index })
+      .where(eq(tasks.id, taskId))
+      .run();
+  });
+}
+
+function resolveDestinationLaneForCrossProjectMove(
+  db: DatabaseClient,
+  input: {
+    destinationProjectId: string;
+    sourceLaneName: string;
+  }
+) {
+  const projectLanes = listProjectLanesByProjectId(db, input.destinationProjectId);
+  const normalizedSourceLaneName = normalizeLaneName(input.sourceLaneName);
+
+  return (
+    projectLanes.find((lane) => normalizeLaneName(lane.name) === normalizedSourceLaneName) ??
+    projectLanes.find((lane) => normalizeLaneName(lane.name) === "todo") ??
+    projectLanes[0] ??
+    null
+  );
+}
+
+function moveOwnedTaskToProject(
+  db: DatabaseClient,
+  input: {
+    body?: string;
+    destinationProjectId: string;
+    projectId: string;
+    tags?: TaskTagInput[];
+    taskId: string;
+    title?: string;
+    userId: string;
+  }
+) {
+  const task = getOwnedTask(db, input);
+  if (!task) {
+    return {
+      status: "task_not_found" as const
+    };
+  }
+
+  const sourceProject = getOwnedProject(db, input.userId, input.projectId);
+  if (!sourceProject) {
+    return {
+      status: "task_not_found" as const
+    };
+  }
+
+  const destinationProject = getOwnedProject(db, input.userId, input.destinationProjectId);
+  if (!destinationProject) {
+    return {
+      status: "destination_project_not_found" as const
+    };
+  }
+
+  if (!task.laneId) {
+    return {
+      status: "lane_not_found" as const
+    };
+  }
+
+  const sourceLane = getProjectLaneById(db, input.projectId, task.laneId);
+  if (!sourceLane) {
+    return {
+      status: "lane_not_found" as const
+    };
+  }
+
+  const destinationLane = resolveDestinationLaneForCrossProjectMove(db, {
+    destinationProjectId: destinationProject.id,
+    sourceLaneName: sourceLane.name
+  });
+  if (!destinationLane) {
+    return {
+      status: "lane_not_found" as const
+    };
+  }
+
+  const destinationTicketNumber = destinationProject.nextTicketNumber;
+  if (destinationTicketNumber === null) {
+    throw new Error(`Project ${destinationProject.id} is missing nextTicketNumber.`);
+  }
+
+  requireProjectTicketPrefix(destinationProject);
+
+  const movedChildTaskIds = task.parentTaskId === null ? listChildTaskIds(db, task.id) : [];
+  const movedTaskIds = [task.id, ...movedChildTaskIds];
+  const destinationTopLevelTaskIds = listSiblingTaskIds(db, {
+    laneId: destinationLane.id,
+    parentTaskId: null,
+    projectId: destinationProject.id
+  });
+  const destinationTopLevelPosition = destinationTopLevelTaskIds.length;
+  const updatedAt = new Date().toISOString();
+
+  reindexTaskGroup(db, {
+    excludedTaskId: task.id,
+    laneId: task.laneId,
+    parentTaskId: task.parentTaskId,
+    projectId: input.projectId
+  });
+
+  db
+    .update(tasks)
+    .set({
+      body: input.body ?? task.body,
+      laneId: destinationLane.id,
+      parentTaskId: null,
+      position: destinationTopLevelPosition,
+      projectId: destinationProject.id,
+      ticketNumber: destinationTicketNumber,
+      title: input.title ?? task.title,
+      updatedAt
+    })
+    .where(eq(tasks.id, task.id))
+    .run();
+
+  movedChildTaskIds.forEach((childTaskId, index) => {
+    db
+      .update(tasks)
+      .set({
+        laneId: destinationLane.id,
+        position: index,
+        projectId: destinationProject.id,
+        ticketNumber: destinationTicketNumber + index + 1,
+        updatedAt
+      })
+      .where(eq(tasks.id, childTaskId))
+      .run();
+  });
+
+  if (input.tags !== undefined) {
+    replaceTaskTags(db, task.id, input.tags);
+    syncTaskTagColorsForUser(db, input.userId, input.tags);
+  }
+
+  db
+    .update(projects)
+    .set({
+      nextTicketNumber: destinationTicketNumber + movedTaskIds.length,
+      updatedAt
+    })
+    .where(eq(projects.id, destinationProject.id))
+    .run();
+  touchProject(db, sourceProject.id, updatedAt);
+
+  const updatedTask = getTaskWithTags(db, task.id);
+  if (!updatedTask) {
+    throw new Error(`Failed to load moved task ${task.id}.`);
+  }
+
+  requireTaskTicketNumber(updatedTask);
+
+  return {
+    status: "updated" as const,
+    task: updatedTask
+  };
+}
+
 export function updateOwnedTask(
   db: DatabaseClient,
   input: {
     body?: string;
+    destinationProjectId?: string;
     laneId?: string;
     parentTaskId?: string | null;
     position?: number;
@@ -1309,6 +1483,22 @@ export function updateOwnedTask(
     userId: string;
   }
 ) {
+  if (input.destinationProjectId && input.destinationProjectId !== input.projectId) {
+    const destinationProjectId = input.destinationProjectId;
+
+    return db.transaction((tx) =>
+      moveOwnedTaskToProject(tx, {
+        body: input.body,
+        destinationProjectId,
+        projectId: input.projectId,
+        tags: input.tags,
+        taskId: input.taskId,
+        title: input.title,
+        userId: input.userId
+      })
+    );
+  }
+
   const task = getOwnedTask(db, input);
   if (!task) {
     return {

@@ -21,7 +21,15 @@ import ReactMarkdown from "react-markdown";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CSS } from "@dnd-kit/utilities";
 
-import { api, isApiError, type BoardLane, type Task, type TaskTag, type TaskTagColor } from "../api";
+import {
+  api,
+  isApiError,
+  type BoardLane,
+  type Project,
+  type Task,
+  type TaskTag,
+  type TaskTagColor
+} from "../api";
 import {
   getRandomTaskTagColor,
   getTaskTagStyle,
@@ -33,6 +41,7 @@ import {
   isDoneLaneName,
   isProtectedLaneName,
   itemStyle,
+  normalizeLaneName,
   normalizeTagKey,
   parseSingleTagInput,
   parseTagInput
@@ -62,6 +71,10 @@ type BoardToast = {
   title: string;
   tone: "danger" | "success";
 };
+type TaskProjectMovePreview = {
+  lane: BoardLane;
+  usesFallback: boolean;
+};
 
 const taskSortableTransition = {
   duration: 220,
@@ -84,6 +97,33 @@ function buildBoardPath(projectTicketPrefix: string, ticketId?: string) {
   return ticketId
     ? `/projects/${projectTicketPrefix}/${encodeURIComponent(ticketId)}`
     : `/projects/${projectTicketPrefix}`;
+}
+
+function resolveDestinationLanePreview(
+  destinationProject: Project,
+  sourceLaneName: string | null
+): TaskProjectMovePreview | null {
+  const normalizedSourceLaneName = normalizeLaneName(sourceLaneName ?? "");
+  const matchingLane =
+    normalizedSourceLaneName.length > 0
+      ? destinationProject.laneSummaries.find(
+          (lane) => normalizeLaneName(lane.name) === normalizedSourceLaneName
+        ) ?? null
+      : null;
+  const fallbackLane =
+    destinationProject.laneSummaries.find((lane) => normalizeLaneName(lane.name) === "todo") ??
+    destinationProject.laneSummaries[0] ??
+    null;
+  const lane = matchingLane ?? fallbackLane;
+
+  if (!lane) {
+    return null;
+  }
+
+  return {
+    lane,
+    usesFallback: matchingLane === null
+  };
 }
 
 function toSearchString(searchParams: URLSearchParams) {
@@ -1432,13 +1472,25 @@ function TaskTagEditor({
 }
 
 function TaskEditorDialog({
+  availableProjects,
   availableTags,
+  currentLane,
+  hasSubtasks,
+  isMovePending,
+  isSubtask,
   onClose,
+  onMove,
   onPersist,
   task
 }: {
+  availableProjects: Project[];
   availableTags: TaskTag[];
+  currentLane: BoardLane | null;
+  hasSubtasks: boolean;
+  isMovePending: boolean;
+  isSubtask: boolean;
   onClose: () => void;
+  onMove: (destinationProjectId: string) => Promise<Task>;
   onPersist: (input: { body: string; tags: TaskTag[]; title: string }) => Promise<Task>;
   task: Task;
 }) {
@@ -1450,6 +1502,8 @@ function TaskEditorDialog({
   const [activeView, setActiveView] = useState<TaskEditorView>("source");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [persistedTask, setPersistedTask] = useState(task);
+  const [destinationProjectId, setDestinationProjectId] = useState("");
+  const [moveError, setMoveError] = useState<unknown>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saveStatus, setSaveStatus] = useState<TaskEditorSaveStatus>("saved");
 
@@ -1474,6 +1528,26 @@ function TaskEditorDialog({
   tagInputColorRef.current = tagInputColor;
   tagInputValueRef.current = tagInputValue;
   titleRef.current = title;
+
+  const destinationProject =
+    availableProjects.find((project) => project.id === destinationProjectId) ?? null;
+  const destinationLanePreview =
+    destinationProject !== null
+      ? resolveDestinationLanePreview(destinationProject, currentLane?.name ?? null)
+      : null;
+  const lanePreviewCopy =
+    availableProjects.length === 0
+      ? "Create another board to move this card elsewhere."
+      : destinationProject && destinationLanePreview
+        ? destinationLanePreview.usesFallback
+          ? `This card will fall back to ${destinationLanePreview.lane.name} in ${destinationProject.name} because ${currentLane?.name ?? "its current lane"} is not available there.`
+          : `This card will stay in ${destinationLanePreview.lane.name} when it moves to ${destinationProject.name}.`
+        : "Choose a destination board to preview where this card will land.";
+  const hierarchyCopy = hasSubtasks
+    ? "Subtasks will move with this card and keep their hierarchy."
+    : isSubtask
+      ? "Moving this subtask to another board will promote it to a top-level card."
+      : "Only this card will move.";
 
   function clearAutosaveTimer() {
     if (autosaveTimeoutRef.current !== null) {
@@ -1662,6 +1736,43 @@ function TaskEditorDialog({
     }
   }
 
+  async function handleMove() {
+    if (!destinationProject || !destinationLanePreview) {
+      return;
+    }
+
+    setMoveError(null);
+    const nextDraft = commitTransientTagDraft();
+
+    if (!areTaskEditorDraftsEqual(nextDraft, persistedDraftRef.current)) {
+      try {
+        await enqueueSave(nextDraft, { waitForResult: true });
+      } catch {
+        return;
+      }
+    }
+
+    try {
+      const movedTask = await onMove(destinationProject.id);
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      persistedDraftRef.current = toTaskEditorDraft(movedTask);
+      persistedTaskRef.current = movedTask;
+      setPersistedTask(movedTask);
+      setDestinationProjectId("");
+      setSaveError(null);
+      setSaveStatus("saved");
+    } catch (error) {
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setMoveError(error);
+    }
+  }
+
   async function requestClose() {
     const committedDraft = {
       body,
@@ -1737,6 +1848,14 @@ function TaskEditorDialog({
   }, [body, saveError, saveStatus, selectedTags, tagInputColor, tagInputValue, title]);
 
   useEffect(() => {
+    if (moveError === null) {
+      return;
+    }
+
+    setMoveError(null);
+  }, [destinationProjectId]);
+
+  useEffect(() => {
     isMountedRef.current = true;
 
     return () => {
@@ -1771,7 +1890,7 @@ function TaskEditorDialog({
         role="dialog"
       >
         <div className="dialog-header">
-          <h2 id="edit-task-title">{`Edit ${task.ticketId}`}</h2>
+          <h2 id="edit-task-title">{`Edit ${persistedTask.ticketId}`}</h2>
           <div className="dialog-header__actions">
             <button
               aria-label={isFullscreen ? "Exit full screen" : "Enter full screen"}
@@ -1806,6 +1925,7 @@ function TaskEditorDialog({
                 autoFocus
                 maxLength={240}
                 onChange={(event) => {
+                  setMoveError(null);
                   setSaveError(null);
                   setTitle(event.target.value);
                   scheduleAutosave({
@@ -1824,14 +1944,17 @@ function TaskEditorDialog({
               inputColor={tagInputColor}
               inputValue={tagInputValue}
               onInputColorChange={(color) => {
+                setMoveError(null);
                 setSaveError(null);
                 setTagInputColor(color);
               }}
               onInputValueChange={(value) => {
+                setMoveError(null);
                 setSaveError(null);
                 setTagInputValue(value);
               }}
               onSelectedTagsChange={(tags) => {
+                setMoveError(null);
                 setSaveError(null);
                 setSelectedTags(tags);
                 scheduleAutosave({
@@ -1887,6 +2010,7 @@ function TaskEditorDialog({
                     aria-label="Task body"
                     maxLength={12000}
                     onChange={(event) => {
+                      setMoveError(null);
                       setSaveError(null);
                       setBody(event.target.value);
                       scheduleAutosave({
@@ -1922,6 +2046,67 @@ function TaskEditorDialog({
                 </div>
               ) : null}
             </div>
+            <section aria-labelledby="move-card-title" className="task-editor__move-card">
+              <div className="task-editor__move-copy">
+                <span className="field__label" id="move-card-title">
+                  Move card
+                </span>
+                <p className="field__hint">
+                  Move this card to another board without leaving the editor.
+                </p>
+              </div>
+              <div className="task-editor__move-grid">
+                <label className="field">
+                  <span className="field__label">Destination board</span>
+                  <select
+                    aria-label="Destination board"
+                    disabled={availableProjects.length === 0 || isMovePending}
+                    onChange={(event) => {
+                      setMoveError(null);
+                      setDestinationProjectId(event.target.value);
+                    }}
+                    value={destinationProjectId}
+                  >
+                    <option value="">Select a board</option>
+                    {availableProjects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field__label">Destination lane</span>
+                  <input
+                    aria-label="Destination lane"
+                    readOnly
+                    value={destinationLanePreview?.lane.name ?? "Select a board first"}
+                  />
+                </label>
+              </div>
+              <div className="task-editor__move-hint-stack">
+                <p className="field__hint">{lanePreviewCopy}</p>
+                <p className="field__hint">{hierarchyCopy}</p>
+              </div>
+              {moveError ? <ErrorBanner error={moveError} /> : null}
+              <div className="dialog-actions task-editor__move-actions">
+                <button
+                  className="ghost-button"
+                  disabled={
+                    destinationProject === null ||
+                    destinationLanePreview === null ||
+                    isMovePending ||
+                    saveStatus === "saving"
+                  }
+                  onClick={() => {
+                    void handleMove();
+                  }}
+                  type="button"
+                >
+                  {isMovePending ? "Moving card..." : "Move card"}
+                </button>
+              </div>
+            </section>
           </div>
           {saveError ? <ErrorBanner error={saveError} /> : null}
           <div className="task-editor__footer">
@@ -2000,6 +2185,10 @@ export function BoardPage() {
     queryKey: ["project", projectTicketPrefix],
     queryFn: () => api.getProjectByTicketPrefix(projectTicketPrefix ?? "")
   });
+  const projectsQuery = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => api.listProjects()
+  });
   const project = projectQuery.data ?? null;
   const resolvedProjectId = project?.id ?? null;
   const lanesQuery = useQuery({
@@ -2027,6 +2216,9 @@ export function BoardPage() {
   const isProjectLoading = isValidProjectTicketPrefix && projectQuery.isPending;
   const activeTasks = previewTasks ?? tasks;
   const lanesById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane])), [lanes]);
+  const availableMoveProjects = (projectsQuery.data ?? []).filter(
+    (candidateProject) => candidateProject.id !== resolvedProjectId
+  );
   const draggedLane = draggedLaneId ? lanes.find((lane) => lane.id === draggedLaneId) ?? null : null;
   const editingTask = ticketId ? tasks.find((task) => task.ticketId === ticketId) ?? null : null;
   const isBoardFiltered = boardSearch.length > 0 || activeTagKey !== null;
@@ -2123,24 +2315,54 @@ export function BoardPage() {
     }
   }, [lanesById, pendingDeleteTask, pendingDeleteTaskId, pendingDeleteTaskLaneId]);
 
-  async function invalidateBoardData() {
+  async function invalidateBoardData(options?: {
+    projectIds?: string[];
+    projectTicketPrefixes?: string[];
+  }) {
     const invalidations = [
       queryClient.invalidateQueries({ queryKey: ["task-tags"] }),
       queryClient.invalidateQueries({ queryKey: ["projects"] })
     ];
 
+    const projectTicketPrefixes = new Set(options?.projectTicketPrefixes ?? []);
+    const projectIds = new Set(options?.projectIds ?? []);
+
     if (projectTicketPrefix) {
-      invalidations.push(queryClient.invalidateQueries({ queryKey: ["project", projectTicketPrefix] }));
+      projectTicketPrefixes.add(projectTicketPrefix);
     }
 
     if (resolvedProjectId) {
-      invalidations.push(
-        queryClient.invalidateQueries({ queryKey: ["tasks", resolvedProjectId] }),
-        queryClient.invalidateQueries({ queryKey: ["lanes", resolvedProjectId] })
-      );
+      projectIds.add(resolvedProjectId);
     }
 
+    projectTicketPrefixes.forEach((ticketPrefix) => {
+      invalidations.push(queryClient.invalidateQueries({ queryKey: ["project", ticketPrefix] }));
+    });
+    projectIds.forEach((projectId) => {
+      invalidations.push(
+        queryClient.invalidateQueries({ queryKey: ["tasks", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["lanes", projectId] })
+      );
+    });
+
     await Promise.all(invalidations);
+  }
+
+  async function primeBoardData(nextProjectTicketPrefix: string, nextProjectId: string) {
+    await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: ["project", nextProjectTicketPrefix],
+        queryFn: () => api.getProjectByTicketPrefix(nextProjectTicketPrefix)
+      }),
+      queryClient.fetchQuery({
+        queryKey: ["lanes", nextProjectId],
+        queryFn: () => api.listLanes(nextProjectId)
+      }),
+      queryClient.fetchQuery({
+        queryKey: ["tasks", nextProjectId],
+        queryFn: () => api.listTasks(nextProjectId)
+      })
+    ]);
   }
 
   const createLaneMutation = useMutation({
@@ -2281,6 +2503,34 @@ export function BoardPage() {
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
     }
   });
+  const moveTaskToProjectMutation = useMutation({
+    mutationFn: ({
+      destinationProjectId,
+      taskId
+    }: {
+      destinationProjectId: string;
+      taskId: string;
+    }) => api.updateTask(resolvedProjectId ?? "", taskId, { destinationProjectId }),
+    onSuccess: async (updatedTask) => {
+      const destinationProjectTicketPrefix = updatedTask.ticketId.split("-")[0] ?? "";
+
+      await invalidateBoardData({
+        projectIds: [updatedTask.projectId],
+        projectTicketPrefixes: [destinationProjectTicketPrefix]
+      });
+      await primeBoardData(destinationProjectTicketPrefix, updatedTask.projectId);
+
+      const nextParams = new URLSearchParams();
+      nextParams.set("q", updatedTask.ticketId);
+      navigate(
+        {
+          pathname: buildBoardPath(destinationProjectTicketPrefix, updatedTask.ticketId),
+          search: `?${nextParams.toString()}`
+        },
+        { replace: true }
+      );
+    }
+  });
 
   const deleteTaskMutation = useMutation({
     mutationFn: (taskId: string) => api.deleteTask(resolvedProjectId ?? "", taskId),
@@ -2361,6 +2611,7 @@ export function BoardPage() {
       { replace: true }
     );
     saveTaskMutation.reset();
+    moveTaskToProjectMutation.reset();
   }
 
   function closeTaskDialog() {
@@ -2377,6 +2628,7 @@ export function BoardPage() {
       { replace: true }
     );
     saveTaskMutation.reset();
+    moveTaskToProjectMutation.reset();
   }
 
   function updateTagFilter(tag: string | null) {
@@ -2997,9 +3249,20 @@ export function BoardPage() {
 
       {editingTask ? (
         <TaskEditorDialog
-          key={editingTask.id}
+          key={editingTask.ticketId}
+          availableProjects={availableMoveProjects}
           availableTags={availableTaskTags}
+          currentLane={editingTask.laneId ? lanesById.get(editingTask.laneId) ?? null : null}
+          hasSubtasks={taskHasSubtasks(tasks, editingTask.id)}
+          isMovePending={moveTaskToProjectMutation.isPending}
+          isSubtask={editingTask.parentTaskId !== null}
           onClose={closeTaskDialog}
+          onMove={(destinationProjectId) =>
+            moveTaskToProjectMutation.mutateAsync({
+              destinationProjectId,
+              taskId: editingTask.id
+            })
+          }
           onPersist={({ body, tags, title }) =>
             saveTaskMutation.mutateAsync({
               body,
@@ -3013,10 +3276,12 @@ export function BoardPage() {
       ) : null}
 
       {projectQuery.error && !isApiError(projectQuery.error, 404) ? <ErrorBanner error={projectQuery.error} /> : null}
+      {projectsQuery.error ? <ErrorBanner error={projectsQuery.error} /> : null}
       {lanesQuery.error ? <ErrorBanner error={lanesQuery.error} /> : null}
       {tasksQuery.error ? <ErrorBanner error={tasksQuery.error} /> : null}
       {createTaskMutation.error ? <ErrorBanner error={createTaskMutation.error} /> : null}
       {moveTaskMutation.error ? <ErrorBanner error={moveTaskMutation.error} /> : null}
+      {moveTaskToProjectMutation.error ? <ErrorBanner error={moveTaskToProjectMutation.error} /> : null}
       {moveLaneMutation.error ? <ErrorBanner error={moveLaneMutation.error} /> : null}
       {deleteLaneMutation.error ? <ErrorBanner error={deleteLaneMutation.error} /> : null}
       {deleteTaskMutation.error ? <ErrorBanner error={deleteTaskMutation.error} /> : null}
