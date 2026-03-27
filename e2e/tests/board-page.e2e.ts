@@ -187,23 +187,51 @@ async function hoverDraggedTaskToNestTarget(
   settleTarget?: Locator
 ) {
   const nestTarget = taskCardNestTarget(card);
+  const hasDedicatedNestTarget = (await nestTarget.count()) > 0;
+  const nestTargetClass = hasDedicatedNestTarget ? ((await nestTarget.getAttribute("class")) ?? "") : "";
+  const nestTargetYRatio = nestTargetClass.includes("task-card__nest-target--body")
+    ? Math.min(targetYRatio, 0.24)
+    : targetYRatio;
+  const primaryTarget = hasDedicatedNestTarget ? nestTarget : card;
+
+  if (!hasDedicatedNestTarget) {
+    const bodyTargetYRatio = Math.max(targetYRatio, 0.62);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await hoverDraggedTaskDirectlyToTarget(page, primaryTarget, bodyTargetYRatio);
+      const cardClass = await card.getAttribute("class");
+      if (cardClass?.includes("is-nest-target")) {
+        return;
+      }
+    }
+
+    await hoverDraggedTaskDirectlyToTarget(page, primaryTarget, bodyTargetYRatio);
+    return;
+  }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await hoverDraggedTaskOver(page, nestTarget, targetYRatio);
-
-    if (settleTarget && (await settleTarget.count()) > 0) {
-      await hoverDraggedTaskDirectlyToTarget(page, settleTarget);
-      return;
-    }
+    await hoverDraggedTaskOver(page, primaryTarget, nestTargetYRatio);
 
     const cardClass = await card.getAttribute("class");
     if (cardClass?.includes("is-nest-target")) {
-      await hoverDraggedTaskDirectlyToTarget(page, nestTarget, targetYRatio);
+      if (hasDedicatedNestTarget && settleTarget && (await settleTarget.count()) > 0) {
+        await hoverDraggedTaskDirectlyToTarget(page, settleTarget);
+      } else {
+        await hoverDraggedTaskDirectlyToTarget(page, primaryTarget, nestTargetYRatio);
+      }
       return;
+    }
+
+    if (hasDedicatedNestTarget && settleTarget && (await settleTarget.count()) > 0) {
+      await hoverDraggedTaskDirectlyToTarget(page, settleTarget);
+      const settledCardClass = await card.getAttribute("class");
+      if (settledCardClass?.includes("is-nest-target")) {
+        return;
+      }
     }
   }
 
-  await hoverDraggedTaskDirectlyToTarget(page, nestTarget, targetYRatio);
+  await hoverDraggedTaskDirectlyToTarget(page, primaryTarget, nestTargetYRatio);
 }
 
 async function dropDraggedTaskOnHeaderTrashZone(page: Page, header: Locator) {
@@ -232,6 +260,19 @@ async function dragTaskToTarget(page: Page, source: Locator, target: Locator, ta
   await beginTaskDrag(page, source);
   await hoverDraggedTaskOver(page, target, targetYRatio);
   await finishTaskDrag(page);
+}
+
+async function expectDragOverlayNearPoint(page: Page, expectedX: number, expectedY: number, tolerance = 40) {
+  const dragOverlay = page.locator(".task-drag-overlay");
+  await expect(dragOverlay).toBeVisible();
+  const overlayBox = await dragOverlay.boundingBox();
+
+  expect(overlayBox).not.toBeNull();
+  const overlayCenterX = (overlayBox?.x ?? 0) + (overlayBox?.width ?? 0) / 2;
+  const overlayCenterY = (overlayBox?.y ?? 0) + (overlayBox?.height ?? 0) / 2;
+
+  expect(Math.abs(overlayCenterX - expectedX)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(overlayCenterY - expectedY)).toBeLessThanOrEqual(tolerance);
 }
 
 function taskCardSurface(card: Locator) {
@@ -968,6 +1009,121 @@ test("board page deletes tasks from the lane header trash target", async ({ page
   await expect(taskDeleteToast).toContainText("Review retry settings (BILL-1) was deleted.");
 });
 
+test("board page previews same-lane reordering with an overlay that follows the pointer", async ({ page }) => {
+  const tasksWithLockedParent = structuredClone(tasks);
+  tasksWithLockedParent.push({
+    body: "",
+    createdAt: "2026-03-18T08:10:00.000Z",
+    id: "task-7",
+    laneId: laneId("project-1", "todo"),
+    parentTaskId: "task-1",
+    position: 0,
+    projectId: "project-1",
+    ticketId: "BILL-7",
+    tags: [],
+    title: "Nested retry note",
+    updatedAt: "2026-03-18T08:10:00.000Z"
+  });
+
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks: tasksWithLockedParent
+  });
+
+  await page.goto(billingBoardPath);
+
+  const todoColumn = page.getByTestId(`board-column-${laneId("project-1", "todo")}`);
+  const retryCard = page.getByTestId("task-card-task-1");
+  const copyCard = page.getByTestId("task-card-task-4");
+  const todoAfterCopySlot = page.getByTestId(`task-drop-slot-${laneId("project-1", "todo")}-2`);
+  const retryBox = await retryCard.boundingBox();
+
+  expect(retryBox).not.toBeNull();
+
+  await beginTaskDrag(page, taskCardSurface(retryCard));
+  await hoverDraggedTaskOver(page, taskCardSurface(copyCard), 0.2);
+
+  const copySurfaceBox = await taskCardSurface(copyCard).boundingBox();
+  expect(copySurfaceBox).not.toBeNull();
+
+  await expect(retryCard).toHaveClass(/is-dragging/);
+  await expect(copyCard).toHaveClass(/task-card--drop-after/);
+  await expect(copyCard).toHaveClass(/task-card--shift-up/);
+  await expect(todoAfterCopySlot).toHaveClass(/is-active/);
+  await expect(todoAfterCopySlot).toHaveClass(/is-drag-ready/);
+  await expect(page.locator(".page-shell--board")).toHaveClass(/is-task-dragging/);
+  const dragStyles = await page.evaluate(() => {
+    const sourceCard = document.querySelector<HTMLElement>("[data-testid='task-card-task-1']");
+    const overlayCard = document.querySelector<HTMLElement>(".task-drag-overlay .task-card");
+
+    if (!sourceCard || !overlayCard) {
+      throw new Error("Expected dragged source card and overlay card to be present.");
+    }
+
+    return {
+      overlayAnimationName: window.getComputedStyle(overlayCard).animationName,
+      sourceAnimationName: window.getComputedStyle(sourceCard).animationName
+    };
+  });
+
+  expect(dragStyles.sourceAnimationName).toBe("none");
+  expect(dragStyles.overlayAnimationName).toBe("none");
+  await expectDragOverlayNearPoint(
+    page,
+    (copySurfaceBox?.x ?? 0) + (copySurfaceBox?.width ?? 0) / 2,
+    (copySurfaceBox?.y ?? 0) + (copySurfaceBox?.height ?? 0) * 0.2,
+    44
+  );
+  const retryBoxAfterHover = await retryCard.boundingBox();
+  const dragOverlayBox = await page.locator(".task-drag-overlay").boundingBox();
+
+  expect(retryBoxAfterHover).not.toBeNull();
+  expect(dragOverlayBox).not.toBeNull();
+  expect(Math.abs((retryBoxAfterHover?.x ?? 0) - (retryBox?.x ?? 0))).toBeLessThanOrEqual(8);
+  expect(
+    Math.abs(
+      ((dragOverlayBox?.y ?? 0) + (dragOverlayBox?.height ?? 0) / 2) -
+        ((retryBoxAfterHover?.y ?? 0) + (retryBoxAfterHover?.height ?? 0) / 2)
+    )
+  ).toBeGreaterThan(40);
+
+  await finishTaskDrag(page);
+
+  await expect(todoColumn.locator(".task-card__title")).toHaveText([
+    "[BILL-4] Queue copy pass",
+    "[BILL-1] Review retry settings",
+    "[BILL-7] Nested retry note"
+  ]);
+});
+
+test("board page reorders with seams when a standalone task could otherwise nest", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto(billingBoardPath);
+
+  const todoColumn = page.getByTestId(`board-column-${laneId("project-1", "todo")}`);
+  const retryCard = page.getByTestId("task-card-task-1");
+  const todoAfterCopySlot = page.getByTestId(`task-drop-slot-${laneId("project-1", "todo")}-2`);
+  const copySubtaskSlot = page.getByTestId("task-drop-slot-task-4-0");
+
+  await beginTaskDrag(page, taskCardSurface(retryCard));
+  await hoverDraggedTaskOver(page, todoAfterCopySlot, 0.5);
+
+  await expect(todoAfterCopySlot).toHaveClass(/is-active/);
+  await expect(todoAfterCopySlot).toHaveClass(/is-drag-ready/);
+  await expect(copySubtaskSlot).toHaveCount(0);
+
+  await finishTaskDrag(page);
+
+  await expect(todoColumn.locator(".task-card__title")).toHaveText([
+    "[BILL-4] Queue copy pass",
+    "[BILL-1] Review retry settings"
+  ]);
+});
+
 test("board page reorders tasks and manages lanes", async ({ page }) => {
   const projectsWithQaLane = structuredClone(projectsForGrid);
   const tasksWithQaCard = structuredClone(tasks);
@@ -1062,11 +1218,13 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(createdCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
   await expect(todoColumn.getByText("Queue copy pass")).toHaveCount(0);
 
-  await dragTaskToTarget(
-    page,
-    taskCardSurface(createdCard),
-    taskCardSurface(createdCard.locator(".task-card__subtasks").getByTestId("task-card-task-4"))
-  );
+  const nestedCopyCard = createdCard.locator(".task-card__subtasks").getByTestId("task-card-task-4");
+  await beginTaskDrag(page, taskCardSurface(createdCard));
+  await hoverDraggedTaskOver(page, taskCardSurface(nestedCopyCard));
+  await expect(createdCard).not.toHaveClass(/is-nest-target/);
+  await expect(nestedCopyCard).not.toHaveClass(/task-card--drop-before/);
+  await expect(nestedCopyCard).not.toHaveClass(/task-card--drop-after/);
+  await finishTaskDrag(page);
   await expect(page.getByText("Subtasks can only be added under top-level tasks.")).toHaveCount(0);
   await expect(createdCard).toBeVisible();
   await expect(createdCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
@@ -1121,7 +1279,9 @@ test("board page previews a dragged task at the top of Done before drop", async 
 
   const doneColumn = page.getByTestId(`board-column-${laneId("project-1", "done")}`);
   const callbackLoggingCard = page.getByTestId("task-card-task-2");
+  const doneTopInsertSlot = page.getByTestId(`task-drop-slot-${laneId("project-1", "done")}-0`);
   const archivedRoadmapCard = page.getByTestId("task-card-task-5");
+  const healthcheckLoopCard = page.getByTestId("task-card-task-3");
 
   await expect(doneColumn.locator(".task-card__title")).toHaveText([
     "[BILL-3] Remove healthcheck loop",
@@ -1131,8 +1291,11 @@ test("board page previews a dragged task at the top of Done before drop", async 
   await beginTaskDrag(page, taskCardSurface(callbackLoggingCard));
   await hoverDraggedTaskOver(page, taskCardSurface(archivedRoadmapCard), 0.2);
 
+  await expect(doneTopInsertSlot).toHaveClass(/is-active/);
+  await expect(healthcheckLoopCard).toHaveClass(/task-card--drop-before/);
+  await expect(healthcheckLoopCard).toHaveClass(/task-card--shift-down/);
+
   await expect(doneColumn.locator(".task-card__title")).toHaveText([
-    "[BILL-2] Tighten callback logging",
     "[BILL-3] Remove healthcheck loop",
     "[BILL-5] Archive roadmap"
   ]);
@@ -1202,6 +1365,160 @@ test("board page keeps Done ordered by newest update time and ignores drag reord
     "[BILL-3] Remove healthcheck loop",
     "[BILL-5] Archive roadmap"
   ]);
+});
+
+test("board page previews nesting under a top-level card before drop", async ({ page }) => {
+  const projectsWithQaLane = structuredClone(projectsForGrid);
+  const tasksWithQaCards = structuredClone(tasks);
+  const billingCleanupProject = projectsWithQaLane.find((project) => project.id === "project-1");
+  if (!billingCleanupProject) {
+    throw new Error("Expected project-1 test fixture to exist");
+  }
+
+  billingCleanupProject.laneSummaries.push({
+    createdAt: "2026-03-18T08:00:00.000Z",
+    id: "project-1-lane-custom-1",
+    name: "Ready for QA",
+    position: 4,
+    projectId: "project-1",
+    taskCount: 0,
+    updatedAt: "2026-03-18T08:00:00.000Z"
+  });
+
+  tasksWithQaCards.push(
+    {
+      body: "",
+      createdAt: "2026-03-18T08:00:00.000Z",
+      id: "task-5",
+      laneId: "project-1-lane-custom-1",
+      parentTaskId: null,
+      position: 0,
+      projectId: "project-1",
+      ticketId: "BILL-5",
+      tags: [],
+      title: "Ship note",
+      updatedAt: "2026-03-18T08:00:00.000Z"
+    },
+    {
+      body: "",
+      createdAt: "2026-03-18T08:05:00.000Z",
+      id: "task-6",
+      laneId: "project-1-lane-custom-1",
+      parentTaskId: null,
+      position: 1,
+      projectId: "project-1",
+      ticketId: "BILL-6",
+      tags: [],
+      title: "Release checklist",
+      updatedAt: "2026-03-18T08:05:00.000Z"
+    }
+  );
+
+  await mockAuthenticated(page, {
+    projects: projectsWithQaLane,
+    tasks: tasksWithQaCards
+  });
+
+  await page.goto(billingBoardPath);
+
+  const qaColumn = page.getByTestId("board-column-project-1-lane-custom-1");
+  const shipNoteCard = page.getByTestId("task-card-task-5");
+  const copyCard = page.getByTestId("task-card-task-4");
+  const qaRootInsertSlot = page.getByTestId("task-drop-slot-project-1-lane-custom-1-2");
+  const shipNoteSubtaskSlot = page.getByTestId("task-drop-slot-task-5-0");
+
+  await dragTaskToTarget(page, copyCard, qaRootInsertSlot);
+  const copyCardInQa = qaColumn.getByTestId("task-card-task-4");
+  await expect(copyCardInQa).toBeVisible();
+
+  await beginTaskDrag(page, copyCardInQa);
+  await hoverDraggedTaskToNestTarget(page, shipNoteCard, 0.35, shipNoteSubtaskSlot);
+
+  await expect(shipNoteCard).toHaveClass(/is-nest-target/);
+  await expect(shipNoteSubtaskSlot).toHaveClass(/is-active/);
+  await expect(shipNoteSubtaskSlot).not.toHaveClass(/is-drag-ready/);
+
+  await finishTaskDrag(page);
+  await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
+});
+
+test("board page previews un-nesting a subtask back to the root group", async ({ page }) => {
+  const projectsWithQaLane = structuredClone(projectsForGrid);
+  const tasksWithQaCard = structuredClone(tasks);
+  const billingCleanupProject = projectsWithQaLane.find((project) => project.id === "project-1");
+  if (!billingCleanupProject) {
+    throw new Error("Expected project-1 test fixture to exist");
+  }
+
+  billingCleanupProject.laneSummaries.push({
+    createdAt: "2026-03-18T08:00:00.000Z",
+    id: "project-1-lane-custom-1",
+    name: "Ready for QA",
+    position: 4,
+    projectId: "project-1",
+    taskCount: 0,
+    updatedAt: "2026-03-18T08:00:00.000Z"
+  });
+
+  const retryTask = tasksWithQaCard.find((task) => task.id === "task-1");
+  if (!retryTask) {
+    throw new Error("Expected task-1 test fixture to exist");
+  }
+
+  retryTask.laneId = "project-1-lane-custom-1";
+  retryTask.parentTaskId = "task-5";
+  retryTask.position = 0;
+
+  tasksWithQaCard.push(
+    {
+      body: "",
+      createdAt: "2026-03-18T08:00:00.000Z",
+      id: "task-5",
+      laneId: "project-1-lane-custom-1",
+      parentTaskId: null,
+      position: 0,
+      projectId: "project-1",
+      ticketId: "BILL-5",
+      tags: [],
+      title: "Ship note",
+      updatedAt: "2026-03-18T08:00:00.000Z"
+    },
+    {
+      body: "",
+      createdAt: "2026-03-18T08:05:00.000Z",
+      id: "task-6",
+      laneId: "project-1-lane-custom-1",
+      parentTaskId: null,
+      position: 1,
+      projectId: "project-1",
+      ticketId: "BILL-6",
+      tags: [],
+      title: "Release checklist",
+      updatedAt: "2026-03-18T08:05:00.000Z"
+    }
+  );
+
+  await mockAuthenticated(page, {
+    projects: projectsWithQaLane,
+    tasks: tasksWithQaCard
+  });
+
+  await page.goto(billingBoardPath);
+
+  const qaColumn = page.getByTestId("board-column-project-1-lane-custom-1");
+  const qaContent = qaColumn.locator(".board-column__content");
+  const shipNoteCard = page.getByTestId("task-card-task-5");
+  const retrySubtask = shipNoteCard.locator(".task-card__subtasks").getByTestId("task-card-task-1");
+  const qaRootAfterReleaseSlot = page.getByTestId("task-drop-slot-project-1-lane-custom-1-2");
+
+  await beginTaskDrag(page, retrySubtask);
+  await hoverDraggedTaskOver(page, qaContent, 0.95);
+
+  await expect(qaRootAfterReleaseSlot).toHaveClass(/is-active/);
+
+  await finishTaskDrag(page);
+  await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Review retry settings")).toHaveCount(0);
+  await expect(qaColumn.getByText("Review retry settings")).toBeVisible();
 });
 
 test("board page moves a dragged subtask under another empty parent", async ({ page }) => {
