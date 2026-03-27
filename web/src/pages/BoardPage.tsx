@@ -3158,6 +3158,34 @@ export function BoardPage() {
       });
     }
 
+    function applyPreviewDropTarget(nextPreviewDropTarget: TaskMoveTarget) {
+      const nextPreviewTasks = applyTaskMove(
+        currentPreviewTasks,
+        activeTaskId,
+        nextPreviewDropTarget.laneId,
+        nextPreviewDropTarget.parentTaskId,
+        nextPreviewDropTarget.position,
+        lanesById,
+        taskDragPreviewUpdatedAtRef.current
+      );
+      const nextLocation = findTaskLocation(nextPreviewTasks, activeTaskId);
+      if (!nextLocation) {
+        return;
+      }
+
+      previewTasksRef.current = nextPreviewTasks;
+      flushSync(() => {
+        setPreviewTasks(nextPreviewTasks);
+        setDropTarget({
+          kind: nextPreviewDropTarget.kind,
+          laneId: nextLocation.laneId,
+          parentTaskId: nextLocation.parentTaskId,
+          position: nextLocation.position,
+          ...(nextPreviewDropTarget.taskId ? { taskId: nextPreviewDropTarget.taskId } : {})
+        });
+      });
+    }
+
     if (overData.type === "trash") {
       resetPreviewToSource();
       return;
@@ -3280,32 +3308,7 @@ export function BoardPage() {
       }
 
       if (nextDropTarget !== null) {
-        const nextPreviewTasks = applyTaskMove(
-          currentPreviewTasks,
-          activeTaskId,
-          nextDropTarget.laneId,
-          nextDropTarget.parentTaskId,
-          nextDropTarget.position,
-          lanesById,
-          taskDragPreviewUpdatedAtRef.current
-        );
-        const nextLocation = findTaskLocation(nextPreviewTasks, activeTaskId);
-        if (!nextLocation) {
-          return;
-        }
-
-        previewTasksRef.current = nextPreviewTasks;
-        const resolvedDropTarget = nextDropTarget;
-        flushSync(() => {
-          setPreviewTasks(nextPreviewTasks);
-          setDropTarget({
-            kind: resolvedDropTarget.kind,
-            laneId: nextLocation.laneId,
-            parentTaskId: nextLocation.parentTaskId,
-            position: nextLocation.position,
-            ...(resolvedDropTarget.taskId ? { taskId: resolvedDropTarget.taskId } : {})
-          });
-        });
+        applyPreviewDropTarget(nextDropTarget);
         return;
       }
 
@@ -3352,32 +3355,7 @@ export function BoardPage() {
       }
 
       if (nextDropTarget !== null) {
-        const nextPreviewTasks = applyTaskMove(
-          currentPreviewTasks,
-          activeTaskId,
-          nextDropTarget.laneId,
-          nextDropTarget.parentTaskId,
-          nextDropTarget.position,
-          lanesById,
-          taskDragPreviewUpdatedAtRef.current
-        );
-        const nextLocation = findTaskLocation(nextPreviewTasks, activeTaskId);
-        if (!nextLocation) {
-          return;
-        }
-
-        previewTasksRef.current = nextPreviewTasks;
-        const resolvedDropTarget = nextDropTarget;
-        flushSync(() => {
-          setPreviewTasks(nextPreviewTasks);
-          setDropTarget({
-            kind: resolvedDropTarget.kind,
-            laneId: nextLocation.laneId,
-            parentTaskId: nextLocation.parentTaskId,
-            position: nextLocation.position,
-            ...(resolvedDropTarget.taskId ? { taskId: resolvedDropTarget.taskId } : {})
-          });
-        });
+        applyPreviewDropTarget(nextDropTarget);
         return;
       }
 
@@ -3411,32 +3389,7 @@ export function BoardPage() {
       return;
     }
 
-    const nextPreviewTasks = applyTaskMove(
-      currentPreviewTasks,
-      activeTaskId,
-      nextDropTarget.laneId,
-      nextDropTarget.parentTaskId,
-      nextDropTarget.position,
-      lanesById,
-      taskDragPreviewUpdatedAtRef.current
-    );
-    const nextLocation = findTaskLocation(nextPreviewTasks, activeTaskId);
-    if (!nextLocation) {
-      return;
-    }
-
-    previewTasksRef.current = nextPreviewTasks;
-    const resolvedDropTarget = nextDropTarget;
-    flushSync(() => {
-      setPreviewTasks(nextPreviewTasks);
-      setDropTarget({
-        kind: resolvedDropTarget.kind,
-        laneId: nextLocation.laneId,
-        parentTaskId: nextLocation.parentTaskId,
-        position: nextLocation.position,
-        ...(resolvedDropTarget.taskId ? { taskId: resolvedDropTarget.taskId } : {})
-      });
-    });
+    applyPreviewDropTarget(nextDropTarget);
   }
 
   function handleTaskDragEnd(event: DragEndEvent) {

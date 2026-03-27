@@ -4,6 +4,83 @@ import { laneId, mockAuthenticated, projectsForGrid, tag, tasks } from "./fixtur
 
 const { defaultBrowserType: _ignoredDefaultBrowserType, ...iPhone13 } = devices["iPhone 13"];
 const billingBoardPath = "/projects/BILL";
+type TargetBox = {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+};
+
+function getTasksWithExtraTodoCard() {
+  const tasksWithExtraTodoCard = structuredClone(tasks);
+
+  tasksWithExtraTodoCard.push({
+    body: "Hold a gap open while QA notes are staged.",
+    createdAt: "2026-03-18T07:25:00.000Z",
+    id: "task-5",
+    laneId: laneId("project-1", "todo"),
+    parentTaskId: null,
+    position: 2,
+    projectId: "project-1",
+    ticketId: "BILL-5",
+    tags: [],
+    title: "Stage QA notes",
+    updatedAt: "2026-03-18T07:28:00.000Z"
+  });
+
+  return tasksWithExtraTodoCard;
+}
+
+function getTargetRatioPoint(targetBox: TargetBox, targetYRatio: number) {
+  return {
+    x: targetBox.x + targetBox.width / 2,
+    y: targetBox.y + targetBox.height * targetYRatio
+  };
+}
+
+function getHorizontalApproachX(page: Page, targetBox: TargetBox) {
+  const targetCenterX = targetBox.x + targetBox.width / 2;
+  const viewportWidth =
+    page.viewportSize()?.width ?? Math.ceil(targetBox.x + targetBox.width + 96);
+  const horizontalApproachOffset = Math.min(84, Math.max(targetBox.width * 0.65, 48));
+  const approachFromRight = targetCenterX + horizontalApproachOffset < viewportWidth - 16;
+
+  return approachFromRight
+    ? targetCenterX + horizontalApproachOffset
+    : Math.max(targetCenterX - horizontalApproachOffset, 16);
+}
+
+async function moveMouseToTargetRatio(
+  page: Page,
+  targetBox: TargetBox,
+  targetYRatio: number,
+  steps: number
+) {
+  const targetPoint = getTargetRatioPoint(targetBox, targetYRatio);
+
+  await page.mouse.move(targetPoint.x, targetPoint.y, { steps });
+}
+
+async function waitForNestPreview(page: Page, card: Locator, settleTarget?: Locator) {
+  for (let settleAttempt = 0; settleAttempt < 5; settleAttempt += 1) {
+    if (settleTarget && (await settleTarget.count()) > 0) {
+      await page.waitForTimeout(140);
+      return true;
+    }
+
+    const cardClass = await card.evaluateAll((nodes) =>
+      nodes[0] instanceof HTMLElement ? nodes[0].getAttribute("class") : null
+    );
+    if (cardClass?.includes("is-nest-target")) {
+      await page.waitForTimeout(140);
+      return true;
+    }
+
+    await page.waitForTimeout(90);
+  }
+
+  return false;
+}
 
 async function isTaskDragActive(dragOverlay: Locator, taskCard: Locator) {
   if ((await dragOverlay.count()) > 0) {
@@ -120,36 +197,31 @@ async function hoverDraggedTaskOver(page: Page, target: Locator, targetYRatio = 
 
   expect(initialTargetBox).not.toBeNull();
 
-  const initialTargetCenterX = (initialTargetBox?.x ?? 0) + (initialTargetBox?.width ?? 0) / 2;
-  const initialApproachY = Math.max((initialTargetBox?.y ?? 0) - 32, 0);
+  const resolvedInitialTargetBox = initialTargetBox as TargetBox;
+  const initialApproachY = Math.max(resolvedInitialTargetBox.y - 32, 0);
 
-  await page.mouse.move(initialTargetCenterX, initialApproachY, { steps: 18 });
+  await page.mouse.move(resolvedInitialTargetBox.x + resolvedInitialTargetBox.width / 2, initialApproachY, {
+    steps: 18
+  });
   await page.waitForTimeout(80);
 
   // Drag previews can shift the list while the pointer is in flight, so re-center on
   // the live target a few times before releasing.
-  let currentTargetBox = initialTargetBox;
+  let currentTargetBox = resolvedInitialTargetBox;
   for (const steps of [20, 12, 8]) {
     const targetBox = (await target.count()) > 0 ? await target.boundingBox() : null;
     if (targetBox !== null) {
       currentTargetBox = targetBox;
     }
 
-    await page.mouse.move(
-      (currentTargetBox?.x ?? 0) + (currentTargetBox?.width ?? 0) / 2,
-      (currentTargetBox?.y ?? 0) + (currentTargetBox?.height ?? 0) * targetYRatio,
-      { steps }
-    );
+    await moveMouseToTargetRatio(page, currentTargetBox, targetYRatio, steps);
     await page.waitForTimeout(80);
   }
 
-  const finalTargetBox = (await target.count()) > 0 ? await target.boundingBox() : currentTargetBox;
+  const finalTargetBox =
+    ((await target.count()) > 0 ? await target.boundingBox() : currentTargetBox) ?? currentTargetBox;
 
-  await page.mouse.move(
-    (finalTargetBox?.x ?? 0) + (finalTargetBox?.width ?? 0) / 2,
-    (finalTargetBox?.y ?? 0) + (finalTargetBox?.height ?? 0) * targetYRatio,
-    { steps: 4 }
-  );
+  await moveMouseToTargetRatio(page, finalTargetBox as TargetBox, targetYRatio, 4);
   await page.waitForTimeout(140);
 }
 
@@ -185,11 +257,7 @@ async function hoverDraggedTaskDirectlyToTarget(page: Page, target: Locator, tar
 
   expect(finalTargetBox).not.toBeNull();
 
-  await page.mouse.move(
-    (finalTargetBox?.x ?? 0) + (finalTargetBox?.width ?? 0) / 2,
-    (finalTargetBox?.y ?? 0) + (finalTargetBox?.height ?? 0) * targetYRatio,
-    { steps: 16 }
-  );
+  await moveMouseToTargetRatio(page, finalTargetBox as TargetBox, targetYRatio, 16);
   await page.waitForTimeout(160);
 }
 
@@ -202,25 +270,6 @@ async function hoverDraggedTaskToNestTarget(
   const nestTarget = taskCardNestTarget(card);
   const nestHoverYRatio = Math.min(targetYRatio, 0.22);
 
-  async function waitForNestPreview() {
-    for (let settleAttempt = 0; settleAttempt < 5; settleAttempt += 1) {
-      if (settleTarget && (await settleTarget.count()) > 0) {
-        await page.waitForTimeout(140);
-        return true;
-      }
-
-      const cardClass = await card.getAttribute("class");
-      if (cardClass?.includes("is-nest-target")) {
-        await page.waitForTimeout(140);
-        return true;
-      }
-
-      await page.waitForTimeout(90);
-    }
-
-    return false;
-  }
-
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.waitForTimeout(100);
     await expect(nestTarget).toBeAttached();
@@ -228,19 +277,10 @@ async function hoverDraggedTaskToNestTarget(
 
     expect(nestTargetBox).not.toBeNull();
 
-    const nestTargetCenterX = (nestTargetBox?.x ?? 0) + (nestTargetBox?.width ?? 0) / 2;
-    const viewportWidth =
-      page.viewportSize()?.width ??
-      Math.ceil((nestTargetBox?.x ?? 0) + (nestTargetBox?.width ?? 0) + 96);
-    const horizontalApproachOffset = Math.min(84, Math.max(((nestTargetBox?.width ?? 0) * 0.65), 48));
-    const approachFromRight = nestTargetCenterX + horizontalApproachOffset < viewportWidth - 16;
-    const approachX = approachFromRight
-      ? nestTargetCenterX + horizontalApproachOffset
-      : Math.max(nestTargetCenterX - horizontalApproachOffset, 16);
-    const approachY =
-      (nestTargetBox?.y ?? 0) + (nestTargetBox?.height ?? 0) * nestHoverYRatio;
+    const resolvedNestTargetBox = nestTargetBox as TargetBox;
+    const approachPoint = getTargetRatioPoint(resolvedNestTargetBox, nestHoverYRatio);
 
-    await page.mouse.move(approachX, approachY, { steps: 16 });
+    await page.mouse.move(getHorizontalApproachX(page, resolvedNestTargetBox), approachPoint.y, { steps: 16 });
     await page.waitForTimeout(70);
 
     for (const steps of [18, 12, 8]) {
@@ -251,20 +291,15 @@ async function hoverDraggedTaskToNestTarget(
         }
       }
 
-      await page.mouse.move(
-        (nestTargetBox?.x ?? 0) + (nestTargetBox?.width ?? 0) / 2,
-        (nestTargetBox?.y ?? 0) + (nestTargetBox?.height ?? 0) * nestHoverYRatio,
-        { steps }
-      );
+      await moveMouseToTargetRatio(page, nestTargetBox as TargetBox, nestHoverYRatio, steps);
       await page.waitForTimeout(90);
 
-      if (await waitForNestPreview()) {
+      if (await waitForNestPreview(page, card, settleTarget)) {
         return;
       }
-
     }
 
-    if (await waitForNestPreview()) {
+    if (await waitForNestPreview(page, card, settleTarget)) {
       return;
     }
   }
@@ -274,7 +309,7 @@ async function hoverDraggedTaskToNestTarget(
   }
 
   for (let settleAttempt = 0; settleAttempt < 5; settleAttempt += 1) {
-    if (await waitForNestPreview()) {
+    if (await waitForNestPreview(page, card, settleTarget)) {
       return;
     }
 
@@ -1200,21 +1235,7 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
 test("board page reorders top-level cards from the visible gap without nesting them", async ({
   page
 }) => {
-  const tasksWithExtraTodoCard = structuredClone(tasks);
-
-  tasksWithExtraTodoCard.push({
-    body: "Hold a gap open while QA notes are staged.",
-    createdAt: "2026-03-18T07:25:00.000Z",
-    id: "task-5",
-    laneId: laneId("project-1", "todo"),
-    parentTaskId: null,
-    position: 2,
-    projectId: "project-1",
-    ticketId: "BILL-5",
-    tags: [],
-    title: "Stage QA notes",
-    updatedAt: "2026-03-18T07:28:00.000Z"
-  });
+  const tasksWithExtraTodoCard = getTasksWithExtraTodoCard();
 
   await mockAuthenticated(page, {
     projects: projectsForGrid,
@@ -1276,21 +1297,7 @@ test("board page keeps the drag preview centered under the cursor without nest h
 });
 
 test("board page opens a visible reorder gap while a task is held between top-level cards", async ({ page }) => {
-  const tasksWithExtraTodoCard = structuredClone(tasks);
-
-  tasksWithExtraTodoCard.push({
-    body: "Hold a gap open while QA notes are staged.",
-    createdAt: "2026-03-18T07:25:00.000Z",
-    id: "task-5",
-    laneId: laneId("project-1", "todo"),
-    parentTaskId: null,
-    position: 2,
-    projectId: "project-1",
-    ticketId: "BILL-5",
-    tags: [],
-    title: "Stage QA notes",
-    updatedAt: "2026-03-18T07:28:00.000Z"
-  });
+  const tasksWithExtraTodoCard = getTasksWithExtraTodoCard();
 
   await mockAuthenticated(page, {
     projects: projectsForGrid,
