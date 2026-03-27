@@ -10,11 +10,13 @@ async function isTaskDragActive(dragOverlay: Locator, taskCard: Locator) {
     return true;
   }
 
-  const taskCardClass = await taskCard.getAttribute("class");
+  const taskCardClass = await taskCard.evaluateAll((nodes) =>
+    nodes[0] instanceof HTMLElement ? nodes[0].getAttribute("class") : null
+  );
   return taskCardClass?.includes("is-dragging") ?? false;
 }
 
-async function beginTaskDrag(page: Page, source: Locator) {
+async function beginTaskDrag(page: Page, source: Locator): Promise<{ x: number; y: number }> {
   const taskSurface = source.locator(":scope > .task-card__surface-wrap > .task-card__surface");
   const dragHandle = (await taskSurface.count()) > 0 ? taskSurface : source;
   const dragOverlay = page.locator(".task-card--drag-overlay");
@@ -42,16 +44,30 @@ async function beginTaskDrag(page: Page, source: Locator) {
       { x: 60, y: -8, steps: 6 }
     ]
   ].entries()) {
-    await dragHandle.scrollIntoViewIfNeeded();
-    await expect(dragHandle).toBeVisible();
-    const sourceBox = await dragHandle.boundingBox();
+    await expect(source).toBeVisible();
+    await source.evaluateAll((nodes) => {
+      const node = nodes[0];
+      if (!(node instanceof HTMLElement)) {
+        return;
+      }
+
+      node.scrollIntoView({
+        block: "center",
+        inline: "center"
+      });
+    });
+    const sourceBox = (await dragHandle.boundingBox()) ?? (await source.boundingBox());
 
     expect(sourceBox).not.toBeNull();
 
-    const sourceCenterX = (sourceBox?.x ?? 0) + (sourceBox?.width ?? 0) / 2;
-    const sourceCenterY = (sourceBox?.y ?? 0) + (sourceBox?.height ?? 0) / 2;
+    const sourceWidth = sourceBox?.width ?? 0;
+    const sourceHeight = sourceBox?.height ?? 0;
+    const sourceGrabX = (sourceBox?.x ?? 0) + Math.min(Math.max(sourceWidth * 0.32, 24), Math.max(sourceWidth - 20, 24));
+    const sourceGrabY = (sourceBox?.y ?? 0) + Math.min(Math.max(sourceHeight * 0.28, 18), Math.max(sourceHeight - 18, 18));
+    let currentPointerX = sourceGrabX;
+    let currentPointerY = sourceGrabY;
 
-    await page.mouse.move(sourceCenterX, sourceCenterY, { steps: attemptIndex === 0 ? 6 : 10 });
+    await page.mouse.move(currentPointerX, currentPointerY, { steps: attemptIndex === 0 ? 6 : 10 });
     if (attemptIndex > 0) {
       await page.waitForTimeout(40);
     }
@@ -59,24 +75,35 @@ async function beginTaskDrag(page: Page, source: Locator) {
     await page.waitForTimeout(attemptIndex === 0 ? 40 : 80);
 
     for (const pointerMove of pointerMoves) {
-      await page.mouse.move(sourceCenterX + pointerMove.x, sourceCenterY + pointerMove.y, {
+      currentPointerX = sourceGrabX + pointerMove.x;
+      currentPointerY = sourceGrabY + pointerMove.y;
+      await page.mouse.move(currentPointerX, currentPointerY, {
         steps: pointerMove.steps
       });
 
       if (await isTaskDragActive(dragOverlay, taskCard)) {
-        return;
+        return {
+          x: currentPointerX,
+          y: currentPointerY
+        };
       }
 
       await page.waitForTimeout(40);
       if (await isTaskDragActive(dragOverlay, taskCard)) {
-        return;
+        return {
+          x: currentPointerX,
+          y: currentPointerY
+        };
       }
     }
 
     for (let settleAttempt = 0; settleAttempt < 4; settleAttempt += 1) {
       await page.waitForTimeout(60);
       if (await isTaskDragActive(dragOverlay, taskCard)) {
-        return;
+        return {
+          x: currentPointerX,
+          y: currentPointerY
+        };
       }
     }
 
@@ -94,20 +121,9 @@ async function hoverDraggedTaskOver(page: Page, target: Locator, targetYRatio = 
   expect(initialTargetBox).not.toBeNull();
 
   const initialTargetCenterX = (initialTargetBox?.x ?? 0) + (initialTargetBox?.width ?? 0) / 2;
-  const viewportWidth =
-    page.viewportSize()?.width ??
-    Math.ceil((initialTargetBox?.x ?? 0) + (initialTargetBox?.width ?? 0) + 96);
-  const horizontalApproachOffset = Math.min(
-    84,
-    Math.max(((initialTargetBox?.width ?? 0) * 0.65), 48)
-  );
-  const approachFromRight =
-    initialTargetCenterX + horizontalApproachOffset < viewportWidth - 16;
-  const initialApproachX = approachFromRight
-    ? initialTargetCenterX + horizontalApproachOffset
-    : Math.max(initialTargetCenterX - horizontalApproachOffset, 16);
+  const initialApproachY = Math.max((initialTargetBox?.y ?? 0) - 32, 0);
 
-  await page.mouse.move(initialApproachX, Math.max((initialTargetBox?.y ?? 0) - 36, 0), { steps: 18 });
+  await page.mouse.move(initialTargetCenterX, initialApproachY, { steps: 18 });
   await page.waitForTimeout(80);
 
   // Drag previews can shift the list while the pointer is in flight, so re-center on
@@ -292,7 +308,29 @@ async function finishTaskDrag(page: Page) {
 
 async function dragTaskToTarget(page: Page, source: Locator, target: Locator, targetYRatio = 0.5) {
   await beginTaskDrag(page, source);
-  await hoverDraggedTaskOver(page, target, targetYRatio);
+  const directTargetType = await target.evaluateAll((nodes) => {
+    const node = nodes[0];
+    if (!(node instanceof HTMLElement)) {
+      return null;
+    }
+
+    const testId = node.getAttribute("data-testid");
+    if (testId?.startsWith("task-drop-slot-")) {
+      return "slot";
+    }
+
+    if (testId?.startsWith("task-nest-hotspot-")) {
+      return "nest-hotspot";
+    }
+
+    return null;
+  });
+
+  if (directTargetType) {
+    await hoverDraggedTaskDirectlyToTarget(page, target, targetYRatio);
+  } else {
+    await hoverDraggedTaskOver(page, target, targetYRatio);
+  }
   await finishTaskDrag(page);
 }
 
@@ -1159,7 +1197,9 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(laneDeleteToast).toContainText("Ready for QA was deleted. Cards moved to Done.");
 });
 
-test("board page reorders top-level cards from card-surface overlap without nesting them", async ({ page }) => {
+test("board page reorders top-level cards from the visible gap without nesting them", async ({
+  page
+}) => {
   const tasksWithExtraTodoCard = structuredClone(tasks);
 
   tasksWithExtraTodoCard.push({
@@ -1185,11 +1225,13 @@ test("board page reorders top-level cards from card-surface overlap without nest
 
   const todoColumn = page.getByTestId(`board-column-${laneId("project-1", "todo")}`);
   const retryCard = page.getByTestId("task-card-task-1");
-  const qaNotesCard = page.getByTestId("task-card-task-5");
   const copyCard = page.getByTestId("task-card-task-4");
+  const gapAfterCopy = page.getByTestId(`task-drop-slot-${laneId("project-1", "todo")}-2`);
 
   await beginTaskDrag(page, taskCardSurface(retryCard));
-  await hoverDraggedTaskOver(page, taskCardSurface(copyCard), 0.7);
+  await hoverDraggedTaskOver(page, taskCardSurface(copyCard), 0.4);
+  await expect(copyCard).not.toHaveClass(/is-nest-target/);
+  await hoverDraggedTaskDirectlyToTarget(page, gapAfterCopy, 0.5);
   await finishTaskDrag(page);
 
   await expect(todoColumn.locator(".task-card__title")).toHaveText([
@@ -1198,6 +1240,39 @@ test("board page reorders top-level cards from card-surface overlap without nest
     "[BILL-5] Stage QA notes"
   ]);
   await expect(copyCard.locator(".task-card__subtasks").getByText("Review retry settings")).toHaveCount(0);
+});
+
+test("board page keeps the drag preview centered under the cursor without nest helper copy", async ({
+  page
+}) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto(billingBoardPath);
+
+  const retryCard = page.getByTestId("task-card-task-1");
+  const dragOverlay = page.locator(".task-card--drag-overlay");
+  const activatedPointer = await beginTaskDrag(page, taskCardSurface(retryCard));
+  const nextPointer = {
+    x: activatedPointer.x + 46,
+    y: activatedPointer.y + 18
+  };
+
+  await page.mouse.move(nextPointer.x, nextPointer.y, { steps: 6 });
+  await expect(dragOverlay).toBeVisible();
+  await expect(page.getByText(/(?:Drop|Drag) to nest/i)).toHaveCount(0);
+
+  const overlayBox = await dragOverlay.boundingBox();
+  expect(overlayBox).not.toBeNull();
+
+  const overlayCenterX = (overlayBox?.x ?? 0) + (overlayBox?.width ?? 0) / 2;
+  const overlayCenterY = (overlayBox?.y ?? 0) + (overlayBox?.height ?? 0) / 2;
+  expect(Math.abs(overlayCenterX - nextPointer.x)).toBeLessThanOrEqual(16);
+  expect(Math.abs(overlayCenterY - nextPointer.y)).toBeLessThanOrEqual(16);
+
+  await finishTaskDrag(page);
 });
 
 test("board page opens a visible reorder gap while a task is held between top-level cards", async ({ page }) => {
@@ -1228,6 +1303,7 @@ test("board page opens a visible reorder gap while a task is held between top-le
   const retryCard = page.getByTestId("task-card-task-1");
   const copyCard = page.getByTestId("task-card-task-4");
   const qaNotesCard = page.getByTestId("task-card-task-5");
+  const gapAfterCopy = page.getByTestId(`task-drop-slot-${laneId("project-1", "todo")}-2`);
   const copyBefore = await copyCard.boundingBox();
   const qaNotesBefore = await qaNotesCard.boundingBox();
 
@@ -1235,16 +1311,21 @@ test("board page opens a visible reorder gap while a task is held between top-le
   expect(qaNotesBefore).not.toBeNull();
 
   await beginTaskDrag(page, taskCardSurface(retryCard));
-  await hoverDraggedTaskOver(page, taskCardSurface(copyCard), 0.7);
+  await hoverDraggedTaskDirectlyToTarget(page, gapAfterCopy, 0.5);
+  const activeGap = todoColumn.locator(".task-drop-slot.is-preview-target");
+  await expect(activeGap).toHaveCount(1);
+  const activeGapBox = await activeGap.boundingBox();
 
   const copyAfter = await copyCard.boundingBox();
   const qaNotesAfter = await qaNotesCard.boundingBox();
 
+  expect(activeGapBox).not.toBeNull();
   expect(copyAfter).not.toBeNull();
   expect(qaNotesAfter).not.toBeNull();
 
   const gapBefore = (qaNotesBefore?.y ?? 0) - ((copyBefore?.y ?? 0) + (copyBefore?.height ?? 0));
   const gapAfter = (qaNotesAfter?.y ?? 0) - ((copyAfter?.y ?? 0) + (copyAfter?.height ?? 0));
+  expect(activeGapBox?.height ?? 0).toBeGreaterThan(32);
   expect(gapAfter).toBeGreaterThan(gapBefore + 24);
 
   await finishTaskDrag(page);
@@ -1425,22 +1506,23 @@ test("board page moves a dragged subtask under another empty parent", async ({ p
   const releaseChecklistCard = page.getByTestId("task-card-task-6");
   const copyCard = page.getByTestId("task-card-task-4");
   const qaRootInsertSlot = page.getByTestId("task-drop-slot-project-1-lane-custom-1-2");
-  const shipNoteSubtaskSlot = page.getByTestId("task-drop-slot-task-5-0");
-  const releaseChecklistSubtaskSlot = page.getByTestId("task-drop-slot-task-6-0");
 
-  await dragTaskToTarget(page, copyCard, qaRootInsertSlot);
+  await expect(copyCard).toBeVisible();
+  await beginTaskDrag(page, copyCard);
+  await hoverDraggedTaskDirectlyToTarget(page, qaRootInsertSlot, 0.5);
+  await finishTaskDrag(page);
   const copyCardInQa = page.getByTestId("task-card-task-4");
   await expect(copyCardInQa).toBeVisible();
   await beginTaskDrag(page, copyCardInQa);
-  await hoverDraggedTaskDirectlyToTarget(page, taskCardNestTarget(shipNoteCard), 0.22);
-  await page.waitForTimeout(180);
+  await hoverDraggedTaskDirectlyToTarget(page, taskCardNestTarget(shipNoteCard), 0.5);
+  await expect(shipNoteCard).toHaveClass(/is-nest-target/);
   await finishTaskDrag(page);
   await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
 
   const copySubtask = shipNoteCard.locator(".task-card__subtasks").getByTestId("task-card-task-4");
   await beginTaskDrag(page, copySubtask);
-  await hoverDraggedTaskDirectlyToTarget(page, taskCardNestTarget(releaseChecklistCard), 0.22);
-  await page.waitForTimeout(180);
+  await hoverDraggedTaskDirectlyToTarget(page, taskCardNestTarget(releaseChecklistCard), 0.5);
+  await expect(releaseChecklistCard).toHaveClass(/is-nest-target/);
   await finishTaskDrag(page);
 
   await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toHaveCount(0);

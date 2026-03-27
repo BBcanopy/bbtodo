@@ -21,7 +21,8 @@ import {
   type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
-  type DragStartEvent
+  type DragStartEvent,
+  type Modifier
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -98,8 +99,58 @@ const taskMeasuring = {
     strategy: MeasuringStrategy.Always
   }
 } as const;
+const centerTaskDragOverlayModifier: Modifier = ({
+  activatorEvent,
+  activeNodeRect,
+  overlayNodeRect,
+  transform
+}) => {
+  if (!activeNodeRect) {
+    return transform;
+  }
+
+  const activatorCoordinates = getActivatorEventCoordinates(activatorEvent);
+  const referenceRect = overlayNodeRect ?? activeNodeRect;
+  if (!activatorCoordinates || !referenceRect) {
+    return transform;
+  }
+
+  return {
+    ...transform,
+    x:
+      transform.x +
+      (activatorCoordinates.x - activeNodeRect.left - referenceRect.width / 2),
+    y:
+      transform.y +
+      (activatorCoordinates.y - activeNodeRect.top - referenceRect.height / 2)
+  };
+};
+const taskDragOverlayModifiers = [centerTaskDragOverlayModifier];
 
 const projectTicketPrefixPattern = /^[A-Z]{2,4}$/;
+
+function getActivatorEventCoordinates(event: Event | null) {
+  if (event instanceof MouseEvent) {
+    return {
+      x: event.clientX,
+      y: event.clientY
+    };
+  }
+
+  if (typeof TouchEvent !== "undefined" && event instanceof TouchEvent) {
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    if (!touch) {
+      return null;
+    }
+
+    return {
+      x: touch.clientX,
+      y: touch.clientY
+    };
+  }
+
+  return null;
+}
 
 function buildBoardPath(projectTicketPrefix: string, ticketId?: string) {
   return ticketId
@@ -298,6 +349,11 @@ function getTaskPreviewUpdatedAt(tasks: Task[]) {
 }
 
 function getActiveDragCenterY(event: DragOverEvent) {
+  const pointerCoordinates = getActiveDragPointerCoordinates(event);
+  if (pointerCoordinates) {
+    return pointerCoordinates.y;
+  }
+
   const initialRect = event.active.rect.current.initial;
   const activeHeight = event.active.rect.current.initial?.height ?? event.over?.rect.height ?? 0;
   if (initialRect) {
@@ -313,6 +369,11 @@ function getActiveDragCenterY(event: DragOverEvent) {
 }
 
 function getActiveDragCenterX(event: DragOverEvent) {
+  const pointerCoordinates = getActiveDragPointerCoordinates(event);
+  if (pointerCoordinates) {
+    return pointerCoordinates.x;
+  }
+
   const initialRect = event.active.rect.current.initial;
   const activeWidth = event.active.rect.current.initial?.width ?? event.over?.rect.width ?? 0;
   if (initialRect) {
@@ -325,6 +386,18 @@ function getActiveDragCenterX(event: DragOverEvent) {
   }
 
   return event.over ? event.over.rect.left + event.over.rect.width / 2 : 0;
+}
+
+function getActiveDragPointerCoordinates(event: Pick<DragOverEvent, "activatorEvent" | "delta">) {
+  const activatorCoordinates = getActivatorEventCoordinates(event.activatorEvent);
+  if (!activatorCoordinates) {
+    return null;
+  }
+
+  return {
+    x: activatorCoordinates.x + event.delta.x,
+    y: activatorCoordinates.y + event.delta.y
+  };
 }
 
 function listSiblingTasks(
@@ -1201,9 +1274,7 @@ function TaskCard({
               nestTargetRef.current = node;
               setNestTargetRef(node);
             }}
-          >
-            <span className="task-card__nest-target-label">Drop to nest</span>
-          </div>
+          />
         ) : null}
       </div>
       {subtasks.length > 0 ? (
@@ -3835,7 +3906,7 @@ export function BoardPage() {
               );
             })}
           </section>
-          <DragOverlay dropAnimation={taskDropAnimation}>
+          <DragOverlay dropAnimation={taskDropAnimation} modifiers={taskDragOverlayModifiers}>
             {draggedTask ? (
               <div
                 className="task-drag-overlay"

@@ -2245,13 +2245,6 @@ textarea:focus {
     transform 220ms var(--ease);
 }
 
-.task-card__nest-target-label {
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .task-card__nest-target.is-active {
   border-color: color-mix(in srgb, var(--accent) 58%, transparent);
   background: linear-gradient(90deg, color-mix(in srgb, var(--accent-soft) 78%, transparent), color-mix(in srgb, var(--surface-popover) 94%, transparent));
