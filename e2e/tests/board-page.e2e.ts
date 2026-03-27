@@ -377,6 +377,11 @@ function taskCardNestTarget(card: Locator) {
   return card.locator(':scope > .task-card__surface-wrap [data-testid^="task-nest-hotspot-"]');
 }
 
+async function expectBoardVisibleWithoutSkeleton(page: Page) {
+  await expect(page.getByTestId("board-grid")).toBeVisible();
+  await expect(page.locator(".board-skeleton")).toHaveCount(0);
+}
+
 test("board page autosaves cards and filters tasks", async ({ page }) => {
   const tasksWithReusableGlobalTag = structuredClone(tasks);
   tasksWithReusableGlobalTag.push({
@@ -1742,19 +1747,74 @@ test("board page keeps rendering after dragging a newly created note", async ({ 
     .locator("[data-testid^='task-card-']")
     .filter({ has: page.locator(".task-card__title", { hasText: "Draft release note" }) })
     .first();
+  const mobileTapCard = todoColumn
+    .locator("[data-testid^='task-card-']")
+    .filter({ has: page.locator(".task-card__title", { hasText: "Capture mobile tap flow" }) })
+    .first();
   const refundCopyCard = todoColumn
     .locator("[data-testid^='task-card-']")
     .filter({ has: page.locator(".task-card__title", { hasText: "Verify refund copy" }) })
     .first();
 
   await beginTaskDrag(page, releaseNoteCard);
-  await hoverDraggedTaskOver(page, taskCardSurface(refundCopyCard), 0.7);
+  for (const [target, targetYRatio] of [
+    [taskCardSurface(refundCopyCard), 0.7],
+    [taskCardSurface(mobileTapCard), 0.35],
+    [taskCardSurface(refundCopyCard), 0.25],
+    [taskCardSurface(mobileTapCard), 0.72],
+    [taskCardSurface(refundCopyCard), 0.58]
+  ] as const) {
+    await hoverDraggedTaskOver(page, target, targetYRatio);
+    await expectBoardVisibleWithoutSkeleton(page);
+  }
   await finishTaskDrag(page);
 
-  await expect(page.getByTestId("board-grid")).toBeVisible();
+  await expectBoardVisibleWithoutSkeleton(page);
   for (const title of createdTitles) {
     await expect(todoColumn.locator(".task-card__title", { hasText: title })).toBeVisible();
   }
+  expect(pageErrors).toEqual([]);
+});
+
+test("board page stays visible during a prolonged seeded card drag", async ({ page }) => {
+  const todoLaneId = laneId("project-1", "todo");
+  const pageErrors: string[] = [];
+
+  page.on("pageerror", (error) => {
+    pageErrors.push(error.message);
+  });
+
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks: getTasksWithExtraTodoCard()
+  });
+
+  await page.goto(billingBoardPath);
+
+  const todoColumn = page.getByTestId(`board-column-${todoLaneId}`);
+  const reviewRetryCard = page.getByTestId("task-card-task-1");
+  const copyPassCard = page.getByTestId("task-card-task-4");
+  const stagedNotesCard = page.getByTestId("task-card-task-5");
+
+  await expect(todoColumn).toBeVisible();
+  await beginTaskDrag(page, reviewRetryCard);
+
+  for (const [target, targetYRatio] of [
+    [taskCardSurface(stagedNotesCard), 0.68],
+    [taskCardSurface(copyPassCard), 0.32],
+    [taskCardSurface(stagedNotesCard), 0.22],
+    [taskCardSurface(copyPassCard), 0.74],
+    [taskCardSurface(stagedNotesCard), 0.48],
+    [taskCardSurface(copyPassCard), 0.58]
+  ] as const) {
+    await hoverDraggedTaskOver(page, target, targetYRatio);
+    await expectBoardVisibleWithoutSkeleton(page);
+  }
+
+  await finishTaskDrag(page);
+
+  await expectBoardVisibleWithoutSkeleton(page);
+  await expect(todoColumn.locator(".task-card__title", { hasText: "Review retry settings" })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 

@@ -2,6 +2,7 @@ import {
   type DragEvent,
   type ReactNode,
   type RefObject,
+  startTransition,
   useEffect,
   useMemo,
   useRef,
@@ -68,17 +69,25 @@ import {
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 
 type TaskEditorView = "preview" | "source";
-type TaskMoveTarget = {
-  kind: "nest" | "reorder";
+type TaskLocation = {
   laneId: string;
   parentTaskId: string | null;
   position: number;
+};
+type TaskMoveTarget = TaskLocation & {
+  kind: "nest" | "reorder";
   taskId?: string;
 };
 type BoardToast = {
   message: string;
   title: string;
   tone: "danger" | "success";
+};
+type TaskDragPreviewState = {
+  activeTaskId: string;
+  dropTargetSignature: string | null;
+  location: TaskLocation | null;
+  tasks: Task[];
 };
 type TaskProjectMovePreview = {
   lane: BoardLane;
@@ -550,7 +559,37 @@ function getTaskGapState(
   };
 }
 
-function findTaskLocation(tasks: Task[], taskId: string) {
+function areTaskLocationsEqual(left: TaskLocation | null, right: TaskLocation | null) {
+  if (left === right) {
+    return true;
+  }
+
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    left.laneId === right.laneId &&
+    left.parentTaskId === right.parentTaskId &&
+    left.position === right.position
+  );
+}
+
+function getTaskMoveTargetSignature(dropTarget: TaskMoveTarget | null) {
+  if (!dropTarget) {
+    return null;
+  }
+
+  return [
+    dropTarget.kind,
+    dropTarget.laneId,
+    dropTarget.parentTaskId ?? "__root__",
+    dropTarget.position,
+    dropTarget.taskId ?? ""
+  ].join("::");
+}
+
+function findTaskLocation(tasks: Task[], taskId: string): TaskLocation | null {
   const task = tasks.find((candidate) => candidate.id === taskId);
   if (!task || !task.laneId) {
     return null;
@@ -560,6 +599,59 @@ function findTaskLocation(tasks: Task[], taskId: string) {
     laneId: task.laneId,
     parentTaskId: task.parentTaskId,
     position: task.position
+  };
+}
+
+function resolveTaskMoveLocation(
+  tasks: Task[],
+  taskId: string,
+  targetLaneId: string,
+  targetParentTaskId: string | null,
+  targetIndex: number,
+  lanesById: Map<string, BoardLane>
+): TaskLocation | null {
+  const sourceTask = tasks.find((task) => task.id === taskId);
+  if (!sourceTask || !sourceTask.laneId) {
+    return null;
+  }
+
+  const sourceSiblings = listSiblingTasks(
+    tasks,
+    sourceTask.laneId,
+    sourceTask.parentTaskId,
+    isDoneLaneName(lanesById.get(sourceTask.laneId)?.name ?? "")
+  );
+  const sourceIndex = sourceSiblings.findIndex((task) => task.id === taskId);
+  const sameGroup =
+    sourceTask.laneId === targetLaneId && sourceTask.parentTaskId === targetParentTaskId;
+  const targetUsesDoneOrdering = isDoneLaneName(lanesById.get(targetLaneId)?.name ?? "");
+  const nextSiblingTasks = listSiblingTasks(
+    tasks,
+    targetLaneId,
+    targetParentTaskId,
+    targetUsesDoneOrdering,
+    taskId
+  );
+  const normalizedTargetIndex =
+    sameGroup && sourceIndex !== -1 && sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+
+  return {
+    laneId: targetLaneId,
+    parentTaskId: targetParentTaskId,
+    position: Math.max(0, Math.min(normalizedTargetIndex, nextSiblingTasks.length))
+  };
+}
+
+function toResolvedTaskMoveTarget(
+  nextPreviewDropTarget: TaskMoveTarget,
+  location: TaskLocation
+): TaskMoveTarget {
+  return {
+    kind: nextPreviewDropTarget.kind,
+    laneId: location.laneId,
+    parentTaskId: location.parentTaskId,
+    position: location.position,
+    ...(nextPreviewDropTarget.taskId ? { taskId: nextPreviewDropTarget.taskId } : {})
   };
 }
 
@@ -1138,7 +1230,7 @@ function TaskCard({
 }: {
   activeTagKey: string | null;
   draggedTaskId: string | null;
-  draggedTaskSourceLocation: { laneId: string; parentTaskId: string | null; position: number } | null;
+  draggedTaskSourceLocation: TaskLocation | null;
   dropTarget: TaskMoveTarget | null;
   isDragDisabled: boolean;
   isNestTarget: boolean;
@@ -2504,6 +2596,9 @@ export function BoardPage() {
   const laneDragPreviewRef = useRef<HTMLElement | null>(null);
   const pendingMoveNavigationTicketIdRef = useRef<string | null>(null);
   const previewTasksRef = useRef<Task[] | null>(null);
+  const taskDragPreviewStateRef = useRef<TaskDragPreviewState | null>(null);
+  const draggedTaskSnapshotRef = useRef<Task | null>(null);
+  const draggedTaskSourceLocationRef = useRef<TaskLocation | null>(null);
   const taskDragPreviewUpdatedAtRef = useRef<string | null>(null);
 
   const isValidProjectTicketPrefix =
@@ -2554,11 +2649,16 @@ export function BoardPage() {
   const taskMap = useMemo(() => new Map(activeTasks.map((task) => [task.id, task])), [activeTasks]);
   const draggedTask =
     draggedTaskId
-      ? committedTaskMap.get(draggedTaskId) ?? taskMap.get(draggedTaskId) ?? null
+      ? committedTaskMap.get(draggedTaskId) ??
+        taskMap.get(draggedTaskId) ??
+        draggedTaskSnapshotRef.current ??
+        null
       : null;
   const draggedTaskSourceLocation =
     draggedTaskId !== null
-      ? findTaskLocation(tasks, draggedTaskId) ?? findTaskLocation(activeTasks, draggedTaskId)
+      ? findTaskLocation(tasks, draggedTaskId) ??
+        findTaskLocation(activeTasks, draggedTaskId) ??
+        draggedTaskSourceLocationRef.current
       : null;
   const pendingDeleteTask =
     pendingDeleteTaskId
@@ -3004,7 +3104,51 @@ export function BoardPage() {
     setPreviewTasks(null);
     setTaskDragPreviewWidth(null);
     previewTasksRef.current = null;
+    taskDragPreviewStateRef.current = null;
+    draggedTaskSnapshotRef.current = null;
+    draggedTaskSourceLocationRef.current = null;
     taskDragPreviewUpdatedAtRef.current = null;
+  }
+
+  function commitTaskDragPreview(
+    activeTaskId: string,
+    nextPreviewTasks: Task[],
+    nextDropTarget: TaskMoveTarget | null
+  ) {
+    const currentPreviewState = taskDragPreviewStateRef.current;
+    const safePreviewTasks = nextPreviewTasks.some((task) => task.id === activeTaskId)
+      ? nextPreviewTasks
+      : currentPreviewState?.tasks ?? previewTasksRef.current ?? nextPreviewTasks;
+    const nextLocation =
+      findTaskLocation(safePreviewTasks, activeTaskId) ??
+      currentPreviewState?.location ??
+      draggedTaskSourceLocationRef.current;
+    const resolvedDropTarget =
+      nextDropTarget && nextLocation ? toResolvedTaskMoveTarget(nextDropTarget, nextLocation) : nextDropTarget;
+    const nextSignature = getTaskMoveTargetSignature(resolvedDropTarget);
+
+    if (
+      currentPreviewState?.activeTaskId === activeTaskId &&
+      currentPreviewState.dropTargetSignature === nextSignature &&
+      areTaskLocationsEqual(currentPreviewState.location, nextLocation)
+    ) {
+      return;
+    }
+
+    previewTasksRef.current = safePreviewTasks;
+    taskDragPreviewStateRef.current = {
+      activeTaskId,
+      dropTargetSignature: nextSignature,
+      location: nextLocation,
+      tasks: safePreviewTasks
+    };
+    draggedTaskSnapshotRef.current =
+      safePreviewTasks.find((task) => task.id === activeTaskId) ?? draggedTaskSnapshotRef.current;
+
+    startTransition(() => {
+      setPreviewTasks(safePreviewTasks);
+      setDropTarget(resolvedDropTarget);
+    });
   }
 
   function handleLaneDragStart(event: DragEvent<HTMLElement>, laneId: string) {
@@ -3096,6 +3240,31 @@ export function BoardPage() {
     const activeTaskId = String(event.active.id);
     const sourceTasks = tasks.some((task) => task.id === activeTaskId) ? tasks : activeTasks;
     const source = findTaskLocation(tasks, activeTaskId) ?? findTaskLocation(activeTasks, activeTaskId);
+    const sourceDropTarget =
+      source
+        ? {
+            kind: "reorder" as const,
+            laneId: source.laneId,
+            parentTaskId: source.parentTaskId,
+            position: source.position
+          }
+        : null;
+    const draggedTaskSnapshot =
+      sourceTasks.find((task) => task.id === activeTaskId) ??
+      tasks.find((task) => task.id === activeTaskId) ??
+      activeTasks.find((task) => task.id === activeTaskId) ??
+      null;
+
+    previewTasksRef.current = sourceTasks;
+    taskDragPreviewStateRef.current = {
+      activeTaskId,
+      dropTargetSignature: getTaskMoveTargetSignature(sourceDropTarget),
+      location: source,
+      tasks: sourceTasks
+    };
+    draggedTaskSnapshotRef.current = draggedTaskSnapshot;
+    draggedTaskSourceLocationRef.current = source;
+    taskDragPreviewUpdatedAtRef.current = getTaskPreviewUpdatedAt(sourceTasks);
 
     flushSync(() => {
       setPendingDeleteTaskId(null);
@@ -3103,19 +3272,8 @@ export function BoardPage() {
       setDraggedTaskId(activeTaskId);
       setTaskDragPreviewWidth(event.active.rect.current.initial?.width ?? null);
       setPreviewTasks(sourceTasks);
-      setDropTarget(
-        source
-          ? {
-              kind: "reorder",
-              laneId: source.laneId,
-              parentTaskId: source.parentTaskId,
-              position: source.position
-            }
-          : null
-      );
+      setDropTarget(sourceDropTarget);
     });
-    previewTasksRef.current = sourceTasks;
-    taskDragPreviewUpdatedAtRef.current = getTaskPreviewUpdatedAt(sourceTasks);
   }
 
   function handleTaskDragOver(event: DragOverEvent) {
@@ -3124,13 +3282,14 @@ export function BoardPage() {
     }
 
     const activeTaskId = String(event.active.id);
-    const currentPreviewTasks = previewTasks ?? tasks;
+    const currentPreviewTasks = previewTasksRef.current ?? previewTasks ?? tasks;
     const currentTopLevelTaskIdsByLane = buildTopLevelTaskIdsByLane(lanes, currentPreviewTasks);
     const currentSubtaskIdsByParent = buildSubtaskIdsByParent(currentPreviewTasks, lanesById);
     const activeTask = currentPreviewTasks.find((task) => task.id === activeTaskId);
     const sourceTask =
       tasks.find((task) => task.id === activeTaskId) ??
-      currentPreviewTasks.find((task) => task.id === activeTaskId) ??
+      activeTask ??
+      draggedTaskSnapshotRef.current ??
       null;
     const sourceParentTaskId = sourceTask?.parentTaskId ?? null;
     const overData = event.over.data.current;
@@ -3140,25 +3299,51 @@ export function BoardPage() {
 
     function resetPreviewToSource() {
       const source =
-        findTaskLocation(tasks, activeTaskId) ?? findTaskLocation(currentPreviewTasks, activeTaskId);
+        draggedTaskSourceLocationRef.current ??
+        findTaskLocation(tasks, activeTaskId) ??
+        findTaskLocation(currentPreviewTasks, activeTaskId);
       const sourceTasks = tasks.some((task) => task.id === activeTaskId) ? tasks : currentPreviewTasks;
-      previewTasksRef.current = sourceTasks;
-      flushSync(() => {
-        setPreviewTasks(sourceTasks);
-        setDropTarget(
-          source
-            ? {
-                kind: "reorder",
-                laneId: source.laneId,
-                parentTaskId: source.parentTaskId,
-                position: source.position
-              }
-            : null
-        );
-      });
+      commitTaskDragPreview(
+        activeTaskId,
+        sourceTasks,
+        source
+          ? {
+              kind: "reorder",
+              laneId: source.laneId,
+              parentTaskId: source.parentTaskId,
+              position: source.position
+            }
+          : null
+      );
     }
 
     function applyPreviewDropTarget(nextPreviewDropTarget: TaskMoveTarget) {
+      const currentPreviewLocation =
+        findTaskLocation(currentPreviewTasks, activeTaskId) ??
+        taskDragPreviewStateRef.current?.location ??
+        null;
+      const resolvedNextLocation = resolveTaskMoveLocation(
+        currentPreviewTasks,
+        activeTaskId,
+        nextPreviewDropTarget.laneId,
+        nextPreviewDropTarget.parentTaskId,
+        nextPreviewDropTarget.position,
+        lanesById
+      );
+      const resolvedDropTarget =
+        resolvedNextLocation ? toResolvedTaskMoveTarget(nextPreviewDropTarget, resolvedNextLocation) : null;
+
+      if (
+        resolvedDropTarget &&
+        taskDragPreviewStateRef.current?.activeTaskId === activeTaskId &&
+        taskDragPreviewStateRef.current.dropTargetSignature ===
+          getTaskMoveTargetSignature(resolvedDropTarget) &&
+        areTaskLocationsEqual(taskDragPreviewStateRef.current.location, resolvedNextLocation) &&
+        areTaskLocationsEqual(currentPreviewLocation, resolvedNextLocation)
+      ) {
+        return;
+      }
+
       const nextPreviewTasks = applyTaskMove(
         currentPreviewTasks,
         activeTaskId,
@@ -3168,22 +3353,7 @@ export function BoardPage() {
         lanesById,
         taskDragPreviewUpdatedAtRef.current
       );
-      const nextLocation = findTaskLocation(nextPreviewTasks, activeTaskId);
-      if (!nextLocation) {
-        return;
-      }
-
-      previewTasksRef.current = nextPreviewTasks;
-      flushSync(() => {
-        setPreviewTasks(nextPreviewTasks);
-        setDropTarget({
-          kind: nextPreviewDropTarget.kind,
-          laneId: nextLocation.laneId,
-          parentTaskId: nextLocation.parentTaskId,
-          position: nextLocation.position,
-          ...(nextPreviewDropTarget.taskId ? { taskId: nextPreviewDropTarget.taskId } : {})
-        });
-      });
+      commitTaskDragPreview(activeTaskId, nextPreviewTasks, resolvedDropTarget ?? nextPreviewDropTarget);
     }
 
     if (overData.type === "trash") {
