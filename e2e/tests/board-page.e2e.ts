@@ -191,15 +191,22 @@ async function hoverDraggedTaskToNestTarget(
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await hoverDraggedTaskOver(page, nestTarget, targetYRatio);
 
-    if (settleTarget && (await settleTarget.count()) > 0) {
-      await hoverDraggedTaskDirectlyToTarget(page, settleTarget);
+    const cardClass = await card.getAttribute("class");
+    if (cardClass?.includes("is-nest-target")) {
+      if (settleTarget && (await settleTarget.count()) > 0) {
+        await hoverDraggedTaskDirectlyToTarget(page, settleTarget);
+      } else {
+        await hoverDraggedTaskDirectlyToTarget(page, nestTarget, targetYRatio);
+      }
       return;
     }
 
-    const cardClass = await card.getAttribute("class");
-    if (cardClass?.includes("is-nest-target")) {
-      await hoverDraggedTaskDirectlyToTarget(page, nestTarget, targetYRatio);
-      return;
+    if (settleTarget && (await settleTarget.count()) > 0) {
+      await hoverDraggedTaskDirectlyToTarget(page, settleTarget);
+      const settledCardClass = await card.getAttribute("class");
+      if (settledCardClass?.includes("is-nest-target")) {
+        return;
+      }
     }
   }
 
@@ -1065,6 +1072,35 @@ test("board page previews same-lane reordering with an overlay that follows the 
     "[BILL-4] Queue copy pass",
     "[BILL-1] Review retry settings",
     "[BILL-7] Nested retry note"
+  ]);
+});
+
+test("board page prefers reorder when hovering the body of a nestable card", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    tasks
+  });
+
+  await page.goto(billingBoardPath);
+
+  const todoColumn = page.getByTestId(`board-column-${laneId("project-1", "todo")}`);
+  const retryCard = page.getByTestId("task-card-task-1");
+  const copyCard = page.getByTestId("task-card-task-4");
+  const copySubtaskSlot = page.getByTestId("task-drop-slot-task-4-0");
+
+  await beginTaskDrag(page, taskCardSurface(retryCard));
+  await hoverDraggedTaskOver(page, taskCardSurface(copyCard), 0.2);
+
+  await expect(copyCard).toHaveClass(/task-card--drop-after/);
+  await expect(copyCard).toHaveClass(/task-card--shift-up/);
+  await expect(copyCard).not.toHaveClass(/is-nest-target/);
+  await expect(copySubtaskSlot).toHaveCount(0);
+
+  await finishTaskDrag(page);
+
+  await expect(todoColumn.locator(".task-card__title")).toHaveText([
+    "[BILL-4] Queue copy pass",
+    "[BILL-1] Review retry settings"
   ]);
 });
 

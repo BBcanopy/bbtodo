@@ -674,6 +674,14 @@ export function resolveTaskDragPreview(args: {
         laneId: targetLaneId,
         parentTaskId: targetParentTaskId,
         position: targetPosition
+      },
+      {
+        nestParentTaskId:
+          targetParentTaskId !== null &&
+          activeTask.parentTaskId !== targetParentTaskId &&
+          canTaskNestUnderParent(args.tasks, activeTask, targetParentTaskId)
+            ? targetParentTaskId
+            : null
       }
     );
   }

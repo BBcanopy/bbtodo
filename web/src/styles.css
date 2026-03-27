@@ -2182,8 +2182,12 @@ textarea:focus {
 
 .task-card__nest-target {
   position: absolute;
-  inset: -0.2rem;
+  top: 0.45rem;
+  right: 0.45rem;
+  bottom: 0.45rem;
+  left: 60%;
   border: 1px dashed transparent;
+  border-radius: 0.95rem;
   background: transparent;
   transition:
     border-color 180ms var(--ease),

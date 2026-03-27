@@ -161,6 +161,32 @@ describe("boardTaskDrag", () => {
     expect(preview?.taskDropPosition).toBe("before");
   });
 
+  it("keeps the parent nest preview active when hovering a new parent's subtask slot", () => {
+    const tasks = [
+      makeTask({ id: "task-1", laneId: "lane-todo", position: 0, ticketId: "BILL-1", title: "Dragged" }),
+      makeTask({ id: "task-2", laneId: "lane-todo", position: 1, ticketId: "BILL-2", title: "Parent" })
+    ];
+
+    const preview = resolveTaskDragPreview({
+      ...buildPreviewArgs(tasks),
+      activeTaskId: "task-1",
+      overData: {
+        laneId: "lane-todo",
+        parentTaskId: "task-2",
+        position: 0,
+        type: "slot"
+      }
+    });
+
+    expect(preview?.kind).toBe("nest");
+    expect(preview?.nestParentTaskId).toBe("task-2");
+    expect(preview?.moveTarget).toEqual({
+      laneId: "lane-todo",
+      parentTaskId: "task-2",
+      position: 0
+    });
+  });
+
   it("previews the allowed top insertion when entering Done from another lane", () => {
     const tasks = [
       makeTask({ id: "task-1", laneId: "lane-todo", position: 0, ticketId: "BILL-1", title: "Todo" }),
