@@ -1485,7 +1485,7 @@ textarea:focus {
 .project-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(19rem, 19rem));
-  grid-auto-rows: 15.75rem;
+  grid-auto-rows: minmax(15.75rem, auto);
   gap: 1rem;
   justify-content: start;
   align-content: start;
@@ -1496,8 +1496,8 @@ textarea:focus {
   gap: 1rem;
   width: 100%;
   max-width: none;
-  min-height: 0;
-  height: 100%;
+  min-height: 15.75rem;
+  height: auto;
   padding: 1.2rem;
   background: var(--surface-strong);
   box-shadow:

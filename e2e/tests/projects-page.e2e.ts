@@ -170,6 +170,60 @@ test("project cards open on click and delete through a confirmation popover", as
   await expect(page.getByRole("heading", { name: "No boards yet." })).toBeVisible();
 });
 
+test("projects page grows a board card when the title wraps across many lines", async ({ page }) => {
+  const projectsWithLongTitle = structuredClone(projectsForGrid);
+  const longTitleProject = projectsWithLongTitle.find((project) => project.id === "project-2");
+
+  if (!longTitleProject) {
+    throw new Error("Expected project-2 test fixture to exist");
+  }
+
+  longTitleProject.name = "bbnote-table-insert-picker-review-and-validation-pass";
+
+  await mockAuthenticated(page, { projects: projectsWithLongTitle });
+
+  await page.goto("/");
+
+  const longTitleProjectCard = page.getByTestId("project-card-project-2");
+
+  await expect(
+    longTitleProjectCard.getByRole("heading", { name: "bbnote-table-insert-picker-review-and-validation-pass" })
+  ).toBeVisible();
+
+  for (const laneLabel of ["Todo 0", "In Progress 0", "In review 0", "Done 0"]) {
+    await expect(longTitleProjectCard.getByLabel(laneLabel)).toBeVisible();
+  }
+
+  const longTitleLayout = await longTitleProjectCard.evaluate((element) => {
+    const lanePills = Array.from(element.querySelectorAll<HTMLElement>(".project-card__lane-pill"));
+
+    if (lanePills.length === 0) {
+      throw new Error("Expected lane pills to exist");
+    }
+
+    const lastLanePill = lanePills.at(-1);
+
+    if (!lastLanePill) {
+      throw new Error("Expected a final lane pill to exist");
+    }
+
+    const cardRect = element.getBoundingClientRect();
+    const lastLanePillRect = lastLanePill.getBoundingClientRect();
+
+    return {
+      bottomInset: Math.round((cardRect.bottom - lastLanePillRect.bottom) * 100) / 100,
+      clientHeight: element.clientHeight,
+      height: Math.round(cardRect.height),
+      minHeight: Math.round(Number.parseFloat(getComputedStyle(element).minHeight)),
+      scrollHeight: element.scrollHeight
+    };
+  });
+
+  expect(longTitleLayout.height).toBeGreaterThan(longTitleLayout.minHeight);
+  expect(longTitleLayout.scrollHeight).toBeLessThanOrEqual(longTitleLayout.clientHeight + 1);
+  expect(longTitleLayout.bottomInset).toBeGreaterThanOrEqual(0);
+});
+
 test("projects search opens an exact ticket id", async ({ page }) => {
   await mockAuthenticated(page, {
     projects: projectsForGrid,
