@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -13,6 +13,31 @@ type PageToast = {
   tone: "danger" | "success";
 };
 
+const projectCardBaseRowSpan = 12;
+
+function getProjectCardRowSpan(element: HTMLElement) {
+  const gridElement = element.closest(".project-grid");
+
+  if (!(gridElement instanceof HTMLElement)) {
+    return projectCardBaseRowSpan;
+  }
+
+  const styles = getComputedStyle(gridElement);
+  const rowHeight = Number.parseFloat(styles.gridAutoRows);
+  const rowGap = Number.parseFloat(styles.rowGap);
+
+  if (!Number.isFinite(rowHeight) || rowHeight <= 0) {
+    return projectCardBaseRowSpan;
+  }
+
+  const normalizedRowGap = Number.isFinite(rowGap) ? rowGap : 0;
+
+  return Math.max(
+    Math.ceil((element.getBoundingClientRect().height + normalizedRowGap) / (rowHeight + normalizedRowGap)),
+    projectCardBaseRowSpan
+  );
+}
+
 function ProjectCard({
   index,
   onDelete,
@@ -25,9 +50,54 @@ function ProjectCard({
   project: Project;
 }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [rowSpan, setRowSpan] = useState(projectCardBaseRowSpan);
+  const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
   const confirmRef = useRef<HTMLDivElement | null>(null);
+  const laneSummaryKey = project.laneSummaries.map((lane) => `${lane.id}:${lane.taskCount}`).join("|");
 
   useDismissableLayer(isConfirmOpen, confirmRef, () => setIsConfirmOpen(false));
+
+  useLayoutEffect(() => {
+    const element = cardSurfaceRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    let frameId = 0;
+
+    const updateRowSpan = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        const nextRowSpan = getProjectCardRowSpan(element);
+        setRowSpan((currentRowSpan) => (currentRowSpan === nextRowSpan ? currentRowSpan : nextRowSpan));
+      });
+    };
+
+    updateRowSpan();
+
+    if (typeof ResizeObserver === "undefined") {
+      return () => {
+        window.cancelAnimationFrame(frameId);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateRowSpan();
+    });
+
+    resizeObserver.observe(element);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+    };
+  }, [laneSummaryKey, project.name]);
+
+  const cardStyle = {
+    ...itemStyle(index),
+    "--project-card-row-span": rowSpan
+  } as CSSProperties;
 
   return (
     <article
@@ -41,68 +111,70 @@ function ProjectCard({
         }
       }}
       role="link"
-      style={itemStyle(index)}
+      style={cardStyle}
       tabIndex={0}
     >
-      <div className="project-card__meta">
-        <div className="project-card__delete-menu" ref={confirmRef}>
-          <button
-            aria-expanded={isConfirmOpen}
-            aria-label={`Delete board ${project.name}`}
-            className="icon-button danger-button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsConfirmOpen((current) => !current);
-            }}
-            type="button"
-          >
-            <TrashIcon />
-          </button>
-          {isConfirmOpen ? (
-            <div className="task-delete-popover" onClick={(event) => event.stopPropagation()} role="alertdialog">
-              <p>Delete this board?</p>
-              <div className="task-delete-popover__actions">
-                <button
-                  className="text-button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsConfirmOpen(false);
-                  }}
-                  type="button"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="ghost-button danger-button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsConfirmOpen(false);
-                    onDelete(project.id);
-                  }}
-                  type="button"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <div className="project-card__body">
-        <div className="project-card__headline">
-          <h2>{project.name}</h2>
-        </div>
-        <div aria-label={`Lane counts for ${project.name}`} className="project-card__lane-counts">
-          {project.laneSummaries.map((lane) => (
-            <div
-              aria-label={`${lane.name} ${lane.taskCount}`}
-              className="project-card__lane-pill"
-              key={lane.id}
+      <div className="project-card__surface" ref={cardSurfaceRef}>
+        <div className="project-card__meta">
+          <div className="project-card__delete-menu" ref={confirmRef}>
+            <button
+              aria-expanded={isConfirmOpen}
+              aria-label={`Delete board ${project.name}`}
+              className="icon-button danger-button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsConfirmOpen((current) => !current);
+              }}
+              type="button"
             >
-              <span>{lane.name}</span>
-              <strong>{lane.taskCount}</strong>
-            </div>
-          ))}
+              <TrashIcon />
+            </button>
+            {isConfirmOpen ? (
+              <div className="task-delete-popover" onClick={(event) => event.stopPropagation()} role="alertdialog">
+                <p>Delete this board?</p>
+                <div className="task-delete-popover__actions">
+                  <button
+                    className="text-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsConfirmOpen(false);
+                    }}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="ghost-button danger-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsConfirmOpen(false);
+                      onDelete(project.id);
+                    }}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="project-card__body">
+          <div className="project-card__headline">
+            <h2>{project.name}</h2>
+          </div>
+          <div aria-label={`Lane counts for ${project.name}`} className="project-card__lane-counts">
+            {project.laneSummaries.map((lane) => (
+              <div
+                aria-label={`${lane.name} ${lane.taskCount}`}
+                className="project-card__lane-pill"
+                key={lane.id}
+              >
+                <span>{lane.name}</span>
+                <strong>{lane.taskCount}</strong>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </article>

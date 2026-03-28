@@ -1280,6 +1280,9 @@ textarea:focus {
 .project-card:focus-visible {
   outline: none;
   transform: translateY(-1px);
+}
+
+.project-card:focus-visible .project-card__surface {
   box-shadow:
     inset 0 1px 0 var(--surface-highlight-strong),
     0 0 0 3px rgba(47, 119, 116, 0.14),
@@ -1483,21 +1486,38 @@ textarea:focus {
 }
 
 .project-grid {
+  --project-card-column-width: 19rem;
+  --project-card-gap: 1rem;
+  --project-card-row-height: 0.5rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(19rem, 19rem));
-  grid-auto-rows: 15.75rem;
-  gap: 1rem;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(var(--project-card-column-width), var(--project-card-column-width))
+  );
+  grid-auto-flow: dense;
+  grid-auto-rows: var(--project-card-row-height);
+  gap: var(--project-card-gap);
   justify-content: start;
   align-content: start;
 }
 
 .project-card {
-  display: grid;
-  gap: 1rem;
   width: 100%;
   max-width: none;
-  min-height: 0;
-  height: 100%;
+  align-self: start;
+  grid-row: span var(--project-card-row-span, 12);
+  cursor: pointer;
+  animation: rise-in 620ms var(--ease) both;
+  animation-delay: calc(var(--item-index) * 90ms);
+  transition:
+    transform 220ms var(--ease),
+    box-shadow 220ms var(--ease);
+}
+
+.project-card__surface {
+  display: grid;
+  gap: 1rem;
+  min-height: 15.75rem;
   padding: 1.2rem;
   background: var(--surface-strong);
   box-shadow:
@@ -1505,13 +1525,6 @@ textarea:focus {
     var(--shadow-soft);
   overflow: hidden;
   position: relative;
-  justify-self: start;
-  cursor: pointer;
-  animation: rise-in 620ms var(--ease) both;
-  animation-delay: calc(var(--item-index) * 90ms);
-  transition:
-    transform 220ms var(--ease),
-    box-shadow 220ms var(--ease);
 }
 
 .project-card__body {
@@ -3666,11 +3679,17 @@ textarea:focus {
 
   .project-grid {
     grid-template-columns: 1fr;
+    grid-auto-flow: row;
     grid-auto-rows: auto;
   }
 
   .project-card {
-    height: auto;
+    grid-row: auto;
+    width: 100%;
+    max-width: none;
+  }
+
+  .project-card__surface {
     min-height: 14.5rem;
   }
 

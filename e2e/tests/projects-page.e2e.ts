@@ -170,6 +170,106 @@ test("project cards open on click and delete through a confirmation popover", as
   await expect(page.getByRole("heading", { name: "No boards yet." })).toBeVisible();
 });
 
+test("projects page packs later cards beneath shorter neighbors when a title wraps", async ({ page }) => {
+  const projectsWithLongTitle = structuredClone(projectsForGrid);
+  const longTitleProject = projectsWithLongTitle.find((project) => project.id === "project-1");
+  const regularProject = projectsWithLongTitle.find((project) => project.id === "project-2");
+  const packedProject = projectsWithLongTitle.find((project) => project.id === "project-5");
+
+  if (!longTitleProject) {
+    throw new Error("Expected project-1 test fixture to exist");
+  }
+
+  if (!regularProject) {
+    throw new Error("Expected project-2 test fixture to exist");
+  }
+
+  if (!packedProject) {
+    throw new Error("Expected project-5 test fixture to exist");
+  }
+
+  longTitleProject.name = "bbnote-table-insert-picker-review-and-validation-pass";
+
+  await mockAuthenticated(page, { projects: projectsWithLongTitle });
+
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await page.goto("/");
+
+  const longTitleProjectCard = page.getByTestId("project-card-project-1");
+  const regularProjectCard = page.getByTestId("project-card-project-2");
+  const packedProjectCard = page.getByTestId("project-card-project-5");
+
+  await expect(
+    longTitleProjectCard.getByRole("heading", {
+      name: "bbnote-table-insert-picker-review-and-validation-pass"
+    })
+  ).toBeVisible();
+
+  for (const laneLabel of ["Todo 2", "In Progress 1", "In review 0", "Done 1"]) {
+    await expect(longTitleProjectCard.getByLabel(laneLabel)).toBeVisible();
+  }
+
+  const regularProjectLayout = await regularProjectCard.evaluate((element) => {
+    const cardSurface = element.querySelector<HTMLElement>(".project-card__surface");
+
+    if (!cardSurface) {
+      throw new Error("Expected the project card surface to exist");
+    }
+
+    return {
+      height: Math.round(cardSurface.getBoundingClientRect().height),
+      minHeight: Math.round(Number.parseFloat(getComputedStyle(cardSurface).minHeight))
+    };
+  });
+  const longTitleLayout = await longTitleProjectCard.evaluate((element) => {
+    const cardSurface = element.querySelector<HTMLElement>(".project-card__surface");
+    const lanePills = Array.from(element.querySelectorAll<HTMLElement>(".project-card__lane-pill"));
+
+    if (!cardSurface) {
+      throw new Error("Expected the project card surface to exist");
+    }
+
+    if (lanePills.length === 0) {
+      throw new Error("Expected lane pills to exist");
+    }
+
+    const lastLanePill = lanePills.at(-1);
+
+    if (!lastLanePill) {
+      throw new Error("Expected a final lane pill to exist");
+    }
+
+    const cardRect = cardSurface.getBoundingClientRect();
+    const lastLanePillRect = lastLanePill.getBoundingClientRect();
+
+    return {
+      bottomInset: Math.round((cardRect.bottom - lastLanePillRect.bottom) * 100) / 100,
+      bottom: Math.round(cardRect.bottom),
+      clientHeight: cardSurface.clientHeight,
+      height: Math.round(cardRect.height),
+      left: Math.round(cardRect.left),
+      minHeight: Math.round(Number.parseFloat(getComputedStyle(cardSurface).minHeight)),
+      scrollHeight: cardSurface.scrollHeight
+    };
+  });
+  const packedProjectPosition = await packedProjectCard.evaluate((element) => {
+    const cardRect = element.getBoundingClientRect();
+
+    return {
+      left: Math.round(cardRect.left),
+      top: Math.round(cardRect.top)
+    };
+  });
+
+  expect(regularProjectLayout.height).toBe(regularProjectLayout.minHeight);
+  expect(longTitleLayout.height).toBeGreaterThan(longTitleLayout.minHeight);
+  expect(longTitleLayout.height).toBeGreaterThan(regularProjectLayout.height);
+  expect(longTitleLayout.scrollHeight).toBeLessThanOrEqual(longTitleLayout.clientHeight + 1);
+  expect(longTitleLayout.bottomInset).toBeGreaterThanOrEqual(0);
+  expect(packedProjectPosition.top).toBeLessThan(longTitleLayout.bottom);
+  expect(packedProjectPosition.left).toBeGreaterThan(longTitleLayout.left);
+});
+
 test("projects search opens an exact ticket id", async ({ page }) => {
   await mockAuthenticated(page, {
     projects: projectsForGrid,
