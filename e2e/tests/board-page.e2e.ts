@@ -2021,7 +2021,11 @@ test("board page switcher renames and creates projects while guarding protected 
   await switcherInput.fill("Program rollout");
   await page.getByRole("button", { name: "Create Project" }).click();
 
+  const createProjectToast = page.getByTestId("toast-notice");
   await expect(page).toHaveURL(/\/projects\/PROG$/);
+  await expect(createProjectToast).toBeVisible();
+  await expect(createProjectToast).toContainText("Board created");
+  await expect(createProjectToast).toContainText("Created board Program rollout.");
   await expect(page.locator(".subnav__current-value")).toHaveText("Program rollout");
   await expect(page.locator(".board-column__header h2")).toHaveText([
     "Todo",

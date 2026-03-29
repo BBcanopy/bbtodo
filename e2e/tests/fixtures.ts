@@ -388,6 +388,7 @@ export async function mockAuthenticated(
   page: Page,
   options?: {
     apiTokens?: ApiTokenSummary[];
+    deleteProjectDelayMs?: number;
     nextApiTokenId?: number;
     nextProjectId?: number;
     projects?: Project[];
@@ -402,6 +403,7 @@ export async function mockAuthenticated(
   let nextProjectId = options?.nextProjectId ?? 2;
   let nextLaneId = 1;
   let nextTaskId = 5;
+  const deleteProjectDelayMs = options?.deleteProjectDelayMs ?? 0;
   const taskPatchDelayMs = options?.taskPatchDelayMs ?? 0;
   const taskPatchFailuresById = new Map(
     Object.entries(options?.taskPatchFailuresById ?? {}).map(([taskId, remaining]) => [
@@ -1135,6 +1137,9 @@ export async function mockAuthenticated(
         if (taskState[index].projectId === projectId) {
           taskState.splice(index, 1);
         }
+      }
+      if (deleteProjectDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, deleteProjectDelayMs));
       }
       await fulfillJson(route, 204, null);
       return;

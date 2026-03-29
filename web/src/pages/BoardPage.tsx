@@ -18,7 +18,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CSS } from "@dnd-kit/utilities";
 
 import {
@@ -2047,10 +2047,12 @@ function TaskEditorDialog({
 }
 
 export function BoardPage() {
+  const location = useLocation();
   const { projectTicketPrefix, ticketId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const locationToast = ((location.state as { toast?: BoardToast } | null) ?? null)?.toast ?? null;
   const [composerLaneId, setComposerLaneId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draggedLaneId, setDraggedLaneId] = useState<string | null>(null);
@@ -2065,7 +2067,7 @@ export function BoardPage() {
   const [pendingDeleteTaskId, setPendingDeleteTaskId] = useState<string | null>(null);
   const [pendingDeleteTaskLaneId, setPendingDeleteTaskLaneId] = useState<string | null>(null);
   const [taskDragPreviewWidth, setTaskDragPreviewWidth] = useState<number | null>(null);
-  const [toast, setToast] = useState<BoardToast | null>(null);
+  const [toast, setToast] = useState<BoardToast | null>(locationToast);
   const laneDragPreviewRef = useRef<HTMLElement | null>(null);
   const pendingMoveNavigationTicketIdRef = useRef<string | null>(null);
   const pointerClientYRef = useRef<number | null>(null);
@@ -2839,6 +2841,21 @@ export function BoardPage() {
       laneDragPreviewRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!locationToast) {
+      return;
+    }
+
+    setToast(locationToast);
+    navigate(
+      {
+        pathname: location.pathname,
+        search: location.search
+      },
+      { replace: true, state: null }
+    );
+  }, [location.pathname, location.search, locationToast, navigate]);
 
   useEffect(() => {
     if (!toast) {

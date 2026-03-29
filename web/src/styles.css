@@ -1514,6 +1514,10 @@ textarea:focus {
     box-shadow 220ms var(--ease);
 }
 
+.project-card--composer {
+  cursor: default;
+}
+
 .project-card__surface {
   display: grid;
   gap: 1rem;
@@ -1525,6 +1529,35 @@ textarea:focus {
     var(--shadow-soft);
   overflow: hidden;
   position: relative;
+}
+
+.project-card-composer {
+  display: grid;
+  gap: 1rem;
+  min-height: 100%;
+}
+
+.project-card-composer__copy {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.project-card-composer__eyebrow {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-card-composer__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: auto;
 }
 
 .project-card__body {
@@ -2353,6 +2386,10 @@ textarea:focus {
 
 .project-card.is-confirm-open {
   z-index: 4;
+}
+
+.project-card--composer:hover {
+  transform: none;
 }
 
 .project-card__delete-menu {
