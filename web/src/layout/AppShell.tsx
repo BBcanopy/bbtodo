@@ -21,6 +21,7 @@ import {
 import { api, type TaskTag, type User } from "../api";
 import { getTaskTagStyle } from "../app/tag-colors";
 import { themeOptions } from "../app/constants";
+import { useCreateProjectMutation } from "../hooks/useCreateProjectMutation";
 import {
   formatSingleTagInput,
   getAvatarLetter,
@@ -57,12 +58,10 @@ export function AppShell({ user }: { user: User }) {
     queryFn: () => api.listTaskTags(),
     enabled: Boolean(boardMatch)
   });
-  const createProjectMutation = useMutation({
-    mutationFn: (name: string) => api.createProject(name),
+  const createProjectMutation = useCreateProjectMutation({
     onSuccess: async (project) => {
       setIsProjectSwitcherOpen(false);
       setProjectSwitcherInput("");
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
       startTransition(() => {
         navigate(`/projects/${project.ticketPrefix}`);
       });

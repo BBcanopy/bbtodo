@@ -1,6 +1,49 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { mockAuthenticated, projectsForGrid, tasks } from "./fixtures";
+
+async function findProjectGridBlankPoint(page: Page) {
+  const projectGrid = page.locator(".project-grid");
+  await expect(projectGrid).toBeVisible();
+
+  const point = await projectGrid.evaluate((gridElement) => {
+    const gridRect = gridElement.getBoundingClientRect();
+    const cardRects = Array.from(gridElement.querySelectorAll<HTMLElement>(".project-card")).map((card) =>
+      card.getBoundingClientRect()
+    );
+    const candidates = [
+      { x: gridRect.right - 10, y: gridRect.top + 18 },
+      { x: gridRect.right - 10, y: gridRect.top + gridRect.height / 2 },
+      { x: gridRect.left + gridRect.width / 2, y: gridRect.bottom - 10 },
+      { x: gridRect.left + 8, y: gridRect.bottom - 10 }
+    ];
+    const blankCandidate = candidates.find(
+      (candidate) =>
+        candidate.x > gridRect.left &&
+        candidate.x < gridRect.right &&
+        candidate.y > gridRect.top &&
+        candidate.y < gridRect.bottom &&
+        !cardRects.some(
+          (cardRect) =>
+            candidate.x >= cardRect.left &&
+            candidate.x <= cardRect.right &&
+            candidate.y >= cardRect.top &&
+            candidate.y <= cardRect.bottom
+        )
+    );
+
+    if (!blankCandidate) {
+      throw new Error("Could not find a blank point inside the project grid.");
+    }
+
+    return {
+      x: blankCandidate.x - gridRect.left,
+      y: blankCandidate.y - gridRect.top
+    };
+  });
+
+  return { projectGrid, point };
+}
 
 test("projects page lists boards, filters project cards, and opens them from the switcher", async ({ page }) => {
   const projectsWithQaLane = structuredClone(projectsForGrid);
@@ -168,6 +211,79 @@ test("project cards open on click and delete through a confirmation popover", as
   await page.getByRole("button", { exact: true, name: "Delete" }).click();
   await expect(projectCard).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "No boards yet." })).toBeVisible();
+});
+
+test("projects page creates a board from grid double-click and keeps the user on the grid", async ({
+  page
+}) => {
+  await mockAuthenticated(page, { nextProjectId: 7, projects: projectsForGrid });
+
+  await page.goto("/");
+
+  const existingProjectCard = page.getByTestId("project-card-project-1");
+  const { point, projectGrid } = await findProjectGridBlankPoint(page);
+
+  await projectGrid.dblclick({ position: point });
+
+  const composer = page.getByTestId("project-card-composer");
+  await expect(composer).toBeVisible();
+  await expect(page).toHaveURL("/");
+
+  await composer.getByLabel("New board name").fill("Quality checks");
+  await composer.getByRole("button", { name: "Create board" }).click();
+
+  await expect(page).toHaveURL("/");
+  await expect(composer).toHaveCount(0);
+  await expect(page.getByTestId("project-card-project-7")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-7")).toContainText("Quality checks");
+  await expect(page.locator(".project-card").first()).toHaveAttribute("data-testid", "project-card-project-7");
+
+  await existingProjectCard.click();
+  await expect(page).toHaveURL(/\/projects\/BILL$/);
+});
+
+test("projects page clears search after inline board creation so the new card stays visible", async ({
+  page
+}) => {
+  await mockAuthenticated(page, { nextProjectId: 7, projects: projectsForGrid });
+
+  await page.goto("/");
+
+  const projectSearch = page.getByLabel("Search boards");
+  await projectSearch.fill("bill");
+  await expect(page).toHaveURL(/\/\?q=bill$/);
+  await expect(page.getByTestId("project-card-project-1")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-2")).toHaveCount(0);
+
+  const { point, projectGrid } = await findProjectGridBlankPoint(page);
+  await projectGrid.dblclick({ position: point });
+
+  const composer = page.getByTestId("project-card-composer");
+  await composer.getByLabel("New board name").fill("Quality checks");
+  await composer.getByRole("button", { name: "Create board" }).click();
+
+  await expect(page).toHaveURL("/");
+  await expect(page.getByLabel("Search boards")).toHaveValue("");
+  await expect(page.getByTestId("project-card-project-7")).toBeVisible();
+  await expect(page.getByTestId("project-card-project-7")).toContainText("Quality checks");
+});
+
+test("projects page lets the inline board composer cancel without creating a board", async ({ page }) => {
+  await mockAuthenticated(page, { projects: projectsForGrid });
+
+  await page.goto("/");
+
+  const { point, projectGrid } = await findProjectGridBlankPoint(page);
+  await projectGrid.dblclick({ position: point });
+
+  const composer = page.getByTestId("project-card-composer");
+  await expect(composer).toBeVisible();
+
+  await composer.getByLabel("New board name").fill("Cancel me");
+  await composer.getByLabel("New board name").press("Escape");
+
+  await expect(composer).toHaveCount(0);
+  await expect(page.getByText("Cancel me")).toHaveCount(0);
 });
 
 test("projects page packs later cards beneath shorter neighbors when a title wraps", async ({ page }) => {

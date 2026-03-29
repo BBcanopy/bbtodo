@@ -1,4 +1,13 @@
-import { type CSSProperties, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -6,6 +15,7 @@ import { api, type Project } from "../api";
 import { itemStyle, parseExactTicketId } from "../app/utils";
 import { EmptyState, ErrorBanner, ProjectGridSkeleton, ToastNotice, TrashIcon } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
+import { prependProjectToList, useCreateProjectMutation } from "../hooks/useCreateProjectMutation";
 
 type PageToast = {
   message: string;
@@ -38,27 +48,11 @@ function getProjectCardRowSpan(element: HTMLElement) {
   );
 }
 
-function ProjectCard({
-  index,
-  onDelete,
-  onOpen,
-  project
-}: {
-  index: number;
-  onDelete: (projectId: string) => void;
-  onOpen: (projectTicketPrefix: string) => void;
-  project: Project;
-}) {
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+function useProjectCardRowSpan(elementRef: RefObject<HTMLElement | null>, contentKey: string) {
   const [rowSpan, setRowSpan] = useState(projectCardBaseRowSpan);
-  const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
-  const confirmRef = useRef<HTMLDivElement | null>(null);
-  const laneSummaryKey = project.laneSummaries.map((lane) => `${lane.id}:${lane.taskCount}`).join("|");
-
-  useDismissableLayer(isConfirmOpen, confirmRef, () => setIsConfirmOpen(false));
 
   useLayoutEffect(() => {
-    const element = cardSurfaceRef.current;
+    const element = elementRef.current;
 
     if (!element) {
       return;
@@ -92,7 +86,29 @@ function ProjectCard({
       window.cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
     };
-  }, [laneSummaryKey, project.name]);
+  }, [contentKey, elementRef]);
+
+  return rowSpan;
+}
+
+function ProjectCard({
+  index,
+  onDelete,
+  onOpen,
+  project
+}: {
+  index: number;
+  onDelete: (projectId: string) => void;
+  onOpen: (projectTicketPrefix: string) => void;
+  project: Project;
+}) {
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const confirmRef = useRef<HTMLDivElement | null>(null);
+  const laneSummaryKey = project.laneSummaries.map((lane) => `${lane.id}:${lane.taskCount}`).join("|");
+  const rowSpan = useProjectCardRowSpan(cardSurfaceRef, `${project.name}|${laneSummaryKey}`);
+
+  useDismissableLayer(isConfirmOpen, confirmRef, () => setIsConfirmOpen(false));
 
   const cardStyle = {
     ...itemStyle(index),
@@ -181,13 +197,119 @@ function ProjectCard({
   );
 }
 
+function ProjectComposerCard({
+  draftName,
+  error,
+  index,
+  inputRef,
+  isPending,
+  onCancel,
+  onChange,
+  onSubmit
+}: {
+  draftName: string;
+  error: unknown;
+  index: number;
+  inputRef: RefObject<HTMLInputElement | null>;
+  isPending: boolean;
+  onCancel: () => void;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const errorKey =
+    typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+      ? error.message
+      : error
+        ? String(error)
+        : "ok";
+  const rowSpan = useProjectCardRowSpan(
+    cardSurfaceRef,
+    `${draftName}|${isPending ? "pending" : "idle"}|${errorKey}`
+  );
+  const cardStyle = {
+    ...itemStyle(index),
+    "--project-card-row-span": rowSpan
+  } as CSSProperties;
+
+  function stopCardPropagation(event: {
+    stopPropagation: () => void;
+  }) {
+    event.stopPropagation();
+  }
+
+  return (
+    <article
+      className="project-card project-card--composer"
+      data-testid="project-card-composer"
+      onClick={stopCardPropagation}
+      onDoubleClick={stopCardPropagation}
+      onPointerDown={stopCardPropagation}
+      style={cardStyle}
+    >
+      <div className="project-card__surface" ref={cardSurfaceRef}>
+        <form
+          className="project-card-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          <div className="project-card-composer__copy">
+            <p className="project-card-composer__eyebrow">New board</p>
+            <div className="project-card__headline">
+              <h2>Create a board in place</h2>
+            </div>
+            <p className="project-card-composer__description">
+              Add a board with Todo, In Progress, In review, and Done, then keep working from the
+              projects grid.
+            </p>
+          </div>
+          <label className="field">
+            <span className="field__label">Board name</span>
+            <input
+              aria-label="New board name"
+              autoFocus
+              disabled={isPending}
+              maxLength={120}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  onCancel();
+                }
+              }}
+              placeholder="Incident response"
+              ref={inputRef}
+              required
+              value={draftName}
+            />
+          </label>
+          {error ? <ErrorBanner error={error} /> : null}
+          <div className="project-card-composer__actions">
+            <button className="primary-button" disabled={isPending || draftName.trim().length === 0} type="submit">
+              {isPending ? "Creating board..." : "Create board"}
+            </button>
+            <button className="text-button" disabled={isPending} onClick={onCancel} type="button">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </article>
+  );
+}
+
 export function ProjectsPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const locationToast = ((location.state as { toast?: PageToast } | null) ?? null)?.toast ?? null;
   const [toast, setToast] = useState<PageToast | null>(locationToast);
+  const [composerDraftName, setComposerDraftName] = useState("");
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects()
@@ -218,6 +340,36 @@ export function ProjectsPage() {
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
     }
   });
+  const createProjectMutation = useCreateProjectMutation({
+    onSuccess: async (project, context) => {
+      context.queryClient.setQueryData<Project[]>(["projects"], (currentProjects) =>
+        prependProjectToList(currentProjects, project)
+      );
+      setComposerDraftName("");
+      setIsComposerOpen(false);
+      updateRouteParams((params) => {
+        params.delete("q");
+      });
+    }
+  });
+
+  function updateRouteParams(updater: (params: URLSearchParams) => void) {
+    const nextParams = new URLSearchParams(searchParams);
+    updater(nextParams);
+    setSearchParams(nextParams, { replace: true });
+  }
+
+  function openComposer() {
+    setComposerDraftName("");
+    setIsComposerOpen(true);
+    createProjectMutation.reset();
+  }
+
+  function closeComposer() {
+    setComposerDraftName("");
+    setIsComposerOpen(false);
+    createProjectMutation.reset();
+  }
 
   useEffect(() => {
     if (!locationToast) {
@@ -247,6 +399,14 @@ export function ProjectsPage() {
       window.clearTimeout(timeoutId);
     };
   }, [toast]);
+
+  useEffect(() => {
+    if (!isComposerOpen) {
+      return;
+    }
+
+    composerInputRef.current?.focus();
+  }, [isComposerOpen]);
 
   return (
     <main className="page-shell page-shell--projects">
@@ -281,7 +441,16 @@ export function ProjectsPage() {
       ) : null}
 
       {!projectsQuery.isPending && visibleProjects.length > 0 ? (
-        <section className="project-grid">
+        <section
+          className="project-grid"
+          onDoubleClick={(event) => {
+            if (event.target !== event.currentTarget) {
+              return;
+            }
+
+            openComposer();
+          }}
+        >
           {visibleProjects.map((project, index) => (
             <ProjectCard
               key={project.id}
@@ -291,6 +460,18 @@ export function ProjectsPage() {
               project={project}
             />
           ))}
+          {isComposerOpen ? (
+            <ProjectComposerCard
+              draftName={composerDraftName}
+              error={createProjectMutation.error}
+              index={visibleProjects.length}
+              inputRef={composerInputRef}
+              isPending={createProjectMutation.isPending}
+              onCancel={closeComposer}
+              onChange={setComposerDraftName}
+              onSubmit={() => createProjectMutation.mutate(composerDraftName.trim())}
+            />
+          ) : null}
         </section>
       ) : null}
     </main>
