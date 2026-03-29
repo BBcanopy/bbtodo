@@ -41,18 +41,27 @@ test("all todos page groups todo tasks and supports search and tag filtering", a
   });
 
   await page.goto("/");
-  await page.getByRole("link", { name: "All TODOs" }).click();
+  await page.getByRole("link", { exact: true, name: "TODO" }).click();
 
   await expect(page).toHaveURL("/todos");
   await expect(page).toHaveTitle("All TODOs | BBTodo");
   await expect(page.getByLabel("Search todos")).toBeVisible();
   await expect(page.getByLabel("Filter by tags")).toBeVisible();
+  await expect(page.getByText("Cross-project view")).toHaveCount(0);
+  await expect(page.getByText("Everything still sitting in Todo, grouped by board so you can review the queue before diving into a lane.")).toHaveCount(0);
+  await expect(page.locator(".metric-ribbon")).toHaveCount(0);
 
   const billingGroup = page.getByTestId("todo-project-group-project-1");
   const partnerGroup = page.getByTestId("todo-project-group-project-6");
 
   await expect(billingGroup.getByRole("heading", { name: "Billing cleanup" })).toBeVisible();
   await expect(partnerGroup.getByRole("heading", { name: "Partner audit" })).toBeVisible();
+
+  const [billingBox, partnerBox] = await Promise.all([billingGroup.boundingBox(), partnerGroup.boundingBox()]);
+  expect(billingBox).not.toBeNull();
+  expect(partnerBox).not.toBeNull();
+  expect(Math.abs((billingBox?.y ?? 0) - (partnerBox?.y ?? 0))).toBeLessThan(24);
+  expect(Math.abs((billingBox?.x ?? 0) - (partnerBox?.x ?? 0))).toBeGreaterThan(24);
 
   await expect(billingGroup.getByTestId("todo-task-card-task-1")).toBeVisible();
   await expect(billingGroup.getByTestId("todo-task-card-task-5")).toBeVisible();

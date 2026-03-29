@@ -200,8 +200,6 @@ export function TodosPage() {
   );
 
   const totalTodoCount = todoGroups.reduce((count, group) => count + group.tasks.length, 0);
-  const visibleTodoCount = visibleTodoGroups.reduce((count, group) => count + group.visibleTaskCount, 0);
-
   function navigateToTask(group: TodoProjectGroup, task: Task) {
     const nextParams = new URLSearchParams();
     nextParams.set("q", task.ticketId);
@@ -223,30 +221,11 @@ export function TodosPage() {
       <title>All TODOs | BBTodo</title>
       <section className="page-header">
         <div className="page-header__copy">
-          <p className="eyebrow">Cross-project view</p>
           <h1 className="page-title">All TODOs</h1>
-          <p className="page-summary">
-            Everything still sitting in Todo, grouped by board so you can review the queue before diving into a lane.
-          </p>
         </div>
         <div className="page-header__meta">
           <span className="label-chip">{totalTodoCount} todos</span>
         </div>
-      </section>
-
-      <section className="metric-ribbon">
-        <article className="metric-pill" style={itemStyle(0)}>
-          <span>Boards with TODOs</span>
-          <strong>{todoGroups.length}</strong>
-        </article>
-        <article className="metric-pill" style={itemStyle(1)}>
-          <span>Visible TODOs</span>
-          <strong>{visibleTodoCount}</strong>
-        </article>
-        <article className="metric-pill" style={itemStyle(2)}>
-          <span>Active filter</span>
-          <strong>{isFiltered ? "Search or tag applied" : "Showing everything"}</strong>
-        </article>
       </section>
 
       {todosQuery.error ? <ErrorBanner error={todosQuery.error} /> : null}

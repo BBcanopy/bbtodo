@@ -285,7 +285,7 @@ export function AppShell({ user }: { user: User }) {
                   Projects
                 </NavLink>
                 <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} to="/todos">
-                  All TODOs
+                  TODO
                 </NavLink>
                 {activeProject || isProjectsRoute ? (
                   <div className="project-switcher" ref={projectSwitcherRef}>

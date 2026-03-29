@@ -1705,11 +1705,14 @@ textarea:focus {
 
 .todos-project-list {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
   gap: 1rem;
+  align-items: start;
 }
 
 .todos-project {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 1rem;
   padding: 1rem;
   border: 1px solid var(--line);
@@ -1722,6 +1725,7 @@ textarea:focus {
     0 20px 42px -34px rgba(18, 34, 36, 0.3);
   animation: rise-in 560ms var(--ease) both;
   animation-delay: calc(var(--item-index) * 90ms);
+  align-content: start;
 }
 
 .todos-project__header {
