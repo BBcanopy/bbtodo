@@ -284,9 +284,6 @@ export function AppShell({ user }: { user: User }) {
                 <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} end to="/">
                   Projects
                 </NavLink>
-                <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} to="/todos">
-                  TODO
-                </NavLink>
                 {activeProject || isProjectsRoute ? (
                   <div className="project-switcher" ref={projectSwitcherRef}>
                     <button
@@ -378,6 +375,9 @@ export function AppShell({ user }: { user: User }) {
                     ) : null}
                   </div>
                 ) : null}
+                <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} to="/todos">
+                  TODO
+                </NavLink>
               </div>
               {showNavSearch ? (
                 <div className="subnav__cluster subnav__cluster--tools">

@@ -1999,6 +1999,12 @@ test("board page switcher renames and creates projects while guarding protected 
   await page.goto(billingBoardPath);
 
   const switcherButton = page.getByRole("button", { name: "Open project switcher" });
+  const todoLink = page.getByRole("link", { exact: true, name: "TODO" });
+  const [switcherBox, todoBox] = await Promise.all([switcherButton.boundingBox(), todoLink.boundingBox()]);
+  expect(switcherBox).not.toBeNull();
+  expect(todoBox).not.toBeNull();
+  expect((todoBox?.x ?? 0) - (switcherBox?.x ?? 0)).toBeGreaterThan(24);
+
   await switcherButton.click();
 
   const switcherInput = page.getByLabel("Project switcher input");
