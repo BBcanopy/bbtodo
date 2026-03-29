@@ -260,10 +260,6 @@ function ProjectComposerCard({
             <div className="project-card__headline">
               <h2>Create a board in place</h2>
             </div>
-            <p className="project-card-composer__description">
-              Add a board with Todo, In Progress, In review, and Done, then keep working from the
-              projects grid.
-            </p>
           </div>
           <label className="field">
             <span className="field__label">Board name</span>

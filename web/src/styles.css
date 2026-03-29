@@ -1551,11 +1551,6 @@ textarea:focus {
   text-transform: uppercase;
 }
 
-.project-card-composer__description {
-  margin: 0;
-  color: var(--ink-soft);
-}
-
 .project-card-composer__actions {
   display: flex;
   align-items: center;
