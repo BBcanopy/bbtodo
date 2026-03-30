@@ -5,9 +5,8 @@ import { mockAuthenticated, projectsForGrid, tasks } from "./fixtures";
 const GRID_BLANK_RIGHT_INSET = 10;
 const GRID_BLANK_TOP_OFFSET = 18;
 const GRID_BLANK_BOTTOM_OFFSET = 10;
-const GRID_BLANK_BOTTOM_LEFT_INSET = 8;
-const GRID_BLANK_SCAN_X_RATIOS = [0.25, 0.5, 0.75];
-const GRID_BLANK_SCAN_Y_RATIOS = [0.25, 0.5, 0.75];
+const GRID_BLANK_LEFT_INSET = 8;
+const GRID_BLANK_SCAN_STEP = 12;
 
 async function findProjectGridBlankPoint(page: Page) {
   const projectGrid = page.locator(".project-grid");
@@ -16,12 +15,11 @@ async function findProjectGridBlankPoint(page: Page) {
   const point = await projectGrid.evaluate(
     (
       gridElement,
-      { bottomLeftInset, bottomOffset, rightInset, scanXRatios, scanYRatios, topOffset }: {
-        bottomLeftInset: number;
+      { bottomOffset, leftInset, rightInset, scanStep, topOffset }: {
         bottomOffset: number;
+        leftInset: number;
         rightInset: number;
-        scanXRatios: number[];
-        scanYRatios: number[];
+        scanStep: number;
         topOffset: number;
       }
     ) => {
@@ -29,47 +27,39 @@ async function findProjectGridBlankPoint(page: Page) {
       const cardRects = Array.from(gridElement.querySelectorAll<HTMLElement>(".project-card")).map((card) =>
         card.getBoundingClientRect()
       );
-      const xCandidates = [
-        gridRect.right - rightInset,
-        gridRect.left + bottomLeftInset,
-        ...scanXRatios.map((ratio) => gridRect.left + gridRect.width * ratio)
-      ];
-      const yCandidates = [
-        gridRect.top + topOffset,
-        ...scanYRatios.map((ratio) => gridRect.top + gridRect.height * ratio),
-        gridRect.bottom - bottomOffset
-      ];
-      const candidates = yCandidates.flatMap((y) => xCandidates.map((x) => ({ x, y })));
-    const blankCandidate = candidates.find(
-      (candidate) =>
-        candidate.x > gridRect.left &&
-        candidate.x < gridRect.right &&
-        candidate.y > gridRect.top &&
-        candidate.y < gridRect.bottom &&
+
+      const minX = gridRect.left + leftInset;
+      const maxX = gridRect.right - rightInset;
+      const minY = gridRect.top + topOffset;
+      const maxY = gridRect.bottom - bottomOffset;
+
+      const isBlankPoint = (x: number, y: number) =>
+        x > gridRect.left &&
+        x < gridRect.right &&
+        y > gridRect.top &&
+        y < gridRect.bottom &&
         !cardRects.some(
-          (cardRect) =>
-            candidate.x >= cardRect.left &&
-            candidate.x <= cardRect.right &&
-            candidate.y >= cardRect.top &&
-            candidate.y <= cardRect.bottom
-        )
-    );
+          (cardRect) => x >= cardRect.left && x <= cardRect.right && y >= cardRect.top && y <= cardRect.bottom
+        );
 
-    if (!blankCandidate) {
+      for (let y = maxY; y >= minY; y -= scanStep) {
+        for (let x = maxX; x >= minX; x -= scanStep) {
+          if (isBlankPoint(x, y)) {
+            return {
+              x: x - gridRect.left,
+              y: y - gridRect.top
+            };
+          }
+        }
+      }
+
       throw new Error("Could not find a blank point inside the project grid.");
-    }
-
-    return {
-      x: blankCandidate.x - gridRect.left,
-      y: blankCandidate.y - gridRect.top
-    };
     },
     {
-      bottomLeftInset: GRID_BLANK_BOTTOM_LEFT_INSET,
       bottomOffset: GRID_BLANK_BOTTOM_OFFSET,
+      leftInset: GRID_BLANK_LEFT_INSET,
       rightInset: GRID_BLANK_RIGHT_INSET,
-      scanXRatios: GRID_BLANK_SCAN_X_RATIOS,
-      scanYRatios: GRID_BLANK_SCAN_Y_RATIOS,
+      scanStep: GRID_BLANK_SCAN_STEP,
       topOffset: GRID_BLANK_TOP_OFFSET
     }
   );
