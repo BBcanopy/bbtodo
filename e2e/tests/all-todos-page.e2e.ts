@@ -2,38 +2,51 @@ import { expect, test } from "@playwright/test";
 
 import { laneId, mockAuthenticated, projectsForGrid, tag, tasks } from "./fixtures";
 
-test("all todos page groups todo tasks and supports search and tag filtering", async ({ page }) => {
+function createCaptureEvidenceTask() {
+  return {
+    body: "Collect evidence from the callback logs before changing the retry window.",
+    createdAt: "2026-03-18T07:12:00.000Z",
+    id: "task-5",
+    laneId: laneId("project-1", "todo"),
+    parentTaskId: "task-1",
+    position: 0,
+    projectId: "project-1",
+    ticketId: "BILL-5",
+    tags: [tag("retry", "coral")],
+    title: "Capture callback evidence",
+    updatedAt: "2026-03-18T07:22:00.000Z"
+  };
+}
+
+function createPartnerReviewTask() {
+  return {
+    body: "Pull the remaining vendor notes into one review pass.",
+    createdAt: "2026-03-18T08:35:00.000Z",
+    id: "task-6",
+    laneId: laneId("project-6", "todo"),
+    parentTaskId: null,
+    position: 0,
+    projectId: "project-6",
+    ticketId: "PART-1",
+    tags: [tag("partner", "orchid")],
+    title: "Review partner notes",
+    updatedAt: "2026-03-18T08:55:00.000Z"
+  };
+}
+
+function buildTodoFixtures(extraTasks: (typeof tasks)[number][] = []) {
   const todoProjects = structuredClone(projectsForGrid);
   const todoTasks = structuredClone(tasks);
+  todoTasks.push(...extraTasks);
 
-  todoTasks.push(
-    {
-      body: "Collect evidence from the callback logs before changing the retry window.",
-      createdAt: "2026-03-18T07:12:00.000Z",
-      id: "task-5",
-      laneId: laneId("project-1", "todo"),
-      parentTaskId: "task-1",
-      position: 0,
-      projectId: "project-1",
-      ticketId: "BILL-5",
-      tags: [tag("retry", "coral")],
-      title: "Capture callback evidence",
-      updatedAt: "2026-03-18T07:22:00.000Z"
-    },
-    {
-      body: "Pull the remaining vendor notes into one review pass.",
-      createdAt: "2026-03-18T08:35:00.000Z",
-      id: "task-6",
-      laneId: laneId("project-6", "todo"),
-      parentTaskId: null,
-      position: 0,
-      projectId: "project-6",
-      ticketId: "PART-1",
-      tags: [tag("partner", "orchid")],
-      title: "Review partner notes",
-      updatedAt: "2026-03-18T08:55:00.000Z"
-    }
-  );
+  return {
+    todoProjects,
+    todoTasks
+  };
+}
+
+test("all todos page groups todo tasks and supports search and tag filtering", async ({ page }) => {
+  const { todoProjects, todoTasks } = buildTodoFixtures([createCaptureEvidenceTask(), createPartnerReviewTask()]);
 
   await mockAuthenticated(page, {
     projects: todoProjects,
@@ -106,22 +119,7 @@ test("all todos page groups todo tasks and supports search and tag filtering", a
 });
 
 test("all todos page links into boards and task detail boards", async ({ page }) => {
-  const todoProjects = structuredClone(projectsForGrid);
-  const todoTasks = structuredClone(tasks);
-
-  todoTasks.push({
-    body: "Pull the remaining vendor notes into one review pass.",
-    createdAt: "2026-03-18T08:35:00.000Z",
-    id: "task-6",
-    laneId: laneId("project-6", "todo"),
-    parentTaskId: null,
-    position: 0,
-    projectId: "project-6",
-    ticketId: "PART-1",
-    tags: [tag("partner", "orchid")],
-    title: "Review partner notes",
-    updatedAt: "2026-03-18T08:55:00.000Z"
-  });
+  const { todoProjects, todoTasks } = buildTodoFixtures([createPartnerReviewTask()]);
 
   await mockAuthenticated(page, {
     projects: todoProjects,
@@ -155,22 +153,9 @@ test("all todos page shows the empty state when no todo tasks exist", async ({ p
 });
 
 test("all todos page shows the no-match state when filters remove every todo", async ({ page }) => {
-  const searchableProjects = structuredClone(projectsForGrid);
-  const searchableTasks = structuredClone(tasks);
-
-  searchableTasks.push({
-    body: "Pull the remaining vendor notes into one review pass.",
-    createdAt: "2026-03-18T08:35:00.000Z",
-    id: "task-6",
-    laneId: laneId("project-6", "todo"),
-    parentTaskId: null,
-    position: 0,
-    projectId: "project-6",
-    ticketId: "PART-1",
-    tags: [tag("partner", "orchid")],
-    title: "Review partner notes",
-    updatedAt: "2026-03-18T08:55:00.000Z"
-  });
+  const { todoProjects: searchableProjects, todoTasks: searchableTasks } = buildTodoFixtures([
+    createPartnerReviewTask()
+  ]);
 
   await mockAuthenticated(page, {
     projects: searchableProjects,

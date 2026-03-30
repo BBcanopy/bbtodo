@@ -463,11 +463,11 @@ function moveSubtasksToLane(db: DatabaseClient, parentTaskId: string, laneId: st
     .run();
 }
 
-function orderTasksForProject(taskRows: TaskRecord[], projectLanes: LaneRecord[]) {
+function orderTasksForProject<T extends TaskRecord>(taskRows: T[], projectLanes: LaneRecord[]) {
   const tasksById = new Map(taskRows.map((task) => [task.id, task]));
-  const topLevelByLane = new Map<string, TaskRecord[]>();
-  const subtasksByParent = new Map<string, TaskRecord[]>();
-  const orderedTasks: TaskRecord[] = [];
+  const topLevelByLane = new Map<string, T[]>();
+  const subtasksByParent = new Map<string, T[]>();
+  const orderedTasks: T[] = [];
   const includedTaskIds = new Set<string>();
 
   taskRows.forEach((task) => {
@@ -513,7 +513,7 @@ function orderTasksForProject(taskRows: TaskRecord[], projectLanes: LaneRecord[]
         orderedTasks.push({
           ...task,
           parentTaskId: null
-        });
+        } as T);
         return;
       }
 
@@ -662,73 +662,55 @@ export function listTodoProjectGroupsForUser(db: DatabaseClient, userId: string)
     .all();
   const todoLanesByProjectId = new Map<string, LaneRecord>();
 
-  laneRows.forEach((lane) => {
-    if (todoLanesByProjectId.has(lane.projectId) || normalizeLaneName(lane.name) !== "todo") {
-      return;
+  for (const lane of laneRows) {
+    if (!todoLanesByProjectId.has(lane.projectId) && normalizeLaneName(lane.name) === "todo") {
+      todoLanesByProjectId.set(lane.projectId, lane);
     }
-
-    todoLanesByProjectId.set(lane.projectId, lane);
-  });
+  }
 
   const todoLaneIds = Array.from(todoLanesByProjectId.values(), (lane) => lane.id);
   if (todoLaneIds.length === 0) {
     return [];
   }
 
-  const taskRows = db
-    .select()
-    .from(tasks)
-    .where(inArray(tasks.laneId, todoLaneIds))
-    .all();
-  const taskRowsByProjectId = new Map<string, TaskRecord[]>();
+  const tasksWithTags = attachTagsToTasks(
+    db,
+    db
+      .select()
+      .from(tasks)
+      .where(inArray(tasks.laneId, todoLaneIds))
+      .all()
+  );
 
-  taskRows.forEach((task) => {
-    const projectTasks = taskRowsByProjectId.get(task.projectId) ?? [];
+  if (tasksWithTags.length === 0) {
+    return [];
+  }
+
+  const tasksByProjectId = new Map<string, TaskRecordWithTags[]>();
+
+  tasksWithTags.forEach((task) => {
+    const projectTasks = tasksByProjectId.get(task.projectId) ?? [];
     projectTasks.push(task);
-    taskRowsByProjectId.set(task.projectId, projectTasks);
+    tasksByProjectId.set(task.projectId, projectTasks);
   });
 
-  const orderedTodoGroups = projectRows.flatMap((project) => {
+  return projectRows.flatMap((project) => {
     const todoLane = todoLanesByProjectId.get(project.id);
-    const projectTaskRows = taskRowsByProjectId.get(project.id) ?? [];
+    const projectTasks = tasksByProjectId.get(project.id) ?? [];
 
-    if (!todoLane || projectTaskRows.length === 0) {
+    if (!todoLane || projectTasks.length === 0) {
       return [];
     }
 
     return [
       {
-        orderedTaskRows: orderTasksForProject(projectTaskRows, [todoLane]),
         projectId: project.id,
         projectName: project.name,
-        projectTicketPrefix: requireProjectTicketPrefix(project)
+        projectTicketPrefix: requireProjectTicketPrefix(project),
+        tasks: orderTasksForProject(projectTasks, [todoLane])
       }
     ];
   });
-
-  if (orderedTodoGroups.length === 0) {
-    return [];
-  }
-
-  const orderedTasksWithTagsById = new Map(
-    attachTagsToTasks(
-      db,
-      orderedTodoGroups.flatMap((group) => group.orderedTaskRows)
-    ).map((task) => [task.id, task] as const)
-  );
-
-  return orderedTodoGroups.map((group) => ({
-    projectId: group.projectId,
-    projectName: group.projectName,
-    projectTicketPrefix: group.projectTicketPrefix,
-    tasks: group.orderedTaskRows.map(
-      (task) =>
-        orderedTasksWithTagsById.get(task.id) ?? {
-          ...task,
-          tags: []
-        }
-    )
-  }));
 }
 
 export function backfillTicketIds(db: DatabaseClient) {
