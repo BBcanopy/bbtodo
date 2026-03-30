@@ -47,6 +47,9 @@ test("all todos page groups todo tasks and supports search and tag filtering", a
   await expect(page).toHaveTitle("All TODOs | BBTodo");
   await expect(page.getByLabel("Search todos")).toBeVisible();
   await expect(page.getByLabel("Filter by tags")).toBeVisible();
+  await expect(page.getByTestId("todos-nav-count")).toHaveText("4 todos");
+  await expect(page.locator(".page-shell--todos .page-header")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "All TODOs" })).toHaveCount(0);
   await expect(page.getByText("Cross-project view")).toHaveCount(0);
   await expect(page.getByText("Everything still sitting in Todo, grouped by board so you can review the queue before diving into a lane.")).toHaveCount(0);
   await expect(page.locator(".metric-ribbon")).toHaveCount(0);
@@ -127,10 +130,12 @@ test("all todos page links into boards and task detail boards", async ({ page })
 
   await page.getByRole("button", { name: "Open board Billing cleanup" }).click();
   await expect(page).toHaveURL("/projects/BILL");
+  await expect(page.getByTestId("todos-nav-count")).toHaveCount(0);
 
   await page.goto("/todos");
   await page.getByLabel("Open todo PART-1").click();
   await expect(page).toHaveURL(/\/projects\/PART\/PART-1\?q=PART-1$/);
+  await expect(page.getByTestId("todos-nav-count")).toHaveCount(0);
 });
 
 test("all todos page shows the empty state when no todo tasks exist", async ({ page }) => {

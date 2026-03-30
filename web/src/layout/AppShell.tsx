@@ -59,6 +59,11 @@ export function AppShell({ user }: { user: User }) {
     queryFn: () => api.listTaskTags(),
     enabled: Boolean(boardMatch || todosMatch)
   });
+  const todosQuery = useQuery({
+    queryKey: ["todos"],
+    queryFn: () => api.listTodoGroups(),
+    enabled: Boolean(todosMatch)
+  });
   const createProjectMutation = useCreateProjectMutation({
     onSuccess: async (project) => {
       setIsProjectSwitcherOpen(false);
@@ -133,6 +138,10 @@ export function AppShell({ user }: { user: User }) {
         ) ?? null
       : null;
   const projectSwitcherLabel = activeProject?.name ?? "All projects";
+  const totalTodoCount = useMemo(
+    () => (todosQuery.data ?? []).reduce((count, group) => count + group.tasks.length, 0),
+    [todosQuery.data]
+  );
   const deferredProjectSwitcherInput = useDeferredValue(projectSwitcherInput.trim().toLowerCase());
   const visibleProjects = useMemo(() => {
     const projects = projectsQuery.data ?? [];
@@ -378,6 +387,11 @@ export function AppShell({ user }: { user: User }) {
                 <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} to="/todos">
                   TODO
                 </NavLink>
+                {todosMatch && !todosQuery.isPending && !todosQuery.error ? (
+                  <span className="label-chip label-chip--soft subnav__meta-chip" data-testid="todos-nav-count">
+                    {totalTodoCount} todos
+                  </span>
+                ) : null}
               </div>
               {showNavSearch ? (
                 <div className="subnav__cluster subnav__cluster--tools">

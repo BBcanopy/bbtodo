@@ -599,6 +599,10 @@ h3 {
   min-width: min(16rem, 34vw);
 }
 
+.subnav__meta-chip {
+  white-space: nowrap;
+}
+
 .subnav__search input {
   min-height: 2.5rem;
   padding: 0.6rem 0.85rem;

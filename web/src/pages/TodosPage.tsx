@@ -199,7 +199,6 @@ export function TodosPage() {
     [activeTagKey, isFiltered, todoGroups, todoSearch]
   );
 
-  const totalTodoCount = todoGroups.reduce((count, group) => count + group.tasks.length, 0);
   function navigateToTask(group: TodoProjectGroup, task: Task) {
     const nextParams = new URLSearchParams();
     nextParams.set("q", task.ticketId);
@@ -219,15 +218,6 @@ export function TodosPage() {
   return (
     <main className="page-shell page-shell--todos">
       <title>All TODOs | BBTodo</title>
-      <section className="page-header">
-        <div className="page-header__copy">
-          <h1 className="page-title">All TODOs</h1>
-        </div>
-        <div className="page-header__meta">
-          <span className="label-chip">{totalTodoCount} todos</span>
-        </div>
-      </section>
-
       {todosQuery.error ? <ErrorBanner error={todosQuery.error} /> : null}
 
       {todosQuery.isPending ? <BoardSkeleton /> : null}
