@@ -33,6 +33,25 @@ async function waitForProjectGridCardsToFinishAnimating(projectGrid: Locator) {
   });
 }
 
+async function waitForProjectCardLayoutToSettle(card: Locator) {
+  await expect
+    .poll(async () => {
+      return card.evaluate((element) => {
+        const cardSurface = element.querySelector<HTMLElement>(".project-card__surface");
+
+        if (!cardSurface) {
+          return null;
+        }
+
+        return {
+          height: Math.round(cardSurface.getBoundingClientRect().height),
+          rowSpan: getComputedStyle(element).getPropertyValue("--project-card-row-span").trim()
+        };
+      });
+    })
+    .not.toBeNull();
+}
+
 async function findProjectGridBlankPoint(page: Page) {
   const projectGrid = page.locator(".project-grid");
   await expect(projectGrid).toBeVisible();
@@ -399,65 +418,64 @@ test("projects page packs later cards beneath shorter neighbors when a title wra
     await expect(longTitleProjectCard.getByLabel(laneLabel)).toBeVisible();
   }
 
-  const regularProjectLayout = await regularProjectCard.evaluate((element) => {
-    const cardSurface = element.querySelector<HTMLElement>(".project-card__surface");
+  await Promise.all([
+    waitForProjectCardLayoutToSettle(longTitleProjectCard),
+    waitForProjectCardLayoutToSettle(regularProjectCard),
+    waitForProjectCardLayoutToSettle(packedProjectCard)
+  ]);
 
-    if (!cardSurface) {
-      throw new Error("Expected the project card surface to exist");
-    }
+  await expect
+    .poll(async () => {
+      return page.evaluate(() => {
+        function getProjectCardLayout(testId: string) {
+          const card = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+          const cardSurface = card?.querySelector<HTMLElement>(".project-card__surface");
 
-    return {
-      height: Math.round(cardSurface.getBoundingClientRect().height),
-      minHeight: Math.round(Number.parseFloat(getComputedStyle(cardSurface).minHeight))
-    };
-  });
-  const longTitleLayout = await longTitleProjectCard.evaluate((element) => {
-    const cardSurface = element.querySelector<HTMLElement>(".project-card__surface");
-    const lanePills = Array.from(element.querySelectorAll<HTMLElement>(".project-card__lane-pill"));
+          if (!card || !cardSurface) {
+            throw new Error(`Expected ${testId} to exist with a card surface.`);
+          }
 
-    if (!cardSurface) {
-      throw new Error("Expected the project card surface to exist");
-    }
+          const lanePills = Array.from(card.querySelectorAll<HTMLElement>(".project-card__lane-pill"));
+          const lastLanePill = lanePills.at(-1) ?? null;
+          const cardRect = cardSurface.getBoundingClientRect();
+          const lastLanePillRect = lastLanePill?.getBoundingClientRect() ?? null;
 
-    if (lanePills.length === 0) {
-      throw new Error("Expected lane pills to exist");
-    }
+          return {
+            bottom: Math.round(cardRect.bottom),
+            bottomInset: lastLanePillRect ? Math.round((cardRect.bottom - lastLanePillRect.bottom) * 100) / 100 : null,
+            clientHeight: cardSurface.clientHeight,
+            height: Math.round(cardRect.height),
+            left: Math.round(cardRect.left),
+            minHeight: Math.round(Number.parseFloat(getComputedStyle(cardSurface).minHeight)),
+            scrollHeight: cardSurface.scrollHeight,
+            top: Math.round(cardRect.top)
+          };
+        }
 
-    const lastLanePill = lanePills.at(-1);
+        const regularProjectLayout = getProjectCardLayout("project-card-project-2");
+        const longTitleLayout = getProjectCardLayout("project-card-project-1");
+        const packedProjectLayout = getProjectCardLayout("project-card-project-5");
 
-    if (!lastLanePill) {
-      throw new Error("Expected a final lane pill to exist");
-    }
-
-    const cardRect = cardSurface.getBoundingClientRect();
-    const lastLanePillRect = lastLanePill.getBoundingClientRect();
-
-    return {
-      bottomInset: Math.round((cardRect.bottom - lastLanePillRect.bottom) * 100) / 100,
-      bottom: Math.round(cardRect.bottom),
-      clientHeight: cardSurface.clientHeight,
-      height: Math.round(cardRect.height),
-      left: Math.round(cardRect.left),
-      minHeight: Math.round(Number.parseFloat(getComputedStyle(cardSurface).minHeight)),
-      scrollHeight: cardSurface.scrollHeight
-    };
-  });
-  const packedProjectPosition = await packedProjectCard.evaluate((element) => {
-    const cardRect = element.getBoundingClientRect();
-
-    return {
-      left: Math.round(cardRect.left),
-      top: Math.round(cardRect.top)
-    };
-  });
-
-  expect(regularProjectLayout.height).toBe(regularProjectLayout.minHeight);
-  expect(longTitleLayout.height).toBeGreaterThan(longTitleLayout.minHeight);
-  expect(longTitleLayout.height).toBeGreaterThan(regularProjectLayout.height);
-  expect(longTitleLayout.scrollHeight).toBeLessThanOrEqual(longTitleLayout.clientHeight + 1);
-  expect(longTitleLayout.bottomInset).toBeGreaterThanOrEqual(0);
-  expect(packedProjectPosition.top).toBeLessThan(longTitleLayout.bottom);
-  expect(packedProjectPosition.left).toBeGreaterThan(longTitleLayout.left);
+        return {
+          isPackedBesideLongTitle: packedProjectLayout.left > longTitleLayout.left,
+          isPackedUnderShorterNeighbor: packedProjectLayout.top < longTitleLayout.bottom,
+          longTitleBottomInsetNonNegative: (longTitleLayout.bottomInset ?? -1) >= 0,
+          longTitleFitsWithoutOverflow: longTitleLayout.scrollHeight <= longTitleLayout.clientHeight + 1,
+          longTitleGrewPastMinHeight: longTitleLayout.height > longTitleLayout.minHeight,
+          longTitleTallerThanRegular: longTitleLayout.height > regularProjectLayout.height,
+          regularProjectStayedAtMinHeight: regularProjectLayout.height === regularProjectLayout.minHeight
+        };
+      });
+    })
+    .toEqual({
+      isPackedBesideLongTitle: true,
+      isPackedUnderShorterNeighbor: true,
+      longTitleBottomInsetNonNegative: true,
+      longTitleFitsWithoutOverflow: true,
+      longTitleGrewPastMinHeight: true,
+      longTitleTallerThanRegular: true,
+      regularProjectStayedAtMinHeight: true
+    });
 });
 
 test("projects search opens an exact ticket id", async ({ page }) => {
