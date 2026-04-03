@@ -1158,6 +1158,43 @@ test("board page allows dragging another card while an earlier move is still pen
   await expect(inReviewColumn.locator(".task-card__title")).toHaveText(["[BILL-4] Queue copy pass"]);
 });
 
+test("board page queues concurrent drags into Done without snapping cards back", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    taskMoveDelayMs: 1200,
+    tasks
+  });
+
+  await page.goto(billingBoardPath);
+
+  const todoColumn = page.getByTestId(`board-column-${laneId("project-1", "todo")}`);
+  const doneColumn = page.getByTestId(`board-column-${laneId("project-1", "done")}`);
+  const retryCard = page.getByTestId("task-card-task-1");
+  const copyCard = page.getByTestId("task-card-task-4");
+  const healthcheckLoopCard = page.getByTestId("task-card-task-3");
+
+  await dragTaskToTarget(page, taskCardSurface(retryCard), taskCardSurface(healthcheckLoopCard), 0.2);
+  await beginTaskDrag(page, taskCardSurface(copyCard));
+  await expect(copyCard).toHaveClass(/is-dragging/);
+  await hoverDraggedTaskOver(page, taskCardSurface(healthcheckLoopCard), 0.2);
+  await finishTaskDrag(page);
+
+  await expect(todoColumn.locator(".task-card__title")).toHaveCount(0);
+  await expect(doneColumn.locator(".task-card__title")).toHaveText([
+    "[BILL-4] Queue copy pass",
+    "[BILL-1] Review retry settings",
+    "[BILL-3] Remove healthcheck loop"
+  ]);
+  await page.waitForTimeout(1400);
+  await expect(todoColumn.locator(".task-card__title")).toHaveCount(0);
+  await expect(doneColumn).toContainText("[BILL-4] Queue copy pass");
+  await expect(doneColumn).toContainText("[BILL-1] Review retry settings");
+  await page.waitForTimeout(1600);
+  await expect(todoColumn.locator(".task-card__title")).toHaveCount(0);
+  await expect(doneColumn).toContainText("[BILL-4] Queue copy pass");
+  await expect(doneColumn).toContainText("[BILL-1] Review retry settings");
+});
+
 test("board page reorders tasks and manages lanes", async ({ page }) => {
   const projectsWithQaLane = structuredClone(projectsForGrid);
   const tasksWithQaCard = structuredClone(tasks);
@@ -1219,7 +1256,6 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
 
   const qaColumn = page.getByTestId("board-column-project-1-lane-custom-1");
   const doneColumn = page.getByTestId(`board-column-${laneId("project-1", "done")}`);
-  const qaRootInsertSlot = page.getByTestId("task-drop-slot-project-1-lane-custom-1-2");
   const shipNoteSubtaskSlot = page.getByTestId("task-drop-slot-task-5-0");
 
   const createdCard = page.getByTestId("task-card-task-5");
@@ -1229,7 +1265,7 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(releaseChecklistCard).toBeVisible();
   await expect(createdCard.locator(".task-tag")).toHaveCount(0);
 
-  await dragTaskToTarget(page, retryCard, qaRootInsertSlot);
+  await dragTaskToTarget(page, retryCard, taskCardSurface(releaseChecklistCard), 0.8);
   const retryCardInQa = qaColumn.getByTestId("task-card-task-1");
   await expect(retryCardInQa).toBeVisible();
   await beginTaskDrag(page, retryCardInQa);
@@ -1243,7 +1279,7 @@ test("board page reorders tasks and manages lanes", async ({ page }) => {
   await expect(createdCard.locator(".task-card__subtasks").getByText("Review retry settings")).toHaveCount(0);
   await expect(qaColumn.getByText("Review retry settings")).toBeVisible();
 
-  await dragTaskToTarget(page, copyCard, qaRootInsertSlot);
+  await dragTaskToTarget(page, copyCard, taskCardSurface(releaseChecklistCard), 0.8);
   const copyCardInQa = qaColumn.getByTestId("task-card-task-4");
   await expect(copyCardInQa).toBeVisible();
   await beginTaskDrag(page, copyCardInQa);
