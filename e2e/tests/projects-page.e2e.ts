@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { mockAuthenticated, projectsForGrid, tasks } from "./fixtures";
 
@@ -6,63 +6,120 @@ const GRID_BLANK_RIGHT_INSET = 10;
 const GRID_BLANK_TOP_OFFSET = 18;
 const GRID_BLANK_BOTTOM_OFFSET = 10;
 const GRID_BLANK_LEFT_INSET = 8;
-const GRID_BLANK_SCAN_STEP = 12;
+const GRID_BLANK_SCAN_STEP = 4;
+
+async function waitForProjectGridCardsToFinishAnimating(projectGrid: Locator) {
+  const projectCards = projectGrid.locator(".project-card");
+  const projectCardCount = await projectCards.count();
+
+  if (projectCardCount === 0) {
+    return;
+  }
+
+  await projectCards.nth(projectCardCount - 1).evaluate(async (element) => {
+    await Promise.all(
+      element.getAnimations().map(async (animation) => {
+        if (animation.playState === "finished" || animation.playState === "idle") {
+          return;
+        }
+
+        try {
+          await animation.finished;
+        } catch {
+          // Ignore animations that get canceled while the grid settles.
+        }
+      })
+    );
+  });
+}
+
+async function waitForProjectCardLayoutToSettle(card: Locator) {
+  await expect
+    .poll(async () => {
+      return card.evaluate((element) => {
+        const cardSurface = element.querySelector<HTMLElement>(".project-card__surface");
+
+        if (!cardSurface) {
+          return null;
+        }
+
+        return {
+          height: Math.round(cardSurface.getBoundingClientRect().height),
+          rowSpan: getComputedStyle(element).getPropertyValue("--project-card-row-span").trim()
+        };
+      });
+    })
+    .not.toBeNull();
+}
 
 async function findProjectGridBlankPoint(page: Page) {
   const projectGrid = page.locator(".project-grid");
   await expect(projectGrid).toBeVisible();
+  await waitForProjectGridCardsToFinishAnimating(projectGrid);
 
-  const point = await projectGrid.evaluate(
-    (
-      gridElement,
-      { bottomOffset, leftInset, rightInset, scanStep, topOffset }: {
-        bottomOffset: number;
-        leftInset: number;
-        rightInset: number;
-        scanStep: number;
-        topOffset: number;
-      }
-    ) => {
-      const gridRect = gridElement.getBoundingClientRect();
-      const cardRects = Array.from(gridElement.querySelectorAll<HTMLElement>(".project-card")).map((card) =>
-        card.getBoundingClientRect()
+  let point: { x: number; y: number } | null = null;
+
+  await expect
+    .poll(async () => {
+      point = await projectGrid.evaluate(
+        (
+          gridElement,
+          { bottomOffset, leftInset, rightInset, scanStep, topOffset }: {
+            bottomOffset: number;
+            leftInset: number;
+            rightInset: number;
+            scanStep: number;
+            topOffset: number;
+          }
+        ) => {
+          const gridRect = gridElement.getBoundingClientRect();
+          const cardRects = Array.from(gridElement.querySelectorAll<HTMLElement>(".project-card")).map((card) =>
+            card.getBoundingClientRect()
+          );
+
+          const minX = gridRect.left + leftInset;
+          const maxX = gridRect.right - rightInset;
+          const minY = gridRect.top + topOffset;
+          const maxY = gridRect.bottom - bottomOffset;
+
+          const isBlankPoint = (x: number, y: number) =>
+            x > gridRect.left &&
+            x < gridRect.right &&
+            y > gridRect.top &&
+            y < gridRect.bottom &&
+            !cardRects.some(
+              (cardRect) => x >= cardRect.left && x <= cardRect.right && y >= cardRect.top && y <= cardRect.bottom
+            );
+
+          for (let y = maxY; y >= minY; y -= scanStep) {
+            for (let x = maxX; x >= minX; x -= scanStep) {
+              if (isBlankPoint(x, y)) {
+                return {
+                  x: x - gridRect.left,
+                  y: y - gridRect.top
+                };
+              }
+            }
+          }
+
+          return null;
+        },
+        {
+          bottomOffset: GRID_BLANK_BOTTOM_OFFSET,
+          leftInset: GRID_BLANK_LEFT_INSET,
+          rightInset: GRID_BLANK_RIGHT_INSET,
+          scanStep: GRID_BLANK_SCAN_STEP,
+          topOffset: GRID_BLANK_TOP_OFFSET
+        }
       );
 
-      const minX = gridRect.left + leftInset;
-      const maxX = gridRect.right - rightInset;
-      const minY = gridRect.top + topOffset;
-      const maxY = gridRect.bottom - bottomOffset;
+      return point !== null;
+    })
+    .toBe(true);
 
-      const isBlankPoint = (x: number, y: number) =>
-        x > gridRect.left &&
-        x < gridRect.right &&
-        y > gridRect.top &&
-        y < gridRect.bottom &&
-        !cardRects.some(
-          (cardRect) => x >= cardRect.left && x <= cardRect.right && y >= cardRect.top && y <= cardRect.bottom
-        );
-
-      for (let y = maxY; y >= minY; y -= scanStep) {
-        for (let x = maxX; x >= minX; x -= scanStep) {
-          if (isBlankPoint(x, y)) {
-            return {
-              x: x - gridRect.left,
-              y: y - gridRect.top
-            };
-          }
-        }
-      }
-
-      throw new Error("Could not find a blank point inside the project grid.");
-    },
-    {
-      bottomOffset: GRID_BLANK_BOTTOM_OFFSET,
-      leftInset: GRID_BLANK_LEFT_INSET,
-      rightInset: GRID_BLANK_RIGHT_INSET,
-      scanStep: GRID_BLANK_SCAN_STEP,
-      topOffset: GRID_BLANK_TOP_OFFSET
-    }
-  );
+  if (!point) {
+    throw new Error("Could not find a blank point inside the project grid.");
+  }
 
   return { projectGrid, point };
 }
@@ -361,65 +418,64 @@ test("projects page packs later cards beneath shorter neighbors when a title wra
     await expect(longTitleProjectCard.getByLabel(laneLabel)).toBeVisible();
   }
 
-  const regularProjectLayout = await regularProjectCard.evaluate((element) => {
-    const cardSurface = element.querySelector<HTMLElement>(".project-card__surface");
+  await Promise.all([
+    waitForProjectCardLayoutToSettle(longTitleProjectCard),
+    waitForProjectCardLayoutToSettle(regularProjectCard),
+    waitForProjectCardLayoutToSettle(packedProjectCard)
+  ]);
 
-    if (!cardSurface) {
-      throw new Error("Expected the project card surface to exist");
-    }
+  await expect
+    .poll(async () => {
+      return page.evaluate(() => {
+        function getProjectCardLayout(testId: string) {
+          const card = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+          const cardSurface = card?.querySelector<HTMLElement>(".project-card__surface");
 
-    return {
-      height: Math.round(cardSurface.getBoundingClientRect().height),
-      minHeight: Math.round(Number.parseFloat(getComputedStyle(cardSurface).minHeight))
-    };
-  });
-  const longTitleLayout = await longTitleProjectCard.evaluate((element) => {
-    const cardSurface = element.querySelector<HTMLElement>(".project-card__surface");
-    const lanePills = Array.from(element.querySelectorAll<HTMLElement>(".project-card__lane-pill"));
+          if (!card || !cardSurface) {
+            throw new Error(`Expected ${testId} to exist with a card surface.`);
+          }
 
-    if (!cardSurface) {
-      throw new Error("Expected the project card surface to exist");
-    }
+          const lanePills = Array.from(card.querySelectorAll<HTMLElement>(".project-card__lane-pill"));
+          const lastLanePill = lanePills.at(-1) ?? null;
+          const cardRect = cardSurface.getBoundingClientRect();
+          const lastLanePillRect = lastLanePill?.getBoundingClientRect() ?? null;
 
-    if (lanePills.length === 0) {
-      throw new Error("Expected lane pills to exist");
-    }
+          return {
+            bottom: Math.round(cardRect.bottom),
+            bottomInset: lastLanePillRect ? Math.round((cardRect.bottom - lastLanePillRect.bottom) * 100) / 100 : null,
+            clientHeight: cardSurface.clientHeight,
+            height: Math.round(cardRect.height),
+            left: Math.round(cardRect.left),
+            minHeight: Math.round(Number.parseFloat(getComputedStyle(cardSurface).minHeight)),
+            scrollHeight: cardSurface.scrollHeight,
+            top: Math.round(cardRect.top)
+          };
+        }
 
-    const lastLanePill = lanePills.at(-1);
+        const regularProjectLayout = getProjectCardLayout("project-card-project-2");
+        const longTitleLayout = getProjectCardLayout("project-card-project-1");
+        const packedProjectLayout = getProjectCardLayout("project-card-project-5");
 
-    if (!lastLanePill) {
-      throw new Error("Expected a final lane pill to exist");
-    }
-
-    const cardRect = cardSurface.getBoundingClientRect();
-    const lastLanePillRect = lastLanePill.getBoundingClientRect();
-
-    return {
-      bottomInset: Math.round((cardRect.bottom - lastLanePillRect.bottom) * 100) / 100,
-      bottom: Math.round(cardRect.bottom),
-      clientHeight: cardSurface.clientHeight,
-      height: Math.round(cardRect.height),
-      left: Math.round(cardRect.left),
-      minHeight: Math.round(Number.parseFloat(getComputedStyle(cardSurface).minHeight)),
-      scrollHeight: cardSurface.scrollHeight
-    };
-  });
-  const packedProjectPosition = await packedProjectCard.evaluate((element) => {
-    const cardRect = element.getBoundingClientRect();
-
-    return {
-      left: Math.round(cardRect.left),
-      top: Math.round(cardRect.top)
-    };
-  });
-
-  expect(regularProjectLayout.height).toBe(regularProjectLayout.minHeight);
-  expect(longTitleLayout.height).toBeGreaterThan(longTitleLayout.minHeight);
-  expect(longTitleLayout.height).toBeGreaterThan(regularProjectLayout.height);
-  expect(longTitleLayout.scrollHeight).toBeLessThanOrEqual(longTitleLayout.clientHeight + 1);
-  expect(longTitleLayout.bottomInset).toBeGreaterThanOrEqual(0);
-  expect(packedProjectPosition.top).toBeLessThan(longTitleLayout.bottom);
-  expect(packedProjectPosition.left).toBeGreaterThan(longTitleLayout.left);
+        return {
+          isPackedBesideLongTitle: packedProjectLayout.left > longTitleLayout.left,
+          isPackedUnderShorterNeighbor: packedProjectLayout.top < longTitleLayout.bottom,
+          longTitleBottomInsetNonNegative: (longTitleLayout.bottomInset ?? -1) >= 0,
+          longTitleFitsWithoutOverflow: longTitleLayout.scrollHeight <= longTitleLayout.clientHeight + 1,
+          longTitleGrewPastMinHeight: longTitleLayout.height > longTitleLayout.minHeight,
+          longTitleTallerThanRegular: longTitleLayout.height > regularProjectLayout.height,
+          regularProjectStayedAtMinHeight: regularProjectLayout.height === regularProjectLayout.minHeight
+        };
+      });
+    })
+    .toEqual({
+      isPackedBesideLongTitle: true,
+      isPackedUnderShorterNeighbor: true,
+      longTitleBottomInsetNonNegative: true,
+      longTitleFitsWithoutOverflow: true,
+      longTitleGrewPastMinHeight: true,
+      longTitleTallerThanRegular: true,
+      regularProjectStayedAtMinHeight: true
+    });
 });
 
 test("projects search opens an exact ticket id", async ({ page }) => {

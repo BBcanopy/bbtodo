@@ -107,10 +107,10 @@ function ProjectCard({
   project: Project;
 }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
   const confirmRef = useRef<HTMLDivElement | null>(null);
   const laneSummaryKey = project.laneSummaries.map((lane) => `${lane.id}:${lane.taskCount}`).join("|");
-  const rowSpan = useProjectCardRowSpan(cardSurfaceRef, `${project.name}|${laneSummaryKey}`);
+  const rowSpan = useProjectCardRowSpan(cardRef, `${project.name}|${laneSummaryKey}`);
 
   useDismissableLayer(isConfirmOpen, confirmRef, () => setIsConfirmOpen(false));
 
@@ -131,10 +131,11 @@ function ProjectCard({
         }
       }}
       role="link"
+      ref={cardRef}
       style={cardStyle}
       tabIndex={0}
     >
-      <div className="project-card__surface" ref={cardSurfaceRef}>
+      <div className="project-card__surface">
         <div className="project-card__meta">
           <div className="project-card__delete-menu" ref={confirmRef}>
             <button
@@ -220,17 +221,14 @@ function ProjectComposerCard({
   onChange: (value: string) => void;
   onSubmit: () => void;
 }) {
-  const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
   const errorKey =
     typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
       ? error.message
       : error
         ? String(error)
         : "ok";
-  const rowSpan = useProjectCardRowSpan(
-    cardSurfaceRef,
-    `${draftName}|${isPending ? "pending" : "idle"}|${errorKey}`
-  );
+  const rowSpan = useProjectCardRowSpan(cardRef, `${draftName}|${isPending ? "pending" : "idle"}|${errorKey}`);
   const cardStyle = {
     ...itemStyle(index),
     "--project-card-row-span": rowSpan
@@ -249,9 +247,10 @@ function ProjectComposerCard({
       onClick={stopCardPropagation}
       onDoubleClick={stopCardPropagation}
       onPointerDown={stopCardPropagation}
+      ref={cardRef}
       style={cardStyle}
     >
-      <div className="project-card__surface" ref={cardSurfaceRef}>
+      <div className="project-card__surface">
         <form
           className="project-card-composer"
           onSubmit={(event) => {
