@@ -1760,11 +1760,12 @@ test("board page resets a subtask preview when dragged back over its current par
   const shipNoteCard = page.getByTestId("task-card-task-5");
   const releaseChecklistCard = page.getByTestId("task-card-task-6");
   const copySubtask = shipNoteCard.locator(".task-card__subtasks").getByTestId("task-card-task-4");
+  const shipNoteSubtaskSlot = page.getByTestId("task-drop-slot-task-5-0");
 
   await beginTaskDrag(page, copySubtask);
   await hoverDraggedTaskDirectlyToTarget(page, taskCardSurface(releaseChecklistCard), 0.5);
 
-  await hoverDraggedTaskOver(page, taskCardSurface(shipNoteCard), 0.3);
+  await hoverDraggedTaskToNestTarget(page, shipNoteCard, 0.35, shipNoteSubtaskSlot);
   await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
 
   await finishTaskDrag(page);
