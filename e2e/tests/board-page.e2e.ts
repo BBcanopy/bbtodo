@@ -1124,6 +1124,40 @@ test("board page reorders with seams when a standalone task could otherwise nest
   ]);
 });
 
+test("board page allows dragging another card while an earlier move is still pending", async ({ page }) => {
+  await mockAuthenticated(page, {
+    projects: projectsForGrid,
+    taskMoveDelayMs: 1200,
+    tasks
+  });
+
+  await page.goto(billingBoardPath);
+
+  const inProgressColumn = page.getByTestId(`board-column-${laneId("project-1", "in_progress")}`);
+  const inReviewColumn = page.getByTestId(`board-column-${laneId("project-1", "in_review")}`);
+  const retryCard = page.getByTestId("task-card-task-1");
+  const copyCard = page.getByTestId("task-card-task-4");
+  const inProgressAfterExistingCardSlot = page.getByTestId(`task-drop-slot-${laneId("project-1", "in_progress")}-1`);
+  const inReviewTopSlot = page.getByTestId(`task-drop-slot-${laneId("project-1", "in_review")}-0`);
+
+  await dragTaskToTarget(page, taskCardSurface(retryCard), inProgressAfterExistingCardSlot);
+  await expect(inProgressColumn.locator(".task-card__title")).toHaveText([
+    "[BILL-2] Tighten callback logging",
+    "[BILL-1] Review retry settings"
+  ]);
+
+  await beginTaskDrag(page, taskCardSurface(copyCard));
+  await expect(copyCard).toHaveClass(/is-dragging/);
+  await hoverDraggedTaskOver(page, inReviewTopSlot);
+  await finishTaskDrag(page);
+
+  await expect(inProgressColumn.locator(".task-card__title")).toHaveText([
+    "[BILL-2] Tighten callback logging",
+    "[BILL-1] Review retry settings"
+  ]);
+  await expect(inReviewColumn.locator(".task-card__title")).toHaveText(["[BILL-4] Queue copy pass"]);
+});
+
 test("board page reorders tasks and manages lanes", async ({ page }) => {
   const projectsWithQaLane = structuredClone(projectsForGrid);
   const tasksWithQaCard = structuredClone(tasks);

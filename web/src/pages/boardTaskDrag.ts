@@ -32,6 +32,16 @@ export type TaskDragOverData = {
   type: "lane" | "nest-target" | "slot" | "task" | "trash";
 };
 
+export type PendingTaskMove = {
+  affectedTaskIds: string[];
+  laneId: string;
+  parentTaskId: string | null;
+  position: number;
+  previewUpdatedAt?: string | null;
+  submittedAt: number;
+  taskId: string;
+};
+
 export function getTaskDropSlotId(laneId: string, parentTaskId: string | null, position: number) {
   return `slot:${laneId}:${parentTaskId ?? "root"}:${position}`;
 }
@@ -71,6 +81,18 @@ export function getTaskPreviewUpdatedAt(tasks: Task[]) {
   }, Date.now());
 
   return new Date(latestUpdatedAt + 1).toISOString();
+}
+
+export function getTaskMoveAffectedTaskIds(tasks: Task[], taskId: string) {
+  const sourceTask = tasks.find((task) => task.id === taskId);
+  if (!sourceTask || sourceTask.parentTaskId !== null) {
+    return [taskId];
+  }
+
+  return [
+    taskId,
+    ...tasks.filter((task) => task.parentTaskId === taskId).map((task) => task.id)
+  ];
 }
 
 function listSiblingTasks(
@@ -319,6 +341,32 @@ export function applyTaskMove(
   });
 
   return hasChanges ? nextTasks : tasks;
+}
+
+export function applyPendingTaskMoves(
+  tasks: Task[],
+  pendingMoves: ReadonlyArray<PendingTaskMove>,
+  lanesById: Map<string, BoardLane>
+) {
+  if (pendingMoves.length === 0) {
+    return tasks;
+  }
+
+  return [...pendingMoves]
+    .sort((left, right) => left.submittedAt - right.submittedAt)
+    .reduce(
+      (nextTasks, pendingMove) =>
+        applyTaskMove(
+          nextTasks,
+          pendingMove.taskId,
+          pendingMove.laneId,
+          pendingMove.parentTaskId,
+          pendingMove.position,
+          lanesById,
+          pendingMove.previewUpdatedAt
+        ),
+      tasks
+    );
 }
 
 export function wouldTaskMoveChangePosition(

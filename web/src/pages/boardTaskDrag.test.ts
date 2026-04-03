@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { BoardLane, Task } from "../api";
 import {
+  applyPendingTaskMoves,
   buildSubtaskIdsByParent,
   buildTopLevelTaskIdsByLane,
+  getTaskMoveAffectedTaskIds,
   normalizeTaskCardDropTarget,
   resolveTaskDragPreview
 } from "./boardTaskDrag";
@@ -342,6 +344,63 @@ describe("boardTaskDrag", () => {
     });
 
     expect(preview).toBeNull();
+  });
+
+  it("applies pending task moves in submitted order", () => {
+    const tasks = [
+      makeTask({ id: "task-1", laneId: "lane-todo", position: 0, ticketId: "BILL-1", title: "One" }),
+      makeTask({ id: "task-2", laneId: "lane-todo", position: 1, ticketId: "BILL-2", title: "Two" }),
+      makeTask({ id: "task-3", laneId: "lane-todo", position: 2, ticketId: "BILL-3", title: "Three" })
+    ];
+    const lanesById = new Map(lanes.map((lane) => [lane.id, lane]));
+
+    const movedTasks = applyPendingTaskMoves(
+      tasks,
+      [
+        {
+          affectedTaskIds: ["task-2"],
+          laneId: "lane-todo",
+          parentTaskId: null,
+          position: 3,
+          submittedAt: 20,
+          taskId: "task-2"
+        },
+        {
+          affectedTaskIds: ["task-1"],
+          laneId: "lane-todo",
+          parentTaskId: null,
+          position: 3,
+          submittedAt: 10,
+          taskId: "task-1"
+        }
+      ],
+      lanesById
+    );
+
+    expect(
+      buildTopLevelTaskIdsByLane(
+        lanes,
+        movedTasks
+      )["lane-todo"]
+    ).toEqual(["task-3", "task-1", "task-2"]);
+  });
+
+  it("includes a moved parent task's subtasks in the affected move ids", () => {
+    const tasks = [
+      makeTask({ id: "task-1", laneId: "lane-todo", position: 0, ticketId: "BILL-1", title: "Parent" }),
+      makeTask({
+        id: "task-1-child",
+        laneId: "lane-todo",
+        parentTaskId: "task-1",
+        position: 0,
+        ticketId: "BILL-1A",
+        title: "Child"
+      }),
+      makeTask({ id: "task-2", laneId: "lane-todo", position: 1, ticketId: "BILL-2", title: "Sibling" })
+    ];
+
+    expect(getTaskMoveAffectedTaskIds(tasks, "task-1")).toEqual(["task-1", "task-1-child"]);
+    expect(getTaskMoveAffectedTaskIds(tasks, "task-1-child")).toEqual(["task-1-child"]);
   });
 
   it("returns null when over data is stale or incomplete", () => {

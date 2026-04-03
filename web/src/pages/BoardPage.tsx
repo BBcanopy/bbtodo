@@ -16,7 +16,7 @@ import {
   type DragStartEvent
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CSS } from "@dnd-kit/utilities";
@@ -58,15 +58,17 @@ import {
 } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
 import {
-  applyTaskMove,
+  applyPendingTaskMoves,
   buildSubtaskIdsByParent,
   buildTopLevelTaskIdsByLane,
   canTaskBecomeSubtask,
   canTaskNestUnderParent,
   findTaskLocation,
   getTaskDropSlotId,
+  getTaskMoveAffectedTaskIds,
   getTaskPreviewUpdatedAt,
   resolveTaskDragPreview,
+  type PendingTaskMove,
   type TaskCardDropPosition,
   type TaskDragOverData,
   type TaskDragPreview
@@ -81,6 +83,14 @@ type BoardToast = {
 type TaskProjectMovePreview = {
   lane: BoardLane;
   usesFallback: boolean;
+};
+type TaskMoveMutationVariables = {
+  affectedTaskIds: string[];
+  laneId: string;
+  parentTaskId: string | null;
+  position: number;
+  previewUpdatedAt?: string | null;
+  taskId: string;
 };
 
 const taskSortableTransition = {
@@ -698,13 +708,14 @@ function TaskCard({
   activeTagKey,
   dropPositionsByTaskId,
   dropPosition,
-  isDragDisabled,
+  isBoardDragDisabled,
   isNestTarget,
   nestTargetMode = "zone",
   isTaskDragging,
   laneId,
   onOpen,
   onTagSelect,
+  pendingMoveTaskIds,
   showNestTarget,
   showSubtaskSlots,
   subtasks,
@@ -716,13 +727,14 @@ function TaskCard({
   activeTagKey: string | null;
   dropPositionsByTaskId: ReadonlyMap<string, TaskCardDropPosition>;
   dropPosition: TaskCardDropPosition | null;
-  isDragDisabled: boolean;
+  isBoardDragDisabled: boolean;
   isNestTarget: boolean;
   nestTargetMode?: "body" | "zone";
   isTaskDragging: boolean;
   laneId: string;
   onOpen: (task: Task) => void;
   onTagSelect: (tag: string) => void;
+  pendingMoveTaskIds: ReadonlySet<string>;
   showNestTarget: boolean;
   showSubtaskSlots: boolean;
   subtasks: Task[];
@@ -732,6 +744,7 @@ function TaskCard({
 }) {
   const suppressClickRef = useRef(false);
   const nestTargetDropTargetId = `nest:${task.id}`;
+  const isDragDisabled = isBoardDragDisabled || pendingMoveTaskIds.has(task.id);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     disabled: isDragDisabled,
@@ -861,13 +874,14 @@ function TaskCard({
                   displaySubtasks={[]}
                   dropPositionsByTaskId={dropPositionsByTaskId}
                   dropPosition={dropPositionsByTaskId.get(subtask.id) ?? null}
-                  isDragDisabled={isDragDisabled}
+                  isBoardDragDisabled={isBoardDragDisabled}
                   isNestTarget={false}
                   nestTargetMode="zone"
                   isTaskDragging={isTaskDragging}
                   laneId={laneId}
                   onOpen={onOpen}
                   onTagSelect={onTagSelect}
+                  pendingMoveTaskIds={pendingMoveTaskIds}
                   showNestTarget={false}
                   showSubtaskSlots={showSubtaskSlots}
                   subtasks={[]}
@@ -2107,30 +2121,65 @@ export function BoardPage() {
   const activeTagFilter = parseSingleTagInput(searchParams.get("tags") ?? "");
   const activeTagKey = activeTagFilter ? normalizeTagKey(activeTagFilter) : null;
   const lanes = lanesQuery.data ?? project?.laneSummaries ?? [];
-  const tasks = tasksQuery.data ?? [];
+  const lanesById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane])), [lanes]);
+  const committedTasks = tasksQuery.data ?? [];
+  const taskMoveMutationKey = ["task-move", resolvedProjectId] as const;
+  const pendingTaskMovesState = useMutationState<PendingTaskMove | null>({
+    filters: {
+      mutationKey: taskMoveMutationKey,
+      status: "pending"
+    },
+    select: (mutation) => {
+      const variables = mutation.state.variables as TaskMoveMutationVariables | undefined;
+      if (!variables) {
+        return null;
+      }
+
+      return {
+        ...variables,
+        submittedAt: mutation.state.submittedAt
+      };
+    }
+  });
+  const pendingTaskMoves = useMemo(
+    () => pendingTaskMovesState.filter((pendingMove): pendingMove is PendingTaskMove => pendingMove !== null),
+    [pendingTaskMovesState]
+  );
+  const tasks = useMemo(
+    () => applyPendingTaskMoves(committedTasks, pendingTaskMoves, lanesById),
+    [committedTasks, lanesById, pendingTaskMoves]
+  );
   const isMissingBoard = !isValidProjectTicketPrefix || isApiError(projectQuery.error, 404);
   const isProjectLoading = isValidProjectTicketPrefix && projectQuery.isPending;
-  const lanesById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane])), [lanes]);
   const availableMoveProjects = (projectsQuery.data ?? []).filter(
     (candidateProject) => candidateProject.id !== resolvedProjectId
   );
   const draggedLane = draggedLaneId ? lanes.find((lane) => lane.id === draggedLaneId) ?? null : null;
   const editingTask = ticketId ? tasks.find((task) => task.ticketId === ticketId) ?? null : null;
   const isBoardFiltered = boardSearch.length > 0 || activeTagKey !== null;
-  const committedTaskMap = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
-  const taskMap = committedTaskMap;
+  const committedTaskMap = useMemo(() => new Map(committedTasks.map((task) => [task.id, task])), [committedTasks]);
+  const taskMap = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
   const draggedTask =
     draggedTaskId
-      ? committedTaskMap.get(draggedTaskId) ?? null
+      ? taskMap.get(draggedTaskId) ?? null
       : null;
   const isTaskDragging = draggedTaskId !== null;
   const draggedTaskCanBecomeSubtask =
     draggedTask !== null && canTaskBecomeSubtask(tasks, draggedTask);
   const pendingDeleteTask =
     pendingDeleteTaskId
-      ? committedTaskMap.get(pendingDeleteTaskId) ?? null
+      ? taskMap.get(pendingDeleteTaskId) ?? null
       : null;
   const availableTaskTags = taskTagsQuery.data ?? listSuggestedTags(tasks);
+  const pendingMoveTaskIds = useMemo(() => {
+    const nextPendingTaskIds = new Set<string>();
+    pendingTaskMoves.forEach((pendingMove) => {
+      pendingMove.affectedTaskIds.forEach((taskId) => {
+        nextPendingTaskIds.add(taskId);
+      });
+    });
+    return nextPendingTaskIds;
+  }, [pendingTaskMoves]);
   const topLevelTaskIdsByLane = useMemo(
     () => buildTopLevelTaskIdsByLane(lanes, tasks),
     [lanes, tasks]
@@ -2358,45 +2407,13 @@ export function BoardPage() {
   });
 
   const moveTaskMutation = useMutation({
+    mutationKey: taskMoveMutationKey,
     mutationFn: ({
       laneId,
       parentTaskId,
       position,
       taskId
-    }: {
-      laneId: string;
-      parentTaskId: string | null;
-      position: number;
-      previewUpdatedAt?: string | null;
-      taskId: string;
-    }) => api.updateTask(resolvedProjectId ?? "", taskId, { laneId, parentTaskId, position }),
-    onMutate: async ({ laneId, parentTaskId, position, previewUpdatedAt, taskId }) => {
-      if (!resolvedProjectId) {
-        return { previousTasks: undefined };
-      }
-
-      await queryClient.cancelQueries({ queryKey: ["tasks", resolvedProjectId] });
-      const previousTasks = queryClient.getQueryData<Task[]>(["tasks", resolvedProjectId]) ?? tasks;
-      const optimisticTasks = applyTaskMove(
-        previousTasks,
-        taskId,
-        laneId,
-        parentTaskId,
-        position,
-        lanesById,
-        previewUpdatedAt
-      );
-
-      queryClient.setQueryData(["tasks", resolvedProjectId], optimisticTasks);
-      return { previousTasks };
-    },
-    onError: (_error, _variables, context) => {
-      if (!resolvedProjectId || !context?.previousTasks) {
-        return;
-      }
-
-      queryClient.setQueryData(["tasks", resolvedProjectId], context.previousTasks);
-    },
+    }: TaskMoveMutationVariables) => api.updateTask(resolvedProjectId ?? "", taskId, { laneId, parentTaskId, position }),
     onSettled: async () => {
       await invalidateBoardData();
     }
@@ -2529,11 +2546,10 @@ export function BoardPage() {
       await invalidateBoardData();
     }
   });
-  const isDragDisabled =
+  const isTaskDragDisabled =
     isBoardFiltered ||
     deleteLaneMutation.isPending ||
     deleteTaskMutation.isPending ||
-    moveTaskMutation.isPending ||
     moveLaneMutation.isPending ||
     pendingDeleteTaskId !== null ||
     saveTaskMutation.isPending ||
@@ -2738,7 +2754,7 @@ export function BoardPage() {
   }
 
   function handleTaskDragStart(event: DragStartEvent) {
-    if (isDragDisabled) {
+    if (isTaskDragDisabled) {
       return;
     }
 
@@ -2755,7 +2771,7 @@ export function BoardPage() {
   }
 
   function handleTaskDragOver(event: DragOverEvent) {
-    if (!draggedTaskId || isDragDisabled) {
+    if (!draggedTaskId || isTaskDragDisabled) {
       return;
     }
 
@@ -2806,6 +2822,7 @@ export function BoardPage() {
     }
 
     moveTaskMutation.mutate({
+      affectedTaskIds: getTaskMoveAffectedTaskIds(tasks, activeTaskId),
       laneId: destination.laneId,
       parentTaskId: destination.parentTaskId,
       position: destination.position,
@@ -3189,7 +3206,7 @@ export function BoardPage() {
                               displaySubtasks={taskGroup.displaySubtasks}
                               dropPositionsByTaskId={dropPositionsByTaskId}
                               dropPosition={dropPositionsByTaskId.get(taskGroup.task.id) ?? null}
-                              isDragDisabled={isDragDisabled}
+                              isBoardDragDisabled={isTaskDragDisabled}
                               isNestTarget={
                                 taskDragPreview?.kind === "nest" &&
                                 taskDragPreview.nestParentTaskId === taskGroup.task.id
@@ -3199,6 +3216,7 @@ export function BoardPage() {
                               laneId={lane.id}
                               onOpen={openTaskDialog}
                               onTagSelect={handleTagSelect}
+                              pendingMoveTaskIds={pendingMoveTaskIds}
                               showNestTarget={
                                 draggedTask !== null &&
                                 !lane.isDoneLane &&
