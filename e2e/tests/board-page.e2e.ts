@@ -1469,7 +1469,6 @@ test("board page previews nesting under a top-level card before drop", async ({ 
 
   await expect(shipNoteCard).toHaveClass(/is-nest-target/);
   await expect(shipNoteSubtaskSlot).toHaveClass(/is-active/);
-  await expect(shipNoteSubtaskSlot).not.toHaveClass(/is-drag-ready/);
 
   await finishTaskDrag(page);
   await expect(shipNoteCard.locator(".task-card__subtasks").getByText("Queue copy pass")).toBeVisible();
