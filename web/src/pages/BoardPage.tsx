@@ -2398,6 +2398,9 @@ export function BoardPage() {
     onSuccess: async () => {
       setComposerLaneId(null);
       setDraftTitle("");
+      updateBoardParams((params) => {
+        params.delete("q");
+      });
       await invalidateBoardData();
     }
   });

@@ -1803,6 +1803,31 @@ test("board page adds tasks from the lane header action and keeps the double-cli
   await expect(composer).toHaveCount(0);
 });
 
+test("board page clears the search query after adding a task from a filtered board", async ({ page }) => {
+  const todoLaneId = laneId("project-1", "todo");
+
+  await mockAuthenticated(page, { projects: projectsForGrid });
+
+  await page.goto(`${billingBoardPath}?q=callback`);
+
+  const addTaskButton = page.getByTestId(`add-task-button-${todoLaneId}`);
+  const composer = page.getByTestId(`lane-composer-${todoLaneId}`);
+
+  await expect(page.getByLabel("Search cards")).toHaveValue("callback");
+  await expect(page.locator(".task-card__title", { hasText: "Clear stale search state" })).toHaveCount(0);
+
+  await addTaskButton.click();
+  await expect(composer).toBeVisible();
+
+  const composerInput = composer.getByLabel("New task title for Todo");
+  await composerInput.fill("Clear stale search state");
+  await composerInput.press("Enter");
+
+  await expect(page).toHaveURL(/\/projects\/BILL$/);
+  await expect(page.getByLabel("Search cards")).toHaveValue("");
+  await expect(page.locator(".task-card__title", { hasText: "Clear stale search state" })).toBeVisible();
+});
+
 test("board page creates lanes from the gap between columns", async ({ page }) => {
   await mockAuthenticated(page, { projects: projectsForGrid });
 
