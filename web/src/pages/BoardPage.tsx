@@ -1,4 +1,4 @@
-import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   closestCorners,
@@ -16,7 +16,7 @@ import {
   type DragStartEvent
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CSS } from "@dnd-kit/utilities";
@@ -86,15 +86,11 @@ type TaskProjectMovePreview = {
 };
 type TaskMoveMutationVariables = {
   affectedTaskIds: string[];
-  clientOrder: number;
   laneId: string;
   parentTaskId: string | null;
   position: number;
   previewUpdatedAt?: string | null;
   taskId: string;
-};
-type QueuedTaskMove = TaskMoveMutationVariables & {
-  queueStatus: "queued" | "sending";
 };
 
 const taskSortableTransition = {
@@ -2085,14 +2081,12 @@ export function BoardPage() {
   const [pendingDeleteTaskId, setPendingDeleteTaskId] = useState<string | null>(null);
   const [pendingDeleteTaskLaneId, setPendingDeleteTaskLaneId] = useState<string | null>(null);
   const [taskDragPreviewWidth, setTaskDragPreviewWidth] = useState<number | null>(null);
-  const [taskMoveQueue, setTaskMoveQueue] = useState<QueuedTaskMove[]>([]);
   const [toast, setToast] = useState<BoardToast | null>(locationToast);
   const laneDragPreviewRef = useRef<HTMLElement | null>(null);
   const pendingMoveNavigationTicketIdRef = useRef<string | null>(null);
   const pointerClientYRef = useRef<number | null>(null);
   const taskDragPreviewRef = useRef<TaskDragPreview | null>(null);
   const taskDragPreviewUpdatedAtRef = useRef<string | null>(null);
-  const taskMoveClientOrderRef = useRef(0);
 
   const isValidProjectTicketPrefix =
     typeof projectTicketPrefix === "string" && projectTicketPrefixPattern.test(projectTicketPrefix);
@@ -2129,21 +2123,27 @@ export function BoardPage() {
   const lanes = lanesQuery.data ?? project?.laneSummaries ?? [];
   const lanesById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane])), [lanes]);
   const committedTasks = tasksQuery.data ?? [];
+  const taskMoveMutationKey = ["task-move", resolvedProjectId] as const;
+  const pendingTaskMovesState = useMutationState<PendingTaskMove | null>({
+    filters: {
+      mutationKey: taskMoveMutationKey,
+      status: "pending"
+    },
+    select: (mutation) => {
+      const variables = mutation.state.variables as TaskMoveMutationVariables | undefined;
+      if (!variables) {
+        return null;
+      }
+
+      return {
+        ...variables,
+        submittedAt: mutation.state.submittedAt
+      };
+    }
+  });
   const pendingTaskMoves = useMemo(
-    () =>
-      taskMoveQueue.map(
-        (queuedMove) =>
-          ({
-            affectedTaskIds: queuedMove.affectedTaskIds,
-            laneId: queuedMove.laneId,
-            parentTaskId: queuedMove.parentTaskId,
-            position: queuedMove.position,
-            previewUpdatedAt: queuedMove.previewUpdatedAt,
-            submittedAt: queuedMove.clientOrder,
-            taskId: queuedMove.taskId
-          }) satisfies PendingTaskMove
-      ),
-    [taskMoveQueue]
+    () => pendingTaskMovesState.filter((pendingMove): pendingMove is PendingTaskMove => pendingMove !== null),
+    [pendingTaskMovesState]
   );
   const tasks = useMemo(
     () => applyPendingTaskMoves(committedTasks, pendingTaskMoves, lanesById),
@@ -2256,11 +2256,6 @@ export function BoardPage() {
 
     return nextDropPositions;
   }, [taskDragPreview]);
-
-  const laneUsesDoneOrdering = useCallback(
-    (laneId: string | null) => (laneId ? isDoneLaneName(lanesById.get(laneId)?.name ?? "") : false),
-    [lanesById]
-  );
 
   function taskDragPreviewEquals(left: TaskDragPreview | null, right: TaskDragPreview | null) {
     if (left === right) {
@@ -2408,6 +2403,7 @@ export function BoardPage() {
   });
 
   const moveTaskMutation = useMutation({
+    mutationKey: taskMoveMutationKey,
     mutationFn: ({
       laneId,
       parentTaskId,
@@ -2660,82 +2656,6 @@ export function BoardPage() {
     taskDragPreviewUpdatedAtRef.current = null;
   }
 
-  const removeQueuedTaskMove = useCallback((clientOrder: number) => {
-    setTaskMoveQueue((currentQueue) => currentQueue.filter((queuedMove) => queuedMove.clientOrder !== clientOrder));
-  }, []);
-
-  const sendTaskMove = useCallback(
-    (taskMove: TaskMoveMutationVariables) => {
-      moveTaskMutation.mutate(taskMove, {
-        onSettled: () => {
-          removeQueuedTaskMove(taskMove.clientOrder);
-        }
-      });
-    },
-    [moveTaskMutation, removeQueuedTaskMove]
-  );
-
-  const enqueueTaskMove = useCallback(
-    (taskMove: Omit<TaskMoveMutationVariables, "clientOrder">) => {
-      const nextTaskMove = {
-        ...taskMove,
-        clientOrder: taskMoveClientOrderRef.current + 1
-      } satisfies TaskMoveMutationVariables;
-      taskMoveClientOrderRef.current = nextTaskMove.clientOrder;
-
-      if (!laneUsesDoneOrdering(taskMove.laneId)) {
-        setTaskMoveQueue((currentQueue) => [
-          ...currentQueue,
-          {
-            ...nextTaskMove,
-            queueStatus: "sending"
-          }
-        ]);
-        sendTaskMove(nextTaskMove);
-        return;
-      }
-
-      const shouldSendImmediately = !taskMoveQueue.some(
-        (queuedMove) => queuedMove.queueStatus === "sending" && laneUsesDoneOrdering(queuedMove.laneId)
-      );
-      setTaskMoveQueue((currentQueue) => [
-        ...currentQueue,
-        {
-          ...nextTaskMove,
-          queueStatus: shouldSendImmediately ? "sending" : "queued"
-        }
-      ]);
-      if (shouldSendImmediately) {
-        sendTaskMove(nextTaskMove);
-      }
-    },
-    [laneUsesDoneOrdering, sendTaskMove, taskMoveQueue]
-  );
-
-  useEffect(() => {
-    const nextQueuedDoneMove = taskMoveQueue.find(
-      (queuedMove) => queuedMove.queueStatus === "queued" && laneUsesDoneOrdering(queuedMove.laneId)
-    );
-    const hasSendingDoneMove = taskMoveQueue.some(
-      (queuedMove) => queuedMove.queueStatus === "sending" && laneUsesDoneOrdering(queuedMove.laneId)
-    );
-    if (!nextQueuedDoneMove || hasSendingDoneMove) {
-      return;
-    }
-
-    setTaskMoveQueue((currentQueue) =>
-      currentQueue.map((queuedMove) =>
-        queuedMove.clientOrder === nextQueuedDoneMove.clientOrder
-          ? {
-              ...queuedMove,
-              queueStatus: "sending"
-            }
-          : queuedMove
-      )
-    );
-    sendTaskMove(nextQueuedDoneMove);
-  }, [taskMoveQueue, laneUsesDoneOrdering, sendTaskMove]);
-
   function handleLaneDragStart(event: DragEvent<HTMLElement>, laneId: string) {
     if (isLaneDragDisabled) {
       event.preventDefault();
@@ -2897,7 +2817,7 @@ export function BoardPage() {
       return;
     }
 
-    enqueueTaskMove({
+    moveTaskMutation.mutate({
       affectedTaskIds: getTaskMoveAffectedTaskIds(tasks, activeTaskId),
       laneId: destination.laneId,
       parentTaskId: destination.parentTaskId,
