@@ -20,6 +20,7 @@ import type { AppConfig } from "./config.js";
 import { registerApiTokensController } from "./controllers/api-tokens-controller.js";
 import { registerAuthController } from "./controllers/auth-controller.js";
 import {
+  SESSION_SUPPORT_DECORATION,
   SESSION_COOKIE,
   withZodTypeProvider
 } from "./controllers/controller-support.js";
@@ -104,6 +105,11 @@ export function buildApp(options: {
     ? path.resolve(options.clientDistPath)
     : null;
 
+  app.decorate(SESSION_SUPPORT_DECORATION, {
+    oauth2Namespace: null,
+    secureCookie
+  } as never);
+
   app.register(cookie, {
     secret: options.config.sessionSecret
   });
@@ -113,6 +119,13 @@ export function buildApp(options: {
   app.register(async (authApp) => {
     if (authTesting?.oauth2Namespace) {
       authApp.decorate(OIDC_OAUTH_NAMESPACE, authTesting.oauth2Namespace);
+      (
+        app as typeof app & {
+          [SESSION_SUPPORT_DECORATION]: {
+            oauth2Namespace: typeof authTesting.oauth2Namespace;
+          };
+        }
+      )[SESSION_SUPPORT_DECORATION].oauth2Namespace = authTesting.oauth2Namespace;
     } else {
       await authApp.register(oauthPlugin, {
         callbackUri: `${options.config.clientUrl}/auth/callback`,
@@ -137,6 +150,17 @@ export function buildApp(options: {
         scope: options.config.oidcScopes.split(/\s+/).filter(Boolean),
         verifierCookieName: OIDC_VERIFIER_COOKIE
       });
+      (
+        app as typeof app & {
+          [SESSION_SUPPORT_DECORATION]: {
+            oauth2Namespace: unknown;
+          };
+        }
+      )[SESSION_SUPPORT_DECORATION].oauth2Namespace = (
+        authApp as typeof authApp & {
+          [OIDC_OAUTH_NAMESPACE]: unknown;
+        }
+      )[OIDC_OAUTH_NAMESPACE];
     }
 
     if (authTesting?.jwtVerifier) {

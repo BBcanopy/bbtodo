@@ -180,12 +180,13 @@ export function ToastNotice({
   message: string;
   onDismiss: () => void;
   title: string;
-  tone: "danger" | "success";
+  tone: "danger" | "success" | "warning";
 }) {
   return (
     <div aria-live="polite" className="toast-stack">
       <div
         className={`toast-notice toast-notice--${tone}`}
+        data-tone={tone}
         data-testid="toast-notice"
         role="status"
       >

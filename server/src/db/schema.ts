@@ -38,6 +38,7 @@ export const sessions = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     expiresAt: text("expires_at").notNull(),
+    oidcToken: text("oidc_token"),
     createdAt: text("created_at").notNull()
   },
   (table) => [
@@ -151,6 +152,7 @@ export type DatabaseClient = BetterSQLite3Database<{
 }>;
 
 export type UserRecord = typeof users.$inferSelect;
+export type SessionRecord = typeof sessions.$inferSelect;
 export type ProjectRecord = typeof projects.$inferSelect;
 export type LaneRecord = typeof lanes.$inferSelect;
 export type TaskRecord = typeof tasks.$inferSelect;

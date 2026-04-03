@@ -23,6 +23,7 @@ import {
   buildAuthenticatedIdentity,
   buildAuthorizationRedirectUrl,
   createOidcNonce,
+  normalizeOidcOAuthToken,
   type JwksSecretResolver,
   type JwtVerifier,
   type OidcOAuth2Namespace,
@@ -34,6 +35,7 @@ import {
   apiDocsSecurity,
   getSignedCookieValue,
   requireApiUser,
+  setSessionCookie,
   type TypedApp
 } from "./controller-support.js";
 
@@ -176,22 +178,29 @@ export function registerAuthController(
 
       const user = await upsertUser(database, identity);
       const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+      const sessionToken = tokenResponse.token.refresh_token
+        ? normalizeOidcOAuthToken(tokenResponse.token)
+        : null;
       const session = createSession(database, {
+        oidcToken: sessionToken,
         userId: user.id,
         expiresAt
       });
 
-      clearOidcCookies(reply);
-      reply.setCookie(SESSION_COOKIE, session.id, {
-        expires: new Date(expiresAt),
-        httpOnly: true,
-        path: "/",
-        sameSite: "lax",
-        secure: secureCookie,
-        signed: true
-      });
+      if (!sessionToken) {
+        app.log.warn(
+          {
+            issuer: config.oidcIssuer,
+            userId: user.id
+          },
+          "OIDC provider did not return a refresh token; session auto-extension is unavailable."
+        );
+      }
 
-      return reply.redirect("/");
+      clearOidcCookies(reply);
+      setSessionCookie(app, reply, session.id);
+
+      return reply.redirect(sessionToken ? "/" : "/?authNotice=missing-refresh-token");
     }
   });
 

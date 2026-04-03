@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../app.js";
@@ -6,6 +11,7 @@ import {
   OIDC_STATE_COOKIE,
   OIDC_VERIFIER_COOKIE
 } from "../oidc.js";
+import { SESSION_COOKIE_MAX_AGE_SECONDS } from "./controller-support.js";
 import {
   createMutableMockOidcProvider,
   loginWithOidc,
@@ -13,6 +19,7 @@ import {
 } from "../test-helpers.js";
 
 const createdApps: ReturnType<typeof buildApp>[] = [];
+const tempDirectories: string[] = [];
 
 afterEach(async () => {
   while (createdApps.length > 0) {
@@ -21,7 +28,61 @@ afterEach(async () => {
       await app.close();
     }
   }
+
+  while (tempDirectories.length > 0) {
+    const directory = tempDirectories.pop();
+    if (directory) {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  }
 });
+
+function createTempSqlitePath() {
+  const directory = mkdtempSync(join(tmpdir(), "bbtodo-auth-"));
+  tempDirectories.push(directory);
+  return join(directory, "bbtodo.sqlite");
+}
+
+function withDatabase<T>(sqlitePath: string, callback: (database: Database.Database) => T) {
+  const database = new Database(sqlitePath);
+
+  try {
+    return callback(database);
+  } finally {
+    database.close();
+  }
+}
+
+function getSessionId(app: ReturnType<typeof buildApp>, rawSessionCookie: string) {
+  const sessionCookie = app.unsignCookie(rawSessionCookie);
+  if (!sessionCookie.valid) {
+    throw new Error("Expected a valid signed session cookie.");
+  }
+
+  return sessionCookie.value;
+}
+
+function getPersistedSession(sqlitePath: string, sessionId: string) {
+  return withDatabase(sqlitePath, (database) => {
+    return (
+      (database
+        .prepare("SELECT id, expires_at, oidc_token FROM sessions WHERE id = ?")
+        .get(sessionId) as {
+        expires_at: string;
+        id: string;
+        oidc_token: string | null;
+      } | undefined) ?? null
+    );
+  });
+}
+
+function expireSession(sqlitePath: string, sessionId: string) {
+  withDatabase(sqlitePath, (database) => {
+    database
+      .prepare("UPDATE sessions SET expires_at = ? WHERE id = ?")
+      .run("2000-01-01T00:00:00.000Z", sessionId);
+  });
+}
 
 describe("auth routes", () => {
   it("rejects /api/v1/me without a session", async () => {
@@ -82,7 +143,8 @@ describe("auth routes", () => {
     );
   });
 
-  it("creates a session after the OIDC callback and clears it on logout", async () => {
+  it("creates a renewable session after the OIDC callback and clears it on logout", async () => {
+    const sqlitePath = createTempSqlitePath();
     const oidc = createMutableMockOidcProvider({
       subject: "user-123",
       email: "hello@example.com",
@@ -91,14 +153,18 @@ describe("auth routes", () => {
     const app = buildApp({
       config: testConfig,
       oidcProvider: oidc.provider,
-      sqlitePath: ":memory:"
+      sqlitePath
     });
     createdApps.push(app);
 
     const session = await loginWithOidc(app);
+    const sessionId = getSessionId(app, session.sessionCookie);
+    const persistedSession = getPersistedSession(sqlitePath, sessionId);
 
     expect(session.callbackResponse.statusCode).toBe(302);
     expect(session.callbackResponse.headers.location).toBe("/");
+    expect(session.sessionCookieRecord.maxAge).toBe(SESSION_COOKIE_MAX_AGE_SECONDS);
+    expect(persistedSession?.oidc_token).not.toBeNull();
 
     const meResponse = await app.inject({
       method: "GET",
@@ -142,6 +208,275 @@ describe("auth routes", () => {
         })
       ])
     );
+  });
+
+  it("refreshes an expired session on /api/v1/me and rotates the stored token data", async () => {
+    const sqlitePath = createTempSqlitePath();
+    const oidc = createMutableMockOidcProvider({
+      subject: "refresh-user",
+      email: "refresh@example.com",
+      displayName: "Refresh User"
+    });
+    oidc.setRefreshResponse({
+      accessToken: "refreshed-access-token",
+      refreshToken: "refreshed-refresh-token"
+    });
+
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+    const sessionId = getSessionId(app, session.sessionCookie);
+    const initialSession = getPersistedSession(sqlitePath, sessionId);
+
+    expireSession(sqlitePath, sessionId);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/me",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    const refreshedSession = getPersistedSession(sqlitePath, sessionId);
+    const refreshedToken =
+      refreshedSession?.oidc_token !== null && refreshedSession?.oidc_token !== undefined
+        ? (JSON.parse(refreshedSession.oidc_token) as {
+            access_token: string;
+            refresh_token?: string;
+          })
+        : null;
+
+    expect(response.statusCode).toBe(200);
+    expect(response.cookies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+          name: "bbtodo_session"
+        })
+      ])
+    );
+    expect(new Date(refreshedSession?.expires_at ?? 0).getTime()).toBeGreaterThan(
+      new Date(initialSession?.expires_at ?? 0).getTime()
+    );
+    expect(refreshedToken).toMatchObject({
+      access_token: "refreshed-access-token",
+      refresh_token: "refreshed-refresh-token"
+    });
+  });
+
+  it("refreshes an expired session for other authenticated API routes", async () => {
+    const sqlitePath = createTempSqlitePath();
+    const oidc = createMutableMockOidcProvider({
+      subject: "tokens-user",
+      email: "tokens@example.com",
+      displayName: "Tokens User"
+    });
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+    const sessionId = getSessionId(app, session.sessionCookie);
+
+    expireSession(sqlitePath, sessionId);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/api-tokens",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([]);
+    expect(oidc.getRefreshCallCount()).toBe(1);
+  });
+
+  it("preserves the previous refresh token when refreshed tokens omit a replacement", async () => {
+    const sqlitePath = createTempSqlitePath();
+    const oidc = createMutableMockOidcProvider({
+      subject: "rotation-user",
+      email: "rotation@example.com",
+      displayName: "Rotation User"
+    });
+    oidc.setMissingRefreshTokenOnRefresh(true);
+    oidc.setRefreshResponse({
+      accessToken: "rotated-access-token"
+    });
+
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+    const sessionId = getSessionId(app, session.sessionCookie);
+
+    expireSession(sqlitePath, sessionId);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/me",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    const persistedSession = getPersistedSession(sqlitePath, sessionId);
+    const refreshedToken =
+      persistedSession?.oidc_token !== null && persistedSession?.oidc_token !== undefined
+        ? (JSON.parse(persistedSession.oidc_token) as {
+            access_token: string;
+            refresh_token?: string;
+          })
+        : null;
+
+    expect(response.statusCode).toBe(200);
+    expect(refreshedToken).toMatchObject({
+      access_token: "rotated-access-token",
+      refresh_token: "test-refresh-token"
+    });
+  });
+
+  it("clears expired sessions that were created without a refresh token and redirects with a warning notice on login", async () => {
+    const sqlitePath = createTempSqlitePath();
+    const oidc = createMutableMockOidcProvider({
+      subject: "missing-refresh",
+      email: "missing-refresh@example.com",
+      displayName: "Missing Refresh"
+    });
+    oidc.setMissingRefreshToken(true);
+
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+    const sessionId = getSessionId(app, session.sessionCookie);
+
+    expect(session.callbackResponse.statusCode).toBe(302);
+    expect(session.callbackResponse.headers.location).toBe("/?authNotice=missing-refresh-token");
+    expect(getPersistedSession(sqlitePath, sessionId)?.oidc_token).toBeNull();
+
+    expireSession(sqlitePath, sessionId);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/me",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(getPersistedSession(sqlitePath, sessionId)).toBeNull();
+    expect(response.cookies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "bbtodo_session",
+          value: ""
+        })
+      ])
+    );
+  });
+
+  it("clears the session when refresh fails", async () => {
+    const sqlitePath = createTempSqlitePath();
+    const oidc = createMutableMockOidcProvider({
+      subject: "refresh-error",
+      email: "refresh-error@example.com",
+      displayName: "Refresh Error"
+    });
+    oidc.setRefreshError(new Error("refresh failed"));
+
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+    const sessionId = getSessionId(app, session.sessionCookie);
+
+    expireSession(sqlitePath, sessionId);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/me",
+      cookies: {
+        bbtodo_session: session.sessionCookie
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(getPersistedSession(sqlitePath, sessionId)).toBeNull();
+    expect(response.cookies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "bbtodo_session",
+          value: ""
+        })
+      ])
+    );
+  });
+
+  it("deduplicates concurrent refreshes for the same expired session", async () => {
+    const sqlitePath = createTempSqlitePath();
+    const oidc = createMutableMockOidcProvider({
+      subject: "dedupe-user",
+      email: "dedupe@example.com",
+      displayName: "Dedupe User"
+    });
+    oidc.setRefreshDelayMs(40);
+
+    const app = buildApp({
+      config: testConfig,
+      oidcProvider: oidc.provider,
+      sqlitePath
+    });
+    createdApps.push(app);
+
+    const session = await loginWithOidc(app);
+    const sessionId = getSessionId(app, session.sessionCookie);
+
+    expireSession(sqlitePath, sessionId);
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      app.inject({
+        method: "GET",
+        url: "/api/v1/me",
+        cookies: {
+          bbtodo_session: session.sessionCookie
+        }
+      }),
+      app.inject({
+        method: "GET",
+        url: "/api/v1/me",
+        cookies: {
+          bbtodo_session: session.sessionCookie
+        }
+      })
+    ]);
+
+    expect(firstResponse.statusCode).toBe(200);
+    expect(secondResponse.statusCode).toBe(200);
+    expect(oidc.getRefreshCallCount()).toBe(1);
   });
 
   it("rejects callbacks when the provider omits id_token", async () => {

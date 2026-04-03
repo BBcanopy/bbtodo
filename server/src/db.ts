@@ -2,7 +2,10 @@ export { SQLITE_DATABASE_PATH, createDatabase } from "./db/bootstrap.js";
 export {
   createSession,
   deleteSession,
+  getSession,
+  getSessionWithUser,
   getUserForSession,
+  updateSession,
   updateUserTheme,
   upsertUser
 } from "./db/auth.js";
@@ -54,6 +57,7 @@ export type {
   LaneWithTaskCount,
   ProjectRecord,
   ProjectWithLanes,
+  SessionRecord,
   TaskRecord,
   TaskRecordWithTags,
   TaskTagColor,

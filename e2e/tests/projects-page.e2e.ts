@@ -543,3 +543,19 @@ test("missing board routes return to projects with a toast", async ({ page }) =>
   await expect(toast).toContainText("Board not found");
   await expect(toast).toContainText("Board NOPE does not exist.");
 });
+
+test("auth notice query params show a one-time warning toast after login", async ({ page }) => {
+  await mockAuthenticated(page);
+
+  await page.goto("/?authNotice=missing-refresh-token");
+
+  const toast = page.getByTestId("toast-notice");
+
+  await expect(page).toHaveURL("/");
+  await expect(toast).toBeVisible();
+  await expect(toast).toHaveAttribute("data-tone", "warning");
+  await expect(toast).toContainText("Session auto-extension unavailable");
+  await expect(toast).toContainText(
+    "Signed in successfully, but your OIDC provider did not return a refresh token."
+  );
+});

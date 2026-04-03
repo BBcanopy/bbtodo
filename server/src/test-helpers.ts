@@ -8,7 +8,8 @@ import {
   normalizeIssuer,
   type JwtVerifier,
   type OidcAuthTestingOptions,
-  type OidcOAuth2Namespace
+  type OidcOAuth2Namespace,
+  type OidcOAuthToken
 } from "./oidc.js";
 
 export const testConfig: AppConfig = {
@@ -17,7 +18,7 @@ export const testConfig: AppConfig = {
   oidcIssuer: "https://issuer.example.com",
   oidcClientId: "bbtodo-test",
   oidcClientSecret: "top-secret",
-  oidcScopes: "openid profile email"
+  oidcScopes: "openid profile email offline_access"
 };
 
 export interface TestIdentity {
@@ -37,12 +38,41 @@ interface MockVerifiedClaims {
   sub?: string;
 }
 
+function buildMockToken(
+  accessToken: string,
+  options?: {
+    expiresIn?: number;
+    idToken?: string;
+    refreshToken?: string;
+  }
+): OidcOAuthToken {
+  const expiresIn = options?.expiresIn ?? 60 * 60;
+
+  return {
+    access_token: accessToken,
+    expires_at: new Date(Date.now() + expiresIn * 1000),
+    expires_in: expiresIn,
+    id_token: options?.idToken,
+    refresh_token: options?.refreshToken,
+    token_type: "Bearer"
+  };
+}
+
 export function createMutableMockOidcProvider(initialIdentity: TestIdentity) {
   let currentIdentity = initialIdentity;
   let currentVerifierError: Error | null = null;
+  let currentRefreshError: Error | null = null;
   let currentClaimsOverrides: Partial<MockVerifiedClaims> = {};
   let currentExpectedNonce = "test-nonce";
+  let currentRefreshToken = "test-refresh-token";
+  let refreshCallCount = 0;
+  let refreshDelayMs = 0;
   let shouldOmitIdToken = false;
+  let shouldOmitInitialRefreshToken = false;
+  let shouldOmitRefreshedRefreshToken = false;
+  let refreshResponseAccessToken = "test-access-token-refreshed";
+  let refreshResponseIdToken = "test-id-token-refreshed";
+  let refreshResponseRefreshToken = "test-refresh-token-refreshed";
 
   function getClaims() {
     const baseClaims: MockVerifiedClaims = {
@@ -98,14 +128,42 @@ export function createMutableMockOidcProvider(initialIdentity: TestIdentity) {
       });
 
       return {
-        token: shouldOmitIdToken
-          ? {
-              access_token: "test-access-token"
-            }
-          : {
-              access_token: "test-access-token",
-              id_token: "test-id-token"
-            }
+        token: buildMockToken("test-access-token", {
+          idToken: shouldOmitIdToken ? undefined : "test-id-token",
+          refreshToken: shouldOmitInitialRefreshToken ? undefined : currentRefreshToken
+        })
+      };
+    },
+    async getNewAccessTokenUsingRefreshToken(refreshToken) {
+      refreshCallCount += 1;
+
+      if (refreshDelayMs > 0) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, refreshDelayMs);
+        });
+      }
+
+      if (currentRefreshError) {
+        throw currentRefreshError;
+      }
+
+      if (!refreshToken.refresh_token || refreshToken.refresh_token !== currentRefreshToken) {
+        throw new Error(`Unexpected refresh token: ${refreshToken.refresh_token ?? "<missing>"}`);
+      }
+
+      const nextRefreshToken = shouldOmitRefreshedRefreshToken
+        ? undefined
+        : refreshResponseRefreshToken;
+
+      if (nextRefreshToken) {
+        currentRefreshToken = nextRefreshToken;
+      }
+
+      return {
+        token: buildMockToken(refreshResponseAccessToken, {
+          idToken: refreshResponseIdToken,
+          refreshToken: nextRefreshToken
+        })
       };
     }
   };
@@ -132,6 +190,9 @@ export function createMutableMockOidcProvider(initialIdentity: TestIdentity) {
       },
       oauth2Namespace
     } satisfies OidcAuthTestingOptions,
+    getRefreshCallCount() {
+      return refreshCallCount;
+    },
     provider: {
       jwtVerifier,
       onAuthorizationNonce(nonce: string) {
@@ -146,11 +207,41 @@ export function createMutableMockOidcProvider(initialIdentity: TestIdentity) {
       currentIdentity = identity;
       currentClaimsOverrides = {};
       currentExpectedNonce = "test-nonce";
+      currentRefreshError = null;
+      currentRefreshToken = "test-refresh-token";
       currentVerifierError = null;
+      refreshCallCount = 0;
+      refreshDelayMs = 0;
+      refreshResponseAccessToken = "test-access-token-refreshed";
+      refreshResponseIdToken = "test-id-token-refreshed";
+      refreshResponseRefreshToken = "test-refresh-token-refreshed";
       shouldOmitIdToken = false;
+      shouldOmitInitialRefreshToken = false;
+      shouldOmitRefreshedRefreshToken = false;
     },
     setMissingIdToken(value: boolean) {
       shouldOmitIdToken = value;
+    },
+    setMissingRefreshToken(value: boolean) {
+      shouldOmitInitialRefreshToken = value;
+    },
+    setMissingRefreshTokenOnRefresh(value: boolean) {
+      shouldOmitRefreshedRefreshToken = value;
+    },
+    setRefreshError(error: Error | null) {
+      currentRefreshError = error;
+    },
+    setRefreshDelayMs(value: number) {
+      refreshDelayMs = value;
+    },
+    setRefreshResponse(options: {
+      accessToken?: string;
+      idToken?: string;
+      refreshToken?: string;
+    }) {
+      refreshResponseAccessToken = options.accessToken ?? refreshResponseAccessToken;
+      refreshResponseIdToken = options.idToken ?? refreshResponseIdToken;
+      refreshResponseRefreshToken = options.refreshToken ?? refreshResponseRefreshToken;
     },
     setVerifierError(error: Error | null) {
       currentVerifierError = error;
@@ -212,6 +303,7 @@ export async function loginWithOidc(app: FastifyInstance) {
   return {
     callbackResponse,
     loginResponse,
-    sessionCookie: sessionCookie.value
+    sessionCookie: sessionCookie.value,
+    sessionCookieRecord: sessionCookie
   };
 }

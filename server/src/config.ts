@@ -6,7 +6,7 @@ const configSchema = z.object({
   oidcIssuer: z.url(),
   oidcClientId: z.string().min(1),
   oidcClientSecret: z.string().min(1),
-  oidcScopes: z.string().min(1).default("openid profile email")
+  oidcScopes: z.string().min(1).default("openid profile email offline_access")
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

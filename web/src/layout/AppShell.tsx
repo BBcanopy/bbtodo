@@ -29,8 +29,14 @@ import {
   parseExactTicketId,
   parseSingleTagInput
 } from "../app/utils";
-import { ChevronDownIcon, CloseIcon, ErrorBanner, PencilIcon } from "../components/ui";
+import { ChevronDownIcon, CloseIcon, ErrorBanner, PencilIcon, ToastNotice } from "../components/ui";
 import { useDismissableLayer } from "../hooks/useDismissableLayer";
+
+interface AppToast {
+  message: string;
+  title: string;
+  tone: "danger" | "success" | "warning";
+}
 
 export function AppShell({ user }: { user: User }) {
   const location = useLocation();
@@ -43,6 +49,7 @@ export function AppShell({ user }: { user: User }) {
   const [isProjectSwitcherOpen, setIsProjectSwitcherOpen] = useState(false);
   const [isTagFilterOpen, setIsTagFilterOpen] = useState(false);
   const [projectSwitcherInput, setProjectSwitcherInput] = useState("");
+  const [toast, setToast] = useState<AppToast | null>(null);
   const queryClient = useQueryClient();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const projectSwitcherRef = useRef<HTMLDivElement | null>(null);
@@ -105,6 +112,7 @@ export function AppShell({ user }: { user: User }) {
   const avatarLetter = getAvatarLetter(user);
   const isTaskSearchRoute = Boolean(boardMatch || todosMatch);
   const showNavSearch = Boolean(isTaskSearchRoute || isProjectsRoute);
+  const authNotice = searchParams.get("authNotice");
   const navSearch = showNavSearch ? searchParams.get("q") ?? "" : "";
   const navSearchLabel = boardMatch ? "Search cards" : todosMatch ? "Search todos" : "Search boards";
   const navTagSearch = isTaskSearchRoute ? searchParams.get("tags") ?? "" : "";
@@ -178,6 +186,37 @@ export function AppShell({ user }: { user: User }) {
 
     setIsTagFilterOpen(false);
   }, [isTaskSearchRoute]);
+
+  useEffect(() => {
+    if (authNotice !== "missing-refresh-token") {
+      return;
+    }
+
+    setToast({
+      message:
+        "Signed in successfully, but your OIDC provider did not return a refresh token. You'll need to sign in again after this session expires.",
+      title: "Session auto-extension unavailable",
+      tone: "warning"
+    });
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("authNotice");
+    setSearchParams(nextParams, { replace: true });
+  }, [authNotice, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setToast(null);
+    }, 4000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [toast]);
 
   function updateRouteParams(updater: (params: URLSearchParams) => void) {
     const nextParams = new URLSearchParams(searchParams);
@@ -280,6 +319,14 @@ export function AppShell({ user }: { user: User }) {
 
   return (
     <div className="app-frame">
+      {toast ? (
+        <ToastNotice
+          message={toast.message}
+          onDismiss={() => setToast(null)}
+          title={toast.title}
+          tone={toast.tone}
+        />
+      ) : null}
       <div className="app-shell">
         <div className="topbar-shell" data-testid="app-topbar-shell">
           <header className="topbar">

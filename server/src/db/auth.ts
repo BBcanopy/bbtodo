@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { type DatabaseClient, type UserTheme, sessions, users } from "./schema.js";
+import { type OidcOAuthToken, serializeOidcOAuthToken } from "../oidc.js";
 
 export async function upsertUser(
   db: DatabaseClient,
@@ -71,6 +72,7 @@ export function updateUserTheme(
 export function createSession(
   db: DatabaseClient,
   input: {
+    oidcToken: OidcOAuthToken | null;
     userId: string;
     expiresAt: string;
   }
@@ -79,6 +81,7 @@ export function createSession(
     id: crypto.randomUUID(),
     userId: input.userId,
     expiresAt: input.expiresAt,
+    oidcToken: input.oidcToken ? serializeOidcOAuthToken(input.oidcToken) : null,
     createdAt: new Date().toISOString()
   };
 
@@ -87,18 +90,60 @@ export function createSession(
   return session;
 }
 
-export function getUserForSession(db: DatabaseClient, sessionId: string) {
-  const session = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
+export function getSession(db: DatabaseClient, sessionId: string) {
+  return db.select().from(sessions).where(eq(sessions.id, sessionId)).get() ?? null;
+}
+
+export function getSessionWithUser(db: DatabaseClient, sessionId: string) {
+  const session = getSession(db, sessionId);
   if (!session) {
     return null;
   }
 
-  if (new Date(session.expiresAt).getTime() <= Date.now()) {
+  const user = db.select().from(users).where(eq(users.id, session.userId)).get();
+  if (!user) {
     db.delete(sessions).where(eq(sessions.id, sessionId)).run();
     return null;
   }
 
-  return db.select().from(users).where(eq(users.id, session.userId)).get() ?? null;
+  return {
+    session,
+    user
+  };
+}
+
+export function getUserForSession(db: DatabaseClient, sessionId: string) {
+  const sessionWithUser = getSessionWithUser(db, sessionId);
+  if (!sessionWithUser) {
+    return null;
+  }
+
+  if (new Date(sessionWithUser.session.expiresAt).getTime() <= Date.now()) {
+    db.delete(sessions).where(eq(sessions.id, sessionId)).run();
+    return null;
+  }
+
+  return sessionWithUser.user;
+}
+
+export function updateSession(
+  db: DatabaseClient,
+  input: {
+    oidcToken: OidcOAuthToken | null;
+    sessionId: string;
+    expiresAt: string;
+  }
+) {
+  db
+    .update(sessions)
+    .set({
+      expiresAt: input.expiresAt,
+      oidcToken: input.oidcToken ? serializeOidcOAuthToken(input.oidcToken) : null
+    })
+    .where(eq(sessions.id, input.sessionId))
+    .run();
+
+  return getSession(db, input.sessionId);
 }
 
 export function deleteSession(db: DatabaseClient, sessionId: string) {

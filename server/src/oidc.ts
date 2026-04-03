@@ -29,11 +29,29 @@ const oidcIdTokenClaimsSchema = z.object({
   sub: z.string().min(1)
 });
 
+const oidcOAuthTokenSchema = z.object({
+  access_token: z.string().min(1),
+  expires_at: z.union([z.date(), z.string().min(1)]).optional(),
+  expires_in: z.number().nonnegative(),
+  id_token: z.string().min(1).optional(),
+  refresh_token: z.string().min(1).optional(),
+  token_type: z.string().min(1)
+});
+
 export interface AuthenticatedIdentity {
   issuer: string;
   subject: string;
   email: string | null;
   displayName: string | null;
+}
+
+export interface OidcOAuthToken {
+  access_token: string;
+  expires_at: Date;
+  expires_in: number;
+  id_token?: string;
+  refresh_token?: string;
+  token_type: string;
 }
 
 export interface OidcDiscoveryDocument {
@@ -50,10 +68,13 @@ export interface OidcOAuth2Namespace {
     request: FastifyRequest,
     reply: FastifyReply
   ): Promise<{
-    token: {
-      access_token: string;
-      id_token?: string;
-    };
+    token: OidcOAuthToken;
+  }>;
+  getNewAccessTokenUsingRefreshToken(
+    refreshToken: OidcOAuthToken,
+    params: object
+  ): Promise<{
+    token: OidcOAuthToken;
   }>;
 }
 
@@ -91,6 +112,62 @@ interface CachedJwksPublicKey {
 }
 
 export const DEFAULT_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function resolveOidcOAuthTokenExpiry(rawExpiresAt: Date | string | undefined, expiresIn: number) {
+  if (rawExpiresAt instanceof Date && Number.isFinite(rawExpiresAt.getTime())) {
+    return rawExpiresAt;
+  }
+
+  if (typeof rawExpiresAt === "string") {
+    const parsed = new Date(rawExpiresAt);
+    if (Number.isFinite(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  return new Date(Date.now() + expiresIn * 1000);
+}
+
+export function normalizeOidcOAuthToken(token: unknown): OidcOAuthToken {
+  const parsed = oidcOAuthTokenSchema.parse(token);
+  return {
+    access_token: parsed.access_token,
+    expires_at: resolveOidcOAuthTokenExpiry(parsed.expires_at, parsed.expires_in),
+    expires_in: parsed.expires_in,
+    id_token: parsed.id_token,
+    refresh_token: parsed.refresh_token,
+    token_type: parsed.token_type
+  };
+}
+
+export function serializeOidcOAuthToken(token: OidcOAuthToken) {
+  return JSON.stringify({
+    ...token,
+    expires_at: token.expires_at.toISOString()
+  });
+}
+
+export function deserializeOidcOAuthToken(rawToken: string | null | undefined) {
+  if (!rawToken) {
+    return null;
+  }
+
+  try {
+    return normalizeOidcOAuthToken(JSON.parse(rawToken) as unknown);
+  } catch {
+    return null;
+  }
+}
+
+export function mergeOidcRefreshToken(
+  currentToken: OidcOAuthToken,
+  refreshedToken: OidcOAuthToken
+): OidcOAuthToken {
+  return {
+    ...refreshedToken,
+    refresh_token: refreshedToken.refresh_token ?? currentToken.refresh_token
+  };
+}
 
 export function normalizeIssuer(issuer: string) {
   return new URL(issuer).toString();
