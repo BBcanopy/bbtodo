@@ -20,6 +20,7 @@ import type { AppConfig } from "./config.js";
 import { registerApiTokensController } from "./controllers/api-tokens-controller.js";
 import { registerAuthController } from "./controllers/auth-controller.js";
 import {
+  SESSION_SUPPORT_DECORATION,
   SESSION_COOKIE,
   withZodTypeProvider
 } from "./controllers/controller-support.js";
@@ -32,8 +33,18 @@ import {
   createJwksSecretResolver,
   resolveOidcDiscoveryDocument,
   type JwksSecretResolver,
-  type OidcAuthTestingOptions
+  type OidcAuthTestingOptions,
+  type OidcOAuth2Namespace
 } from "./oidc.js";
+import { deriveSessionTokenEncryptionKey } from "./session-token-crypto.js";
+
+declare module "fastify" {
+  interface FastifyInstance {
+    oidcJwksSecretResolver?: JwksSecretResolver;
+    oidcOAuth2: OidcOAuth2Namespace;
+    oidcTestControls?: OidcAuthTestingOptions;
+  }
+}
 
 function isSecureCookie(clientUrl: string) {
   return new URL(clientUrl).protocol === "https:";
@@ -104,6 +115,12 @@ export function buildApp(options: {
     ? path.resolve(options.clientDistPath)
     : null;
 
+  app.decorate(SESSION_SUPPORT_DECORATION, {
+    encryptionKey: deriveSessionTokenEncryptionKey(options.config.sessionSecret),
+    oauth2Namespace: null,
+    secureCookie
+  });
+
   app.register(cookie, {
     secret: options.config.sessionSecret
   });
@@ -113,6 +130,7 @@ export function buildApp(options: {
   app.register(async (authApp) => {
     if (authTesting?.oauth2Namespace) {
       authApp.decorate(OIDC_OAUTH_NAMESPACE, authTesting.oauth2Namespace);
+      app[SESSION_SUPPORT_DECORATION].oauth2Namespace = authTesting.oauth2Namespace;
     } else {
       await authApp.register(oauthPlugin, {
         callbackUri: `${options.config.clientUrl}/auth/callback`,
@@ -137,6 +155,7 @@ export function buildApp(options: {
         scope: options.config.oidcScopes.split(/\s+/).filter(Boolean),
         verifierCookieName: OIDC_VERIFIER_COOKIE
       });
+      app[SESSION_SUPPORT_DECORATION].oauth2Namespace = authApp[OIDC_OAUTH_NAMESPACE];
     }
 
     if (authTesting?.jwtVerifier) {
@@ -151,7 +170,7 @@ export function buildApp(options: {
       });
       authApp.decorate(
         "oidcJwksSecretResolver",
-        jwksSecretResolver as JwksSecretResolver
+        jwksSecretResolver
       );
       await authApp.register(jwt as never, {
         decode: {

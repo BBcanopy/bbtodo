@@ -130,6 +130,11 @@ describe("database migrations", () => {
         expect.arrayContaining(["ticket_prefix", "next_ticket_number"])
       );
 
+      const sessionColumns = (
+        services.database.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
+      ).map((column) => column.name);
+      expect(sessionColumns).toEqual(expect.arrayContaining(["oidc_token"]));
+
       const taskTagColumns = (
         services.database.prepare("PRAGMA table_info(task_tags)").all() as Array<{ name: string }>
       ).map((column) => column.name);

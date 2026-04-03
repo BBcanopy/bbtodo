@@ -1,15 +1,40 @@
+import { createHash } from "node:crypto";
+
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 
 import {
+  deleteSession,
+  getSessionWithUser,
   getUserForApiToken,
-  getUserForSession,
   type DatabaseClient,
-  type UserRecord
+  type UserRecord,
+  updateSession
 } from "../db.js";
+import {
+  deserializeOidcOAuthToken,
+  mergeOidcRefreshToken,
+  normalizeOidcOAuthToken,
+  type OidcOAuth2Namespace
+} from "../oidc.js";
+import { decryptSessionToken, encryptSessionToken } from "../session-token-crypto.js";
 
 export const SESSION_COOKIE = "bbtodo_session";
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+export const SESSION_COOKIE_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
+export const SESSION_SUPPORT_DECORATION = "bbtodoSessionSupport";
+
+export interface SessionSupportState {
+  encryptionKey: Buffer;
+  oauth2Namespace: OidcOAuth2Namespace | null;
+  secureCookie: boolean;
+}
+
+declare module "fastify" {
+  interface FastifyInstance {
+    bbtodoSessionSupport: SessionSupportState;
+  }
+}
 
 export const apiDocsSecurity: Array<Record<string, string[]>> = [
   { apiToken: [] },
@@ -24,7 +49,45 @@ export function withZodTypeProvider(app: FastifyInstance) {
 export type TypedApp = ReturnType<typeof withZodTypeProvider>;
 
 type AuthRequest = Pick<FastifyRequest, "headers" | "cookies">;
-type AuthReply = Pick<FastifyReply, "clearCookie" | "status" | "send">;
+type AuthReply = Pick<FastifyReply, "clearCookie" | "setCookie" | "status" | "send">;
+interface SessionAuthContext {
+  renewed: boolean;
+  source: "session";
+  user: UserRecord;
+}
+
+export interface ApiAuthContext {
+  source: "bearer" | "session";
+  user: UserRecord;
+}
+
+const pendingSessionRefreshes = new Map<string, Promise<SessionAuthContext | null>>();
+
+function getSessionSupport(app: FastifyInstance) {
+  return app[SESSION_SUPPORT_DECORATION];
+}
+
+function getSessionCookieExpiresAt() {
+  return new Date(Date.now() + SESSION_COOKIE_MAX_AGE_SECONDS * 1000);
+}
+
+export function setSessionCookie(
+  app: FastifyInstance,
+  reply: Pick<FastifyReply, "setCookie">,
+  sessionId: string
+) {
+  const sessionSupport = getSessionSupport(app);
+
+  reply.setCookie(SESSION_COOKIE, sessionId, {
+    expires: getSessionCookieExpiresAt(),
+    httpOnly: true,
+    maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+    path: "/",
+    sameSite: "lax",
+    secure: sessionSupport.secureCookie,
+    signed: true
+  });
+}
 
 export function getSignedCookieValue(
   app: FastifyInstance,
@@ -42,12 +105,123 @@ export function getSignedCookieValue(
   return unsigned.value;
 }
 
-export interface ApiAuthContext {
-  source: "bearer" | "session";
-  user: UserRecord;
+export function encryptOidcTokenForStorage(
+  app: FastifyInstance,
+  oidcToken: Parameters<typeof encryptSessionToken>[0]
+) {
+  return encryptSessionToken(oidcToken, getSessionSupport(app).encryptionKey);
 }
 
-export function getApiAuthContext(
+export function decryptStoredOidcToken(
+  app: FastifyInstance,
+  rawToken: string | null | undefined
+) {
+  if (!rawToken) {
+    return null;
+  }
+
+  return (
+    decryptSessionToken(rawToken, getSessionSupport(app).encryptionKey) ??
+    deserializeOidcOAuthToken(rawToken)
+  );
+}
+
+function formatSessionIdForLog(sessionId: string) {
+  return createHash("sha256").update(sessionId).digest("hex").slice(0, 12);
+}
+
+async function resolveSessionAuthContext(
+  app: FastifyInstance,
+  db: DatabaseClient,
+  sessionId: string
+) {
+  const sessionWithUser = getSessionWithUser(db, sessionId);
+  if (!sessionWithUser) {
+    return null;
+  }
+
+  if (new Date(sessionWithUser.session.expiresAt).getTime() > Date.now()) {
+    return {
+      renewed: false,
+      source: "session",
+      user: sessionWithUser.user
+    } satisfies SessionAuthContext;
+  }
+
+  const sessionSupport = getSessionSupport(app);
+  const oauth2Namespace = sessionSupport.oauth2Namespace;
+  const sessionToken = decryptStoredOidcToken(app, sessionWithUser.session.oidcToken);
+
+  if (!oauth2Namespace || !sessionToken) {
+    deleteSession(db, sessionId);
+    return null;
+  }
+
+  let pendingRefresh = pendingSessionRefreshes.get(sessionId);
+  if (!pendingRefresh) {
+    pendingRefresh = (async () => {
+      try {
+        const latestSessionWithUser = getSessionWithUser(db, sessionId);
+        if (!latestSessionWithUser) {
+          return null;
+        }
+
+        if (new Date(latestSessionWithUser.session.expiresAt).getTime() > Date.now()) {
+          return {
+            renewed: false,
+            source: "session",
+            user: latestSessionWithUser.user
+          } satisfies SessionAuthContext;
+        }
+
+        const latestSessionToken = decryptStoredOidcToken(app, latestSessionWithUser.session.oidcToken);
+        if (!latestSessionToken) {
+          deleteSession(db, sessionId);
+          return null;
+        }
+
+        const refreshedTokenResponse = await oauth2Namespace.getNewAccessTokenUsingRefreshToken(
+          latestSessionToken,
+          {}
+        );
+        const refreshedToken = mergeOidcRefreshToken(
+          latestSessionToken,
+          normalizeOidcOAuthToken(refreshedTokenResponse.token)
+        );
+        const refreshedSession = updateSession(db, {
+          expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
+          oidcToken: encryptOidcTokenForStorage(app, refreshedToken),
+          sessionId
+        });
+
+        if (!refreshedSession) {
+          return null;
+        }
+
+        return {
+          renewed: true,
+          source: "session",
+          user: latestSessionWithUser.user
+        } satisfies SessionAuthContext;
+      } catch (error) {
+        app.log.warn(
+          { err: error, sessionFingerprint: formatSessionIdForLog(sessionId) },
+          "OIDC session refresh failed."
+        );
+        deleteSession(db, sessionId);
+        return null;
+      } finally {
+        pendingSessionRefreshes.delete(sessionId);
+      }
+    })();
+
+    pendingSessionRefreshes.set(sessionId, pendingRefresh);
+  }
+
+  return pendingRefresh;
+}
+
+export async function getApiAuthContext(
   app: FastifyInstance,
   db: DatabaseClient,
   request: AuthRequest,
@@ -83,8 +257,8 @@ export function getApiAuthContext(
     return null;
   }
 
-  const user = getUserForSession(db, sessionId);
-  if (!user) {
+  const auth = await resolveSessionAuthContext(app, db, sessionId);
+  if (!auth) {
     reply.clearCookie(SESSION_COOKIE, {
       path: "/"
     });
@@ -94,10 +268,11 @@ export function getApiAuthContext(
     return null;
   }
 
-  return {
-    source: "session",
-    user
-  } satisfies ApiAuthContext;
+  if (auth.renewed) {
+    setSessionCookie(app, reply, sessionId);
+  }
+
+  return auth satisfies ApiAuthContext;
 }
 
 export async function requireApiUser(
@@ -106,7 +281,7 @@ export async function requireApiUser(
   request: AuthRequest,
   reply: AuthReply
 ) {
-  const auth = getApiAuthContext(app, db, request, reply);
+  const auth = await getApiAuthContext(app, db, request, reply);
   return auth?.user ?? null;
 }
 
@@ -116,7 +291,7 @@ export async function requireSessionApiUser(
   request: AuthRequest,
   reply: AuthReply
 ) {
-  const auth = getApiAuthContext(app, db, request, reply);
+  const auth = await getApiAuthContext(app, db, request, reply);
   if (!auth) {
     return null;
   }

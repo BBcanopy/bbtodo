@@ -23,17 +23,18 @@ import {
   buildAuthenticatedIdentity,
   buildAuthorizationRedirectUrl,
   createOidcNonce,
-  type JwksSecretResolver,
+  normalizeOidcOAuthToken,
   type JwtVerifier,
-  type OidcOAuth2Namespace,
   verifyOidcIdToken
 } from "../oidc.js";
 import {
   SESSION_COOKIE,
   SESSION_TTL_MS,
   apiDocsSecurity,
+  encryptOidcTokenForStorage,
   getSignedCookieValue,
   requireApiUser,
+  setSessionCookie,
   type TypedApp
 } from "./controller-support.js";
 
@@ -52,11 +53,6 @@ export function registerAuthController(
   }
 ) {
   const { config, database, secureCookie } = options;
-  const authApp = app as TypedApp & {
-    [OIDC_OAUTH_NAMESPACE]: OidcOAuth2Namespace;
-    jwt: JwtVerifier;
-    oidcJwksSecretResolver?: JwksSecretResolver;
-  };
 
   function clearOidcCookies(reply: {
     clearCookie: FastifyReply["clearCookie"];
@@ -92,7 +88,7 @@ export function registerAuthController(
         signed: true
       });
 
-      const authorizationUri = await authApp[OIDC_OAUTH_NAMESPACE].generateAuthorizationUri(
+      const authorizationUri = await app[OIDC_OAUTH_NAMESPACE].generateAuthorizationUri(
         request,
         reply
       );
@@ -122,11 +118,11 @@ export function registerAuthController(
 
       let tokenResponse:
         | Awaited<
-            ReturnType<OidcOAuth2Namespace["getAccessTokenFromAuthorizationCodeFlow"]>
+            ReturnType<TypedApp[typeof OIDC_OAUTH_NAMESPACE]["getAccessTokenFromAuthorizationCodeFlow"]>
           >
         | undefined;
       try {
-        tokenResponse = await authApp[
+        tokenResponse = await app[
           OIDC_OAUTH_NAMESPACE
         ].getAccessTokenFromAuthorizationCodeFlow(request, reply);
       } catch {
@@ -148,8 +144,8 @@ export function registerAuthController(
       try {
         verifiedClaims = await verifyOidcIdToken({
           idToken,
-          jwtVerifier: authApp.jwt,
-          jwksSecretResolver: authApp.oidcJwksSecretResolver
+          jwtVerifier: app.jwt as JwtVerifier,
+          jwksSecretResolver: app.oidcJwksSecretResolver
         });
       } catch (error) {
         app.log.warn({ err: error }, "OIDC id_token validation failed.");
@@ -176,22 +172,29 @@ export function registerAuthController(
 
       const user = await upsertUser(database, identity);
       const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+      const sessionToken = tokenResponse.token.refresh_token
+        ? normalizeOidcOAuthToken(tokenResponse.token)
+        : null;
       const session = createSession(database, {
+        oidcToken: sessionToken ? encryptOidcTokenForStorage(app, sessionToken) : null,
         userId: user.id,
         expiresAt
       });
 
-      clearOidcCookies(reply);
-      reply.setCookie(SESSION_COOKIE, session.id, {
-        expires: new Date(expiresAt),
-        httpOnly: true,
-        path: "/",
-        sameSite: "lax",
-        secure: secureCookie,
-        signed: true
-      });
+      if (!sessionToken) {
+        app.log.warn(
+          {
+            issuer: config.oidcIssuer,
+            userId: user.id
+          },
+          "OIDC provider did not return a refresh token; session auto-extension is unavailable."
+        );
+      }
 
-      return reply.redirect("/");
+      clearOidcCookies(reply);
+      setSessionCookie(app, reply, session.id);
+
+      return reply.redirect(sessionToken ? "/" : "/?authNotice=missing-refresh-token");
     }
   });
 

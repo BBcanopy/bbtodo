@@ -3483,6 +3483,11 @@ textarea:focus {
   background: color-mix(in srgb, var(--surface-popover) 90%, var(--accent-soft));
 }
 
+.toast-notice--warning {
+  border-color: color-mix(in srgb, #d39a2f 28%, var(--line));
+  background: color-mix(in srgb, var(--surface-popover) 90%, rgba(211, 154, 47, 0.16));
+}
+
 .toast-notice__copy {
   display: grid;
   gap: 0.2rem;
@@ -3500,6 +3505,10 @@ textarea:focus {
 
 .toast-notice--success .toast-notice__copy strong {
   color: var(--accent-strong);
+}
+
+.toast-notice--warning .toast-notice__copy strong {
+  color: #9c6a12;
 }
 
 .toast-notice__copy p {

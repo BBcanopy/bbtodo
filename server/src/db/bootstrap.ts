@@ -100,6 +100,7 @@ function createLegacyCompatTables(database: Database.Database) {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       expires_at TEXT NOT NULL,
+      oidc_token TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -162,6 +163,11 @@ function ensureLegacyCompatColumns(database: Database.Database) {
   const userColumns = getTableColumns(database, "users");
   if (!userColumns.has("theme")) {
     database.exec("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'sea';");
+  }
+
+  const sessionColumns = getTableColumns(database, "sessions");
+  if (!sessionColumns.has("oidc_token")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN oidc_token TEXT;");
   }
 
   const taskColumns = getTableColumns(database, "tasks");
