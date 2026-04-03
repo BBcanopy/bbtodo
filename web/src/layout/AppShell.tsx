@@ -25,6 +25,7 @@ import { useCreateProjectMutation } from "../hooks/useCreateProjectMutation";
 import {
   formatSingleTagInput,
   getAvatarLetter,
+  getGravatarUrl,
   normalizeTagKey,
   parseExactTicketId,
   parseSingleTagInput
@@ -50,6 +51,8 @@ export function AppShell({ user }: { user: User }) {
   const [isTagFilterOpen, setIsTagFilterOpen] = useState(false);
   const [projectSwitcherInput, setProjectSwitcherInput] = useState("");
   const [toast, setToast] = useState<AppToast | null>(null);
+  const [gravatarUrl, setGravatarUrl] = useState<string | null>(null);
+  const [isGravatarLoaded, setIsGravatarLoaded] = useState(false);
   const queryClient = useQueryClient();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const projectSwitcherRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +113,7 @@ export function AppShell({ user }: { user: User }) {
     }
   });
   const avatarLetter = getAvatarLetter(user);
+  const showGravatarImage = gravatarUrl !== null && isGravatarLoaded;
   const isTaskSearchRoute = Boolean(boardMatch || todosMatch);
   const showNavSearch = Boolean(isTaskSearchRoute || isProjectsRoute);
   const authNotice = searchParams.get("authNotice");
@@ -217,6 +221,33 @@ export function AppShell({ user }: { user: User }) {
       window.clearTimeout(timeoutId);
     };
   }, [toast]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    setGravatarUrl(null);
+    setIsGravatarLoaded(false);
+
+    void getGravatarUrl(user.email)
+      .then((nextGravatarUrl) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setGravatarUrl(nextGravatarUrl);
+      })
+      .catch(() => {
+        if (isCancelled) {
+          return;
+        }
+
+        setGravatarUrl(null);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [user.email]);
 
   function updateRouteParams(updater: (params: URLSearchParams) => void) {
     const nextParams = new URLSearchParams(searchParams);
@@ -590,7 +621,25 @@ export function AppShell({ user }: { user: User }) {
                 onClick={() => setIsMenuOpen((current) => !current)}
                 type="button"
               >
-                <span aria-hidden="true" className="avatar-button__letter">
+                {gravatarUrl ? (
+                  <img
+                    alt=""
+                    aria-hidden="true"
+                    className={`avatar-button__image${showGravatarImage ? " is-visible" : ""}`}
+                    decoding="async"
+                    onError={() => {
+                      setGravatarUrl(null);
+                      setIsGravatarLoaded(false);
+                    }}
+                    onLoad={() => setIsGravatarLoaded(true)}
+                    referrerPolicy="no-referrer"
+                    src={gravatarUrl}
+                  />
+                ) : null}
+                <span
+                  aria-hidden="true"
+                  className={`avatar-button__letter${showGravatarImage ? " is-hidden" : ""}`}
+                >
                   {avatarLetter}
                 </span>
               </button>

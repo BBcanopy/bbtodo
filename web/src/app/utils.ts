@@ -40,10 +40,40 @@ export function formatIsoDate(value: string) {
 }
 
 const exactTicketIdPattern = /^[A-Z]{2,4}-[1-9]\d*$/;
+const gravatarBaseUrl = "https://gravatar.com/avatar";
+const gravatarSize = 160;
 
 export function parseExactTicketId(value: string) {
   const normalizedValue = value.trim().toUpperCase();
   return exactTicketIdPattern.test(normalizedValue) ? normalizedValue : null;
+}
+
+function normalizeGravatarEmail(email: string | null | undefined) {
+  const normalizedEmail = email?.trim().toLowerCase() ?? "";
+  return normalizedEmail.length > 0 ? normalizedEmail : null;
+}
+
+function formatHexDigest(value: ArrayBuffer) {
+  return Array.from(new Uint8Array(value), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function getGravatarUrl(email: string | null | undefined) {
+  const normalizedEmail = normalizeGravatarEmail(email);
+  if (!normalizedEmail || !globalThis.crypto?.subtle) {
+    return null;
+  }
+
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(normalizedEmail)
+  );
+  const params = new URLSearchParams({
+    d: "404",
+    r: "g",
+    s: String(gravatarSize)
+  });
+
+  return `${gravatarBaseUrl}/${formatHexDigest(digest)}?${params.toString()}`;
 }
 
 export function getAvatarLetter(user: User) {

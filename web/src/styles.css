@@ -1316,6 +1316,7 @@ textarea:focus {
 .avatar-button {
   display: inline-grid;
   place-items: center;
+  position: relative;
   width: 2.65rem;
   height: 2.65rem;
   padding: 0;
@@ -1323,6 +1324,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--surface-input);
   color: var(--accent-strong);
+  overflow: hidden;
   box-shadow:
     inset 0 1px 0 var(--surface-highlight),
     0 16px 28px -24px rgba(18, 34, 36, 0.28);
@@ -1343,10 +1345,32 @@ textarea:focus {
   transform: translateY(1px) scale(0.98);
 }
 
+.avatar-button__image,
+.avatar-button__letter {
+  grid-area: 1 / 1;
+}
+
+.avatar-button__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 160ms var(--ease);
+}
+
+.avatar-button__image.is-visible {
+  opacity: 1;
+}
+
 .avatar-button__letter {
   font-size: 0.94rem;
   font-weight: 700;
   letter-spacing: -0.03em;
+  transition: opacity 160ms var(--ease);
+}
+
+.avatar-button__letter.is-hidden {
+  opacity: 0;
 }
 
 .avatar-dropdown {
