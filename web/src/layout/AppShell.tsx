@@ -369,7 +369,7 @@ export function AppShell({ user }: { user: User }) {
             <nav className="subnav">
               <div className="subnav__cluster subnav__cluster--primary">
                 <NavLink className={({ isActive }) => `subnav__link${isActive ? " is-active" : ""}`} to="/todos">
-                  TODO
+                  TODOs
                 </NavLink>
                 {todosMatch && !todosQuery.isPending && !todosQuery.error ? (
                   <span className="label-chip label-chip--soft subnav__meta-chip" data-testid="todos-nav-count">

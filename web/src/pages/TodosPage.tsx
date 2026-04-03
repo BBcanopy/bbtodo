@@ -194,13 +194,7 @@ export function TodosPage() {
   );
 
   function navigateToTask(group: TodoProjectGroup, task: Task) {
-    const nextParams = new URLSearchParams();
-    nextParams.set("q", task.ticketId);
-
-    navigate({
-      pathname: `/projects/${group.projectTicketPrefix}/${encodeURIComponent(task.ticketId)}`,
-      search: `?${nextParams.toString()}`
-    });
+    navigate(`/projects/${group.projectTicketPrefix}/${encodeURIComponent(task.ticketId)}`);
   }
 
   function selectTagFilter(tagLabel: string) {
