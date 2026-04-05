@@ -4,6 +4,10 @@ import { laneId, mockAuthenticated, projectsForGrid, tag, tasks } from "./fixtur
 
 const { defaultBrowserType: _ignoredDefaultBrowserType, ...iPhone13 } = devices["iPhone 13"];
 const billingBoardPath = "/projects/BILL";
+const mobileTouchDragActivationWaitMs = 260;
+const mobileTouchDragMoveSteps = 8;
+const mobileTouchDragMoveSettleDelayMs = 40;
+const mobileTouchDragDropSettleDelayMs = 120;
 
 async function isTaskDragActive(dragOverlay: Locator, taskCard: Locator) {
   if ((await dragOverlay.count()) > 0) {
@@ -270,8 +274,8 @@ async function getLocatorTouchPoint(target: Locator, targetYRatio = 0.5) {
   expect(targetBox).not.toBeNull();
 
   return {
-    x: Math.round((targetBox?.x ?? 0) + (targetBox?.width ?? 0) / 2),
-    y: Math.round((targetBox?.y ?? 0) + (targetBox?.height ?? 0) * targetYRatio)
+    x: Math.round(targetBox!.x + targetBox!.width / 2),
+    y: Math.round(targetBox!.y + targetBox!.height * targetYRatio)
   };
 }
 
@@ -303,9 +307,9 @@ async function dragTaskWithTouch(page: Page, source: Locator, target: Locator, t
 
   try {
     await dispatchTouchPoint(client, "touchStart", sourcePoint);
-    await page.waitForTimeout(260);
+    await page.waitForTimeout(mobileTouchDragActivationWaitMs);
 
-    const steps = 8;
+    const steps = mobileTouchDragMoveSteps;
     let currentPoint = sourcePoint;
 
     for (let step = 1; step <= steps; step += 1) {
@@ -318,7 +322,9 @@ async function dragTaskWithTouch(page: Page, source: Locator, target: Locator, t
               y: Math.round(currentPoint.y + (dragTargetPoint.y - currentPoint.y) / 2)
             };
       await dispatchTouchPoint(client, "touchMove", currentPoint);
-      await page.waitForTimeout(step === steps ? 120 : 40);
+      await page.waitForTimeout(
+        step === steps ? mobileTouchDragDropSettleDelayMs : mobileTouchDragMoveSettleDelayMs
+      );
     }
 
     await dispatchTouchPoint(client, "touchEnd");
