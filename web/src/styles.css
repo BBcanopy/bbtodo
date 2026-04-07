@@ -3942,6 +3942,26 @@ textarea:focus {
     padding: 0.8rem;
   }
 
+  .dialog-scrim--task-editor.is-fullscreen {
+    padding: 0;
+  }
+
+  .dialog-scrim--task-editor.is-fullscreen .dialog-panel--task-editor.is-fullscreen {
+    width: 100vw;
+    max-width: 100vw;
+    min-height: 100dvh;
+    height: 100dvh;
+    max-height: 100dvh;
+    padding:
+      calc(1.1rem + env(safe-area-inset-top, 0px))
+      calc(1.1rem + env(safe-area-inset-right, 0px))
+      calc(1.1rem + env(safe-area-inset-bottom, 0px))
+      calc(1.1rem + env(safe-area-inset-left, 0px));
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
   .lane-add-task-button,
   .lane-delete-button,
   .lane-header__task-trash,

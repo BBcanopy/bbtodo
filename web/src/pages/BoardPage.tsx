@@ -1723,7 +1723,10 @@ function TaskEditorDialog({
           : "All changes saved";
 
   return (
-    <div className="dialog-scrim" onClick={() => requestCloseRef.current()}>
+    <div
+      className={`dialog-scrim dialog-scrim--task-editor${isFullscreen ? " is-fullscreen" : ""}`}
+      onClick={() => requestCloseRef.current()}
+    >
       <section
         aria-labelledby="edit-task-title"
         aria-modal="true"

@@ -2019,6 +2019,46 @@ test.describe("mobile board page", () => {
     await expect(page.getByRole("dialog", { name: "Edit BILL-1" })).toBeVisible();
   });
 
+  test("board page expands task details to the full mobile viewport", async ({ page }) => {
+    await mockAuthenticated(page, { projects: projectsForGrid });
+
+    await page.goto(billingBoardPath);
+
+    const firstTaskCard = page.getByTestId("task-card-task-1");
+
+    await firstTaskCard.locator(".task-card__title").tap();
+
+    const editDialog = page.getByRole("dialog", { name: "Edit BILL-1" });
+    const dialogPanel = page.locator(".dialog-panel--task-editor");
+    const fullscreenButton = editDialog.getByRole("button", { name: "Enter full screen" });
+    const closeButton = editDialog.getByLabel("Close edit task dialog");
+    const viewport = page.viewportSize();
+
+    await expect(editDialog).toBeVisible();
+
+    const initialDialogBox = await dialogPanel.boundingBox();
+    expect(initialDialogBox).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    expect((initialDialogBox?.x ?? 0)).toBeGreaterThan(8);
+    expect((initialDialogBox?.y ?? 0)).toBeGreaterThan(8);
+
+    await fullscreenButton.tap();
+
+    await expect(editDialog.getByRole("button", { name: "Exit full screen" })).toBeVisible();
+
+    const fullscreenDialogBox = await dialogPanel.boundingBox();
+    expect(fullscreenDialogBox).not.toBeNull();
+    expect((fullscreenDialogBox?.x ?? 0)).toBeLessThanOrEqual(1);
+    expect((fullscreenDialogBox?.y ?? 0)).toBeLessThanOrEqual(1);
+    expect((fullscreenDialogBox?.width ?? 0)).toBeGreaterThan((initialDialogBox?.width ?? 0) + 20);
+    expect((fullscreenDialogBox?.height ?? 0)).toBeGreaterThan((initialDialogBox?.height ?? 0) + 20);
+    expect((fullscreenDialogBox?.width ?? 0)).toBeGreaterThanOrEqual((viewport?.width ?? 0) - 1);
+    expect((fullscreenDialogBox?.height ?? 0)).toBeGreaterThanOrEqual((viewport?.height ?? 0) - 1);
+
+    await closeButton.tap();
+    await expect(editDialog).toHaveCount(0);
+  });
+
   test("board page moves a task between lanes with a mobile long press drag", async ({ page }) => {
     const mobileProjects = structuredClone(projectsForGrid);
     const mobileTasks = structuredClone(tasks).filter(
