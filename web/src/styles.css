@@ -3953,10 +3953,10 @@ textarea:focus {
     height: 100dvh;
     max-height: 100dvh;
     padding:
-      calc(1.1rem + env(safe-area-inset-top))
-      calc(1.1rem + env(safe-area-inset-right))
-      calc(1.1rem + env(safe-area-inset-bottom))
-      calc(1.1rem + env(safe-area-inset-left));
+      calc(1.1rem + env(safe-area-inset-top, 0px))
+      calc(1.1rem + env(safe-area-inset-right, 0px))
+      calc(1.1rem + env(safe-area-inset-bottom, 0px))
+      calc(1.1rem + env(safe-area-inset-left, 0px));
     border: none;
     border-radius: 0;
     box-shadow: none;
