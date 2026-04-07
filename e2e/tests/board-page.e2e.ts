@@ -2099,10 +2099,11 @@ test.describe("mobile board page", () => {
     expect(bodyFieldBox).not.toBeNull();
     expect(bodyPanelBox).not.toBeNull();
     expect(footerMetaBox).not.toBeNull();
-    expect((bodyPanelBox?.y ?? 0) + (bodyPanelBox?.height ?? 0)).toBeLessThanOrEqual(
-      (bodyFieldBox?.y ?? 0) + (bodyFieldBox?.height ?? 0) + 1
-    );
-    expect((bodyFieldBox?.y ?? 0) + (bodyFieldBox?.height ?? 0)).toBeLessThanOrEqual((footerMetaBox?.y ?? 0) + 1);
+    const bodyPanelBottom = bodyPanelBox!.y + bodyPanelBox!.height;
+    const bodyFieldBottom = bodyFieldBox!.y + bodyFieldBox!.height;
+
+    expect(bodyPanelBottom).toBeLessThanOrEqual(bodyFieldBottom + 1);
+    expect(bodyFieldBottom).toBeLessThanOrEqual(footerMetaBox!.y + 1);
   });
 
   test("board page moves a task between lanes with a mobile long press drag", async ({ page }) => {
