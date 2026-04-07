@@ -2959,6 +2959,8 @@ textarea:focus {
   flex: 1 1 auto;
   min-height: 0;
   grid-template-rows: auto auto minmax(0, 1fr);
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .task-editor__actions {
@@ -3037,6 +3039,11 @@ textarea:focus {
   min-height: 0;
 }
 
+.dialog-panel--task-editor.is-fullscreen .field--editor {
+  align-self: stretch;
+  overflow: hidden;
+}
+
 .dialog-panel--task-editor.is-fullscreen .task-editor__panel,
 .dialog-panel--task-editor.is-fullscreen .task-editor__preview-inline,
 .dialog-panel--task-editor.is-fullscreen .markdown-preview {
@@ -3048,8 +3055,12 @@ textarea:focus {
   overflow: auto;
 }
 
+.dialog-panel--task-editor.is-fullscreen .task-editor__footer {
+  flex: 0 0 auto;
+}
+
 .dialog-panel--task-editor.is-fullscreen textarea {
-  min-height: 100%;
+  min-height: 0;
   height: 100%;
 }
 
