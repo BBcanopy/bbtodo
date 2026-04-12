@@ -1,4 +1,4 @@
-import { type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import {
   closestCorners,
@@ -155,37 +155,35 @@ function toSearchString(searchParams: URLSearchParams) {
 }
 
 function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(() =>
-    typeof window !== "undefined" && typeof window.matchMedia === "function"
-      ? window.matchMedia(query).matches
-      : false
-  );
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+        return () => undefined;
+      }
 
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
+      const mediaQueryList = window.matchMedia(query);
+      const handleChange = () => onStoreChange();
 
-    const mediaQueryList = window.matchMedia(query);
-    const handleChange = (event: MediaQueryListEvent) => setMatches(event.matches);
+      if (typeof mediaQueryList.addEventListener === "function") {
+        mediaQueryList.addEventListener("change", handleChange);
 
-    setMatches(mediaQueryList.matches);
-    if (typeof mediaQueryList.addEventListener === "function") {
-      mediaQueryList.addEventListener("change", handleChange);
+        return () => {
+          mediaQueryList.removeEventListener("change", handleChange);
+        };
+      }
+
+      mediaQueryList.addListener(handleChange);
 
       return () => {
-        mediaQueryList.removeEventListener("change", handleChange);
+        mediaQueryList.removeListener(handleChange);
       };
-    }
-
-    mediaQueryList.addListener(handleChange);
-
-    return () => {
-      mediaQueryList.removeListener(handleChange);
-    };
-  }, [query]);
-
-  return matches;
+    },
+    () =>
+      typeof window !== "undefined" && typeof window.matchMedia === "function"
+        ? window.matchMedia(query).matches
+        : false,
+    () => false
+  );
 }
 
 function getTaskTrashDropTargetId(laneId: string) {

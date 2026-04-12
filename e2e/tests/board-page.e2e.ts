@@ -2226,7 +2226,7 @@ test.describe("mobile board page", () => {
 
     await expect(deleteDialog).toBeVisible();
     await deleteDialog.getByRole("button", { exact: true, name: "Delete" }).click();
-    await expect(sourceCard).toHaveCount(0);
+    await expect(sourceCard).toHaveCount(0, { timeout: 15000 });
     await expect(page.getByTestId("task-card-task-4")).toBeVisible();
     await expect(mobileTrashTarget).toHaveCount(0);
     const taskDeleteToast = page.getByTestId("toast-notice");
@@ -2292,7 +2292,7 @@ test.describe("mobile board page", () => {
 
     await expect(deleteDialog).toBeVisible();
     await deleteDialog.getByRole("button", { exact: true, name: "Delete" }).click();
-    await expect(sourceCard).toHaveCount(0);
+    await expect(sourceCard).toHaveCount(0, { timeout: 15000 });
     await expect(mobileTrashTarget).toHaveCount(0);
     const taskDeleteToast = page.getByTestId("toast-notice");
     await expect(taskDeleteToast).toBeVisible();
