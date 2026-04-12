@@ -8,6 +8,7 @@ const mobileTouchDragActivationWaitMs = 260;
 const mobileTouchDragMoveSteps = 8;
 const mobileTouchDragMoveSettleDelayMs = 40;
 const mobileTouchDragDropSettleDelayMs = 120;
+const mobileQuickTapHoldMs = 40;
 
 async function isTaskDragActive(dragOverlay: Locator, taskCard: Locator) {
   if ((await dragOverlay.count()) > 0) {
@@ -92,11 +93,18 @@ async function beginTaskDrag(page: Page, source: Locator) {
 }
 
 async function hoverDraggedTaskOver(page: Page, target: Locator, targetYRatio = 0.5) {
-  await page.waitForTimeout(100);
-  await expect(target).toBeAttached();
-  const initialTargetBox = await target.boundingBox();
+  async function getTargetBox() {
+    await expect(target).toBeAttached();
+    await target.scrollIntoViewIfNeeded();
+    await expect(target).toBeVisible();
+    const targetBox = await target.boundingBox();
 
-  expect(initialTargetBox).not.toBeNull();
+    expect(targetBox).not.toBeNull();
+    return targetBox;
+  }
+
+  await page.waitForTimeout(100);
+  const initialTargetBox = await getTargetBox();
 
   const initialTargetCenterX = (initialTargetBox?.x ?? 0) + (initialTargetBox?.width ?? 0) / 2;
   const viewportWidth =
@@ -118,10 +126,7 @@ async function hoverDraggedTaskOver(page: Page, target: Locator, targetYRatio = 
   // Drag previews can shift the list while the pointer is in flight, so re-center on
   // the live target a few times before releasing.
   for (const steps of [20, 12, 8]) {
-    await expect(target).toBeAttached();
-    const targetBox = await target.boundingBox();
-
-    expect(targetBox).not.toBeNull();
+    const targetBox = await getTargetBox();
 
     await page.mouse.move(
       (targetBox?.x ?? 0) + (targetBox?.width ?? 0) / 2,
@@ -131,10 +136,7 @@ async function hoverDraggedTaskOver(page: Page, target: Locator, targetYRatio = 
     await page.waitForTimeout(80);
   }
 
-  await expect(target).toBeAttached();
-  const finalTargetBox = await target.boundingBox();
-
-  expect(finalTargetBox).not.toBeNull();
+  const finalTargetBox = await getTargetBox();
 
   await page.mouse.move(
     (finalTargetBox?.x ?? 0) + (finalTargetBox?.width ?? 0) / 2,
@@ -301,6 +303,36 @@ async function dispatchTouchPoint(
   });
 }
 
+async function tapLocatorWithTouch(page: Page, target: Locator, targetYRatio = 0.5) {
+  const client = await page.context().newCDPSession(page);
+  const point = await getLocatorTouchPoint(target, targetYRatio);
+
+  try {
+    await dispatchTouchPoint(client, "touchStart", point);
+    await page.waitForTimeout(mobileQuickTapHoldMs);
+    await dispatchTouchPoint(client, "touchEnd");
+  } finally {
+    await client.detach();
+  }
+}
+
+async function confirmTaskDelete(
+  page: Page,
+  deleteDialog: Locator,
+  projectId: string,
+  taskId: string
+) {
+  const deleteRequest = page.waitForRequest(
+    (request) =>
+      request.method() === "DELETE" &&
+      request.url().endsWith(`/api/v1/projects/${projectId}/tasks/${taskId}`)
+  );
+  const deleteButton = deleteDialog.getByRole("button", { exact: true, name: "Delete" });
+
+  await deleteButton.click();
+  await deleteRequest;
+}
+
 async function dragTaskWithTouch(page: Page, source: Locator, target: Locator, targetYRatio = 0.5) {
   const client = await page.context().newCDPSession(page);
   const sourcePoint = await getLocatorTouchPoint(source);
@@ -348,6 +380,10 @@ async function expectDragOverlayNearPoint(page: Page, expectedX: number, expecte
 
 function taskCardSurface(card: Locator) {
   return card.locator(":scope > .task-card__surface-wrap > .task-card__surface");
+}
+
+function taskCardTitle(card: Locator) {
+  return card.locator(":scope .task-card__title").first();
 }
 
 function taskCardNestTarget(card: Locator) {
@@ -2013,7 +2049,7 @@ test.describe("mobile board page", () => {
 
     const firstTaskCard = page.getByTestId("task-card-task-1");
 
-    await firstTaskCard.locator(".task-card__title").tap();
+    await tapLocatorWithTouch(page, taskCardTitle(firstTaskCard));
 
     await expect(page).toHaveURL(/\/projects\/BILL\/BILL-1$/);
     await expect(page.getByRole("dialog", { name: "Edit BILL-1" })).toBeVisible();
@@ -2026,7 +2062,7 @@ test.describe("mobile board page", () => {
 
     const firstTaskCard = page.getByTestId("task-card-task-1");
 
-    await firstTaskCard.locator(".task-card__title").tap();
+    await tapLocatorWithTouch(page, taskCardTitle(firstTaskCard));
 
     const editDialog = page.getByRole("dialog", { name: "Edit BILL-1" });
     const dialogPanel = page.locator(".dialog-panel--task-editor");
@@ -2076,7 +2112,7 @@ test.describe("mobile board page", () => {
 
     await page.goto(billingBoardPath);
 
-    await page.getByTestId("task-card-task-1").locator(".task-card__title").tap();
+    await tapLocatorWithTouch(page, taskCardTitle(page.getByTestId("task-card-task-1")));
 
     const editDialog = page.getByRole("dialog", { name: "Edit BILL-1" });
     const fullscreenButton = editDialog.getByRole("button", { name: "Enter full screen" });
@@ -2125,7 +2161,7 @@ test.describe("mobile board page", () => {
 
     await page.goto(billingBoardPath);
 
-    await page.getByTestId("task-card-task-1").locator(".task-card__title").tap();
+    await tapLocatorWithTouch(page, taskCardTitle(page.getByTestId("task-card-task-1")));
 
     const editDialog = page.getByRole("dialog", { name: "Edit BILL-1" });
     const fullscreenButton = editDialog.getByRole("button", { name: "Enter full screen" });
@@ -2225,14 +2261,14 @@ test.describe("mobile board page", () => {
     await dragTaskWithTouch(page, taskCardSurface(sourceCard), mobileTrashTarget);
 
     await expect(deleteDialog).toBeVisible();
-    await deleteDialog.getByRole("button", { exact: true, name: "Delete" }).click();
-    await expect(sourceCard).toHaveCount(0, { timeout: 15000 });
-    await expect(page.getByTestId("task-card-task-4")).toBeVisible();
-    await expect(mobileTrashTarget).toHaveCount(0);
+    await confirmTaskDelete(page, deleteDialog, "project-1", "task-1");
     const taskDeleteToast = page.getByTestId("toast-notice");
     await expect(taskDeleteToast).toBeVisible();
     await expect(taskDeleteToast).toContainText("Task deleted");
     await expect(taskDeleteToast).toContainText("Review retry settings (BILL-1) was deleted.");
+    await expect(sourceCard).toHaveCount(0, { timeout: 15000 });
+    await expect(page.getByTestId("task-card-task-4")).toBeVisible();
+    await expect(mobileTrashTarget).toHaveCount(0);
   });
 
   test("board page deletes a scrolled mobile task with the floating trash dock", async ({ page }) => {
@@ -2291,13 +2327,13 @@ test.describe("mobile board page", () => {
     await dragTaskWithTouch(page, taskCardSurface(sourceCard), mobileTrashTarget);
 
     await expect(deleteDialog).toBeVisible();
-    await deleteDialog.getByRole("button", { exact: true, name: "Delete" }).click();
-    await expect(sourceCard).toHaveCount(0, { timeout: 15000 });
-    await expect(mobileTrashTarget).toHaveCount(0);
+    await confirmTaskDelete(page, deleteDialog, "project-1", "task-mobile-tall-12");
     const taskDeleteToast = page.getByTestId("toast-notice");
     await expect(taskDeleteToast).toBeVisible();
     await expect(taskDeleteToast).toContainText("Task deleted");
     await expect(taskDeleteToast).toContainText("Mobile tall backlog 12 (BILL-21) was deleted.");
+    await expect(sourceCard).toHaveCount(0, { timeout: 15000 });
+    await expect(mobileTrashTarget).toHaveCount(0);
   });
 
   test("board page lets the mobile header scroll out of view instead of covering content", async ({ page }) => {

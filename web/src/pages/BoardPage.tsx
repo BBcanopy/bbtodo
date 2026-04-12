@@ -1,4 +1,14 @@
-import { type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type DragEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from "react";
 import { flushSync } from "react-dom";
 import {
   closestCorners,
@@ -64,6 +74,7 @@ import {
   buildTopLevelTaskIdsByLane,
   canTaskBecomeSubtask,
   canTaskNestUnderParent,
+  compareTasksInLane,
   findTaskLocation,
   getTaskDropSlotId,
   getTaskMoveAffectedTaskIds,
@@ -342,6 +353,13 @@ function cloneTaskTags(tags: TaskTag[]) {
   return tags.map((tag) => ({ ...tag }));
 }
 
+function cloneTask(task: Task) {
+  return {
+    ...task,
+    tags: cloneTaskTags(task.tags)
+  };
+}
+
 function toTaskEditorDraft(task: Pick<Task, "body" | "tags" | "title">): TaskEditorDraft {
   return {
     body: task.body,
@@ -401,6 +419,124 @@ function mergeSavedTaskIntoTasks(tasks: Task[], updatedTask: Task) {
   });
 
   return hasChanges ? nextTasks : tasks;
+}
+
+function sortTasksForLane(tasks: Task[], laneName: string) {
+  return tasks
+    .slice()
+    .sort((left, right) => compareTasksInLane(left, right, isDoneLaneName(laneName)));
+}
+
+function reindexTaskPositions(
+  tasks: Task[],
+  laneNameById: ReadonlyMap<string, string>,
+  projectId: string,
+  laneId: string,
+  parentTaskId: string | null
+) {
+  const laneName = laneNameById.get(laneId) ?? "";
+
+  sortTasksForLane(
+    tasks.filter(
+      (task) =>
+        task.projectId === projectId && task.laneId === laneId && task.parentTaskId === parentTaskId
+    ),
+    laneName
+  ).forEach((task, index) => {
+    task.position = index;
+  });
+}
+
+function removeDeletedTaskFromTasks(
+  tasks: Task[],
+  taskId: string,
+  laneNameById: ReadonlyMap<string, string>
+) {
+  const nextTasks = tasks.map((task) => cloneTask(task));
+  const removedTaskIndex = nextTasks.findIndex((task) => task.id === taskId);
+
+  if (removedTaskIndex === -1) {
+    return tasks;
+  }
+
+  const [removedTask] = nextTasks.splice(removedTaskIndex, 1);
+  if (!removedTask.laneId) {
+    return nextTasks;
+  }
+
+  if (removedTask.parentTaskId !== null) {
+    reindexTaskPositions(
+      nextTasks,
+      laneNameById,
+      removedTask.projectId,
+      removedTask.laneId,
+      removedTask.parentTaskId
+    );
+    return nextTasks;
+  }
+
+  const laneName = laneNameById.get(removedTask.laneId) ?? "";
+  const childTasks = sortTasksForLane(
+    nextTasks.filter(
+      (task) => task.projectId === removedTask.projectId && task.parentTaskId === removedTask.id
+    ),
+    laneName
+  );
+
+  if (childTasks.length > 0) {
+    const childTaskIds = new Set(childTasks.map((task) => task.id));
+    const promotedTopLevelTasks = sortTasksForLane(
+      nextTasks.filter(
+        (task) =>
+          task.projectId === removedTask.projectId &&
+          task.laneId === removedTask.laneId &&
+          task.parentTaskId === null &&
+          !childTaskIds.has(task.id)
+      ),
+      laneName
+    );
+    const insertIndex = Math.max(0, Math.min(removedTask.position, promotedTopLevelTasks.length));
+
+    childTasks.forEach((task) => {
+      task.parentTaskId = null;
+    });
+    promotedTopLevelTasks.splice(insertIndex, 0, ...childTasks);
+    promotedTopLevelTasks.forEach((task, index) => {
+      task.position = index;
+    });
+    return nextTasks;
+  }
+
+  reindexTaskPositions(nextTasks, laneNameById, removedTask.projectId, removedTask.laneId, null);
+  return nextTasks;
+}
+
+function updateLaneTaskCounts(lanes: BoardLane[], laneId: string, delta: number) {
+  let hasChanges = false;
+  const nextLanes = lanes.map((lane) => {
+    if (lane.id !== laneId) {
+      return lane;
+    }
+
+    hasChanges = true;
+    return {
+      ...lane,
+      taskCount: Math.max(0, lane.taskCount + delta)
+    };
+  });
+
+  return hasChanges ? nextLanes : lanes;
+}
+
+function updateProjectLaneTaskCounts(project: Project, laneId: string, delta: number) {
+  const nextLaneSummaries = updateLaneTaskCounts(project.laneSummaries, laneId, delta);
+
+  return nextLaneSummaries === project.laneSummaries
+    ? project
+    : {
+        ...project,
+        laneSummaries: nextLaneSummaries
+      };
 }
 
 function listSuggestedTags(tasks: Task[]) {
@@ -1043,6 +1179,22 @@ function TaskTrashConfirmPopover({
     return null;
   }
 
+  function handleButtonPointerUp(
+    event: ReactPointerEvent<HTMLButtonElement>,
+    action: () => void
+  ) {
+    event.preventDefault();
+    action();
+  }
+
+  function handleButtonClick(event: ReactMouseEvent<HTMLButtonElement>, action: () => void) {
+    if (event.detail !== 0) {
+      return;
+    }
+
+    action();
+  }
+
   return (
     <div
       aria-label={`Delete task ${pendingTask.title}`}
@@ -1056,7 +1208,8 @@ function TaskTrashConfirmPopover({
         <button
           className="text-button"
           disabled={isDeletePending}
-          onClick={onCancel}
+          onClick={(event) => handleButtonClick(event, onCancel)}
+          onPointerUp={(event) => handleButtonPointerUp(event, onCancel)}
           type="button"
         >
           Cancel
@@ -1064,7 +1217,10 @@ function TaskTrashConfirmPopover({
         <button
           className="ghost-button danger-button"
           disabled={isDeletePending}
-          onClick={() => onConfirm(pendingTask.id)}
+          onClick={(event) => handleButtonClick(event, () => onConfirm(pendingTask.id))}
+          onPointerUp={(event) =>
+            handleButtonPointerUp(event, () => onConfirm(pendingTask.id))
+          }
           type="button"
         >
           {isDeletePending ? "Deleting..." : "Delete"}
@@ -2284,6 +2440,7 @@ export function BoardPage() {
   const activeTagKey = activeTagFilter ? normalizeTagKey(activeTagFilter) : null;
   const lanes = lanesQuery.data ?? project?.laneSummaries ?? [];
   const lanesById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane])), [lanes]);
+  const laneNameById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane.name])), [lanes]);
   const committedTasks = tasksQuery.data ?? [];
   const taskMoveMutationKey = ["task-move", resolvedProjectId] as const;
   const pendingTaskMovesState = useMutationState<PendingTaskMove | null>({
@@ -2703,6 +2860,32 @@ export function BoardPage() {
     mutationFn: (taskId: string) => api.deleteTask(resolvedProjectId ?? "", taskId),
     onSuccess: async (_, taskId) => {
       const deletedTask = tasks.find((task) => task.id === taskId) ?? null;
+      const deletedTaskLaneId = deletedTask?.laneId ?? null;
+
+      if (deletedTaskLaneId && resolvedProjectId) {
+        queryClient.setQueryData<Task[]>(["tasks", resolvedProjectId], (currentTasks) =>
+          currentTasks ? removeDeletedTaskFromTasks(currentTasks, taskId, laneNameById) : currentTasks
+        );
+        queryClient.setQueryData<BoardLane[]>(["lanes", resolvedProjectId], (currentLanes) =>
+          currentLanes ? updateLaneTaskCounts(currentLanes, deletedTaskLaneId, -1) : currentLanes
+        );
+        queryClient.setQueryData<Project[]>(["projects"], (currentProjects) =>
+          currentProjects
+            ? currentProjects.map((currentProject) =>
+                currentProject.id === resolvedProjectId
+                  ? updateProjectLaneTaskCounts(currentProject, deletedTaskLaneId, -1)
+                  : currentProject
+              )
+            : currentProjects
+        );
+        if (projectTicketPrefix) {
+          queryClient.setQueryData<Project>(["project", projectTicketPrefix], (currentProject) =>
+            currentProject
+              ? updateProjectLaneTaskCounts(currentProject, deletedTaskLaneId, -1)
+              : currentProject
+          );
+        }
+      }
 
       setPendingDeleteTaskId(null);
       setPendingDeleteTaskLaneId(null);

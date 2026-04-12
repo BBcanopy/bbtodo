@@ -46,7 +46,7 @@ export function getTaskDropSlotId(laneId: string, parentTaskId: string | null, p
   return `slot:${laneId}:${parentTaskId ?? "root"}:${position}`;
 }
 
-function compareTasksInLane(left: Task, right: Task, isDoneLane: boolean) {
+export function compareTasksInLane(left: Task, right: Task, isDoneLane: boolean) {
   if (isDoneLane) {
     if (left.updatedAt !== right.updatedAt) {
       return left.updatedAt < right.updatedAt ? 1 : -1;
