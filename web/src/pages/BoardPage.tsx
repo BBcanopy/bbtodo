@@ -1,4 +1,14 @@
-import { type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from "react";
 import { flushSync } from "react-dom";
 import {
   closestCorners,
@@ -64,6 +74,7 @@ import {
   buildTopLevelTaskIdsByLane,
   canTaskBecomeSubtask,
   canTaskNestUnderParent,
+  compareTasksInLane,
   findTaskLocation,
   getTaskDropSlotId,
   getTaskMoveAffectedTaskIds,
@@ -112,6 +123,7 @@ const taskMouseActivationDistance = 8;
 const taskTouchActivationDelayMs = 180;
 const taskTouchActivationTolerance = 8;
 const taskClickSuppressDurationMs = 300;
+const mobileBoardBreakpointQuery = "(max-width: 860px)";
 
 const projectTicketPrefixPattern = /^[A-Z]{2,4}$/;
 
@@ -151,6 +163,38 @@ function resolveDestinationLanePreview(
 function toSearchString(searchParams: URLSearchParams) {
   const serializedParams = searchParams.toString();
   return serializedParams ? `?${serializedParams}` : "";
+}
+
+function useMediaQuery(query: string) {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+        return () => undefined;
+      }
+
+      const mediaQueryList = window.matchMedia(query);
+      const handleChange = () => onStoreChange();
+
+      if (typeof mediaQueryList.addEventListener === "function") {
+        mediaQueryList.addEventListener("change", handleChange);
+
+        return () => {
+          mediaQueryList.removeEventListener("change", handleChange);
+        };
+      }
+
+      mediaQueryList.addListener(handleChange);
+
+      return () => {
+        mediaQueryList.removeListener(handleChange);
+      };
+    },
+    () =>
+      typeof window !== "undefined" && typeof window.matchMedia === "function"
+        ? window.matchMedia(query).matches
+        : false,
+    () => false
+  );
 }
 
 function getTaskTrashDropTargetId(laneId: string) {
@@ -309,6 +353,13 @@ function cloneTaskTags(tags: TaskTag[]) {
   return tags.map((tag) => ({ ...tag }));
 }
 
+function cloneTask(task: Task) {
+  return {
+    ...task,
+    tags: cloneTaskTags(task.tags)
+  };
+}
+
 function toTaskEditorDraft(task: Pick<Task, "body" | "tags" | "title">): TaskEditorDraft {
   return {
     body: task.body,
@@ -368,6 +419,124 @@ function mergeSavedTaskIntoTasks(tasks: Task[], updatedTask: Task) {
   });
 
   return hasChanges ? nextTasks : tasks;
+}
+
+function sortTasksForLane(tasks: Task[], laneName: string) {
+  return tasks
+    .slice()
+    .sort((left, right) => compareTasksInLane(left, right, isDoneLaneName(laneName)));
+}
+
+function reindexTaskPositions(
+  tasks: Task[],
+  laneNameById: ReadonlyMap<string, string>,
+  projectId: string,
+  laneId: string,
+  parentTaskId: string | null
+) {
+  const laneName = laneNameById.get(laneId) ?? "";
+
+  sortTasksForLane(
+    tasks.filter(
+      (task) =>
+        task.projectId === projectId && task.laneId === laneId && task.parentTaskId === parentTaskId
+    ),
+    laneName
+  ).forEach((task, index) => {
+    task.position = index;
+  });
+}
+
+function removeDeletedTaskFromTasks(
+  tasks: Task[],
+  taskId: string,
+  laneNameById: ReadonlyMap<string, string>
+) {
+  const nextTasks = tasks.map((task) => cloneTask(task));
+  const removedTaskIndex = nextTasks.findIndex((task) => task.id === taskId);
+
+  if (removedTaskIndex === -1) {
+    return tasks;
+  }
+
+  const [removedTask] = nextTasks.splice(removedTaskIndex, 1);
+  if (!removedTask.laneId) {
+    return nextTasks;
+  }
+
+  if (removedTask.parentTaskId !== null) {
+    reindexTaskPositions(
+      nextTasks,
+      laneNameById,
+      removedTask.projectId,
+      removedTask.laneId,
+      removedTask.parentTaskId
+    );
+    return nextTasks;
+  }
+
+  const laneName = laneNameById.get(removedTask.laneId) ?? "";
+  const childTasks = sortTasksForLane(
+    nextTasks.filter(
+      (task) => task.projectId === removedTask.projectId && task.parentTaskId === removedTask.id
+    ),
+    laneName
+  );
+
+  if (childTasks.length > 0) {
+    const childTaskIds = new Set(childTasks.map((task) => task.id));
+    const promotedTopLevelTasks = sortTasksForLane(
+      nextTasks.filter(
+        (task) =>
+          task.projectId === removedTask.projectId &&
+          task.laneId === removedTask.laneId &&
+          task.parentTaskId === null &&
+          !childTaskIds.has(task.id)
+      ),
+      laneName
+    );
+    const insertIndex = Math.max(0, Math.min(removedTask.position, promotedTopLevelTasks.length));
+
+    childTasks.forEach((task) => {
+      task.parentTaskId = null;
+    });
+    promotedTopLevelTasks.splice(insertIndex, 0, ...childTasks);
+    promotedTopLevelTasks.forEach((task, index) => {
+      task.position = index;
+    });
+    return nextTasks;
+  }
+
+  reindexTaskPositions(nextTasks, laneNameById, removedTask.projectId, removedTask.laneId, null);
+  return nextTasks;
+}
+
+function updateLaneTaskCounts(lanes: BoardLane[], laneId: string, delta: number) {
+  let hasChanges = false;
+  const nextLanes = lanes.map((lane) => {
+    if (lane.id !== laneId) {
+      return lane;
+    }
+
+    hasChanges = true;
+    return {
+      ...lane,
+      taskCount: Math.max(0, lane.taskCount + delta)
+    };
+  });
+
+  return hasChanges ? nextLanes : lanes;
+}
+
+function updateProjectLaneTaskCounts(project: Project, laneId: string, delta: number) {
+  const nextLaneSummaries = updateLaneTaskCounts(project.laneSummaries, laneId, delta);
+
+  return nextLaneSummaries === project.laneSummaries
+    ? project
+    : {
+        ...project,
+        laneSummaries: nextLaneSummaries
+      };
 }
 
 function listSuggestedTags(tasks: Task[]) {
@@ -436,7 +605,8 @@ function LaneHeader({
   onConfirmTaskDelete,
   onDragEnd,
   onDragStart,
-  pendingTaskDelete
+  pendingTaskDelete,
+  useFloatingTaskTrash
 }: {
   destinationLanes: BoardLane[];
   isDeletePending: boolean;
@@ -453,24 +623,27 @@ function LaneHeader({
   onDragEnd: () => void;
   onDragStart: (event: DragEvent<HTMLElement>, laneId: string) => void;
   pendingTaskDelete: Task | null;
+  useFloatingTaskTrash: boolean;
 }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const confirmRef = useRef<HTMLDivElement | null>(null);
+  const isHeaderTaskTrashEnabled = isTaskTrashVisible && !useFloatingTaskTrash;
   const { isOver: isTaskTrashOver, setNodeRef: setTaskTrashRef } = useDroppable({
     id: getTaskTrashDropTargetId(lane.id),
     data: {
       laneId: lane.id,
       type: "trash"
     },
-    disabled: !isTaskTrashVisible
+    disabled: !isHeaderTaskTrashEnabled
   });
   const preferredDestinationId = getPreferredLaneDeleteDestination(lane.id, destinationLanes)?.id ?? "";
   const [destinationLaneId, setDestinationLaneId] = useState(preferredDestinationId);
   const requiresDestination = lane.taskCount > 0;
   const showAddTaskAction = !isTaskDragging && !pendingTaskDelete;
   const showLaneDeleteAction = !isTaskDragging && !pendingTaskDelete && !isProtected;
-  const showTaskTrashState = isTaskTrashVisible || pendingTaskDelete !== null;
-  const isTaskTrashActive = (isTaskTrashVisible && isTaskTrashOver) || pendingTaskDelete !== null;
+  const showTaskTrashState = !useFloatingTaskTrash && (isTaskTrashVisible || pendingTaskDelete !== null);
+  const isTaskTrashActive =
+    !useFloatingTaskTrash && ((isTaskTrashVisible && isTaskTrashOver) || pendingTaskDelete !== null);
 
   useDismissableLayer(isConfirmOpen, confirmRef, () => setIsConfirmOpen(false));
 
@@ -496,21 +669,23 @@ function LaneHeader({
       draggable={!isDragDisabled}
       onDragEnd={onDragEnd}
       onDragStart={(event) => onDragStart(event, lane.id)}
-      ref={setTaskTrashRef}
+      ref={useFloatingTaskTrash ? undefined : setTaskTrashRef}
     >
       <div className="board-column__header-copy">
         <h2>{lane.name}</h2>
       </div>
       <div className="lane-header__actions" ref={confirmRef}>
-        <LaneTaskTrashTarget
-          isDeletePending={isTaskDeletePending}
-          isDropActive={isTaskTrashActive}
-          isVisible={showTaskTrashState}
-          laneId={lane.id}
-          onCancel={onCancelTaskDelete}
-          onConfirm={onConfirmTaskDelete}
-          pendingTask={pendingTaskDelete}
-        />
+        {!useFloatingTaskTrash ? (
+          <LaneTaskTrashTarget
+            isDeletePending={isTaskDeletePending}
+            isDropActive={isTaskTrashActive}
+            isVisible={showTaskTrashState}
+            laneId={lane.id}
+            onCancel={onCancelTaskDelete}
+            onConfirm={onConfirmTaskDelete}
+            pendingTask={pendingTaskDelete}
+          />
+        ) : null}
         {showAddTaskAction ? (
           <button
             aria-label={`Add task to ${lane.name}`}
@@ -976,35 +1151,145 @@ function LaneTaskTrashTarget({
           <TrashIcon />
         </span>
       </div>
-      {pendingTask ? (
-        <div
-          aria-label={`Delete task ${pendingTask.title}`}
-          className="task-delete-popover lane-task-trash-popover"
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          role="alertdialog"
+      <TaskTrashConfirmPopover
+        className="lane-task-trash-popover"
+        isDeletePending={isDeletePending}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+        pendingTask={pendingTask}
+      />
+    </div>
+  );
+}
+
+function TaskTrashConfirmPopover({
+  className,
+  isDeletePending,
+  onCancel,
+  onConfirm,
+  pendingTask
+}: {
+  className: string;
+  isDeletePending: boolean;
+  onCancel: () => void;
+  onConfirm: (taskId: string) => void;
+  pendingTask: Task | null;
+}) {
+  if (!pendingTask) {
+    return null;
+  }
+
+  function handleButtonPointerUp(
+    event: ReactPointerEvent<HTMLButtonElement>,
+    action: () => void
+  ) {
+    event.preventDefault();
+    action();
+  }
+
+  function handleButtonClick(event: ReactMouseEvent<HTMLButtonElement>, action: () => void) {
+    if (event.detail !== 0) {
+      return;
+    }
+
+    action();
+  }
+
+  return (
+    <div
+      aria-label={`Delete task ${pendingTask.title}`}
+      className={`task-delete-popover ${className}`}
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      role="alertdialog"
+    >
+      <p>Delete {pendingTask.title}?</p>
+      <div className="task-delete-popover__actions">
+        <button
+          className="text-button"
+          disabled={isDeletePending}
+          onClick={(event) => handleButtonClick(event, onCancel)}
+          onPointerUp={(event) => handleButtonPointerUp(event, onCancel)}
+          type="button"
         >
-          <p>Delete {pendingTask.title}?</p>
-          <div className="task-delete-popover__actions">
-            <button
-              className="text-button"
-              disabled={isDeletePending}
-              onClick={onCancel}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="ghost-button danger-button"
-              disabled={isDeletePending}
-              onClick={() => onConfirm(pendingTask.id)}
-              type="button"
-            >
-              {isDeletePending ? "Deleting..." : "Delete"}
-            </button>
-          </div>
-        </div>
-      ) : null}
+          Cancel
+        </button>
+        <button
+          className="ghost-button danger-button"
+          disabled={isDeletePending}
+          onClick={(event) => handleButtonClick(event, () => onConfirm(pendingTask.id))}
+          onPointerUp={(event) =>
+            handleButtonPointerUp(event, () => onConfirm(pendingTask.id))
+          }
+          type="button"
+        >
+          {isDeletePending ? "Deleting..." : "Delete"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MobileTaskTrashDock({
+  isDeletePending,
+  isDragging,
+  laneId,
+  onCancel,
+  onConfirm,
+  pendingTask
+}: {
+  isDeletePending: boolean;
+  isDragging: boolean;
+  laneId: string;
+  onCancel: () => void;
+  onConfirm: (taskId: string) => void;
+  pendingTask: Task | null;
+}) {
+  const confirmRef = useRef<HTMLDivElement | null>(null);
+  const { isOver, setNodeRef } = useDroppable({
+    id: getTaskTrashDropTargetId(laneId),
+    data: {
+      laneId,
+      type: "trash"
+    },
+    disabled: !isDragging
+  });
+  const isVisible = isDragging || pendingTask !== null;
+  const isDockActive = (isDragging && isOver) || pendingTask !== null;
+
+  useDismissableLayer(Boolean(pendingTask), confirmRef, () => {
+    if (!isDeletePending) {
+      onCancel();
+    }
+  });
+
+  return (
+    <div
+      className={`mobile-task-trash-shell${isVisible ? " is-visible" : ""}${isDockActive ? " is-active" : ""}${pendingTask ? " is-confirm-open" : ""}`}
+      ref={confirmRef}
+    >
+      <div
+        className={`mobile-task-trash-dock${isDragging ? " is-visible" : ""}${isDockActive ? " is-active" : ""}${pendingTask ? " is-confirm-open" : ""}`}
+        data-testid="mobile-task-trash-target"
+        ref={setNodeRef}
+        role="presentation"
+        title="Drop to delete"
+      >
+        <span aria-hidden="true" className="mobile-task-trash-dock__mark">
+          <TrashIcon />
+        </span>
+        <span className="mobile-task-trash-dock__copy">
+          <strong>Delete card</strong>
+          <span>Drop here from anywhere</span>
+        </span>
+      </div>
+      <TaskTrashConfirmPopover
+        className="mobile-task-trash-popover"
+        isDeletePending={isDeletePending}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+        pendingTask={pendingTask}
+      />
     </div>
   );
 }
@@ -2098,6 +2383,7 @@ export function BoardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const isMobileBoardLayout = useMediaQuery(mobileBoardBreakpointQuery);
   const locationToast = ((location.state as { toast?: BoardToast } | null) ?? null)?.toast ?? null;
   const [composerLaneId, setComposerLaneId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
@@ -2154,6 +2440,7 @@ export function BoardPage() {
   const activeTagKey = activeTagFilter ? normalizeTagKey(activeTagFilter) : null;
   const lanes = lanesQuery.data ?? project?.laneSummaries ?? [];
   const lanesById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane])), [lanes]);
+  const laneNameById = useMemo(() => new Map(lanes.map((lane) => [lane.id, lane.name])), [lanes]);
   const committedTasks = tasksQuery.data ?? [];
   const taskMoveMutationKey = ["task-move", resolvedProjectId] as const;
   const pendingTaskMovesState = useMutationState<PendingTaskMove | null>({
@@ -2202,6 +2489,8 @@ export function BoardPage() {
     pendingDeleteTaskId
       ? taskMap.get(pendingDeleteTaskId) ?? null
       : null;
+  const activeTaskTrashLaneId =
+    draggedTask?.laneId ?? pendingDeleteTaskLaneId ?? null;
   const availableTaskTags = taskTagsQuery.data ?? listSuggestedTags(tasks);
   const pendingMoveTaskIds = useMemo(() => {
     const nextPendingTaskIds = new Set<string>();
@@ -2571,6 +2860,32 @@ export function BoardPage() {
     mutationFn: (taskId: string) => api.deleteTask(resolvedProjectId ?? "", taskId),
     onSuccess: async (_, taskId) => {
       const deletedTask = tasks.find((task) => task.id === taskId) ?? null;
+      const deletedTaskLaneId = deletedTask?.laneId ?? null;
+
+      if (deletedTaskLaneId && resolvedProjectId) {
+        queryClient.setQueryData<Task[]>(["tasks", resolvedProjectId], (currentTasks) =>
+          currentTasks ? removeDeletedTaskFromTasks(currentTasks, taskId, laneNameById) : currentTasks
+        );
+        queryClient.setQueryData<BoardLane[]>(["lanes", resolvedProjectId], (currentLanes) =>
+          currentLanes ? updateLaneTaskCounts(currentLanes, deletedTaskLaneId, -1) : currentLanes
+        );
+        queryClient.setQueryData<Project[]>(["projects"], (currentProjects) =>
+          currentProjects
+            ? currentProjects.map((currentProject) =>
+                currentProject.id === resolvedProjectId
+                  ? updateProjectLaneTaskCounts(currentProject, deletedTaskLaneId, -1)
+                  : currentProject
+              )
+            : currentProjects
+        );
+        if (projectTicketPrefix) {
+          queryClient.setQueryData<Project>(["project", projectTicketPrefix], (currentProject) =>
+            currentProject
+              ? updateProjectLaneTaskCounts(currentProject, deletedTaskLaneId, -1)
+              : currentProject
+          );
+        }
+      }
 
       setPendingDeleteTaskId(null);
       setPendingDeleteTaskLaneId(null);
@@ -3158,7 +3473,7 @@ export function BoardPage() {
                       isDragDisabled={isLaneDragDisabled}
                       isProtected={lane.isProtectedLane}
                       isTaskDeletePending={deleteTaskMutation.isPending}
-                                isTaskDragging={isTaskDragging}
+                      isTaskDragging={isTaskDragging}
                       isTaskTrashVisible={draggedTask?.laneId === lane.id}
                       lane={lane}
                       onAddTask={() => openComposer(lane.id)}
@@ -3176,6 +3491,7 @@ export function BoardPage() {
                       onDragEnd={() => clearLaneDrag()}
                       onDragStart={handleLaneDragStart}
                       pendingTaskDelete={pendingDeleteTaskLaneId === lane.id ? pendingDeleteTask : null}
+                      useFloatingTaskTrash={isMobileBoardLayout && activeTaskTrashLaneId === lane.id}
                     />
                     <LaneDropArea laneId={lane.id}>
                       <SortableContext
@@ -3320,6 +3636,19 @@ export function BoardPage() {
               );
             })}
           </section>
+          {isMobileBoardLayout && activeTaskTrashLaneId ? (
+            <MobileTaskTrashDock
+              isDeletePending={deleteTaskMutation.isPending}
+              isDragging={isTaskDragging}
+              laneId={activeTaskTrashLaneId}
+              onCancel={() => {
+                setPendingDeleteTaskId(null);
+                setPendingDeleteTaskLaneId(null);
+              }}
+              onConfirm={(taskId) => deleteTaskMutation.mutate(taskId)}
+              pendingTask={pendingDeleteTask}
+            />
+          ) : null}
           <DragOverlay dropAnimation={taskDropAnimation}>
             {draggedTask ? (
               <div
